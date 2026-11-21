@@ -389,6 +389,7 @@ func registerAdapters(
 	// Kubernetes Event webhook adapter
 	k8sEventAdapter := adapters.NewKubernetesEventAdapter(ownerResolver)
 	k8sEventAdapter.SetLogger(logger)
+	k8sEventAdapter.SetRegistry(apiRegistry)
 	if err := srv.RegisterAdapter(k8sEventAdapter); err != nil {
 		return fleetResilientClient, fmt.Errorf("failed to register k8s event adapter: %w", err)
 	}

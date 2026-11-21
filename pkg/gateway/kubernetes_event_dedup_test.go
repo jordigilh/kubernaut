@@ -186,3 +186,24 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 		})
 	})
 })
+
+// #2670: a cluster-scoped target has no namespace, whatever the event claims.
+// Normalizing before fingerprint resolution keeps the dedup key aligned with the
+// Prometheus adapter and with the RR target RO re-checks.
+var _ = Describe("K8s event cluster-scoped target normalization (#2670)", func() {
+	It("UT-GW-2670-003 [BR-GATEWAY-004]: a Node event drops a claimed namespace from the target and the key", func() {
+		adapter := adapters.NewKubernetesEventAdapter()
+		now := time.Now().Format(time.RFC3339)
+		raw := fmt.Sprintf(`{"type":"Warning","reason":"NodeNotReady","message":"node is not ready",`+
+			`"involvedObject":{"kind":"Node","namespace":"monitoring","name":"worker-1","uid":"node-uid-1","apiVersion":"v1"},`+
+			`"firstTimestamp":"%s","lastTimestamp":"%s","source":{"component":"node-controller","host":"worker-1"}}`, now, now)
+
+		signal, err := adapter.Parse(context.Background(), []byte(raw))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(signal.Resource.Namespace).To(BeEmpty(),
+			"a cluster-scoped target has no namespace, whatever the event claims")
+		Expect(signal.Fingerprint).To(Equal(types.CalculateOwnerFingerprint(types.ResourceIdentifier{
+			Kind: "Node", Name: "worker-1",
+		})), "the dedup key must not depend on a claimed namespace for a cluster-scoped target")
+	})
+})

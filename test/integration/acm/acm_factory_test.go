@@ -212,6 +212,39 @@ var _ = Describe("ACM Search Factory Wiring (BR-INTEGRATION-065)", Ordered, Labe
 			Expect(managed.State).To(Equal(scope.ScopeUnavailable))
 			Expect(err).NotTo(HaveOccurred())
 		})
+		It("IT-ACM-2670-001 [BR-SCOPE-001, AC-4]: a cluster-scoped Node resolves at level 1 through the factory path", func() {
+			// Issue #2670: BR-SCOPE-001 FR-SCOPE-004 Option A restored. The
+			// production entry point is fleet.NewScopeChecker(BackendACM) ->
+			// FederatedScopeChecker -> acm.Client -> real HTTP transport.
+			labeled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Node","name":"worker-1","label":"kubernaut.ai/managed=true"}]}]}}`)
+			}))
+			DeferCleanup(labeled.Close)
+			checker, err := fleet.NewScopeChecker(&localAlwaysFalse{}, fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: labeled.URL}, logr.Discard())
+			Expect(err).NotTo(HaveOccurred())
+
+			node := scope.ResourceIdentity{ClusterID: "prod-east", Version: "v1", Kind: "Node", Name: "worker-1"}
+			result, err := checker.Check(context.Background(), node)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged),
+				"AC-4: a labeled Node must authorize through the full factory -> ACM path")
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
+
+			unlabeled := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Node","name":"worker-1","label":""}]}]}}`)
+			}))
+			DeferCleanup(unlabeled.Close)
+			checker, err = fleet.NewScopeChecker(&localAlwaysFalse{}, fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: unlabeled.URL}, logr.Discard())
+			Expect(err).NotTo(HaveOccurred())
+
+			result, err = checker.Check(context.Background(), node)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedUnmanaged),
+				"an explicitly present empty label projection is decisive unmanaged, with no namespace to inherit")
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceNone))
+		})
 	})
 })
 

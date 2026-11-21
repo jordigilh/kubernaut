@@ -31,6 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 var (
@@ -51,6 +53,14 @@ var (
 type registrySnapshot struct {
 	labelToKind    map[string]string
 	kindNamespaced map[string]bool
+	// groupKindNamespaced holds the discovered scope PER (API group, Kind), keyed
+	// by groupKindScopeKey. kindNamespaced records one answer per Kind
+	// (first-seen group wins), which is wrong when two groups serve the same Kind
+	// with different scopes: a Kind that is cluster-scoped in one group and
+	// namespaced in another would be misclassified for whichever identity names
+	// the other group (#2670). Callers that know the target's apiVersion must
+	// use namespacedFor so the answer comes from the group the identity names.
+	groupKindNamespaced map[string]bool
 	// kindToGVRCandidates holds every discovered GroupVersionResource for a
 	// Kind, deduplicated by Group (#2066), in first-discovered order.
 	// Candidate [0] is always the first-discovered group for that Kind —
@@ -206,6 +216,7 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 	snap := &registrySnapshot{
 		labelToKind:         make(map[string]string, totalResources),
 		kindNamespaced:      make(map[string]bool, totalResources),
+		groupKindNamespaced: make(map[string]bool, totalResources),
 		kindToGVRCandidates: make(map[string][]schema.GroupVersionResource, totalResources),
 		complete:            snapshotComplete,
 	}
@@ -246,6 +257,14 @@ func (snap *registrySnapshot) addAPIResource(gv schema.GroupVersion, res metav1.
 
 	if _, exists := snap.kindNamespaced[res.Kind]; !exists {
 		snap.kindNamespaced[res.Kind] = res.Namespaced
+	}
+	// #2670: also record the scope per (group, Kind) so a Kind served by
+	// several groups with different scopes is classified from the group the
+	// target identity actually names, not whichever group discovery listed
+	// first. Multiple served versions of one group agree on scope.
+	scopeKey := groupKindScopeKey(gv.Group, res.Kind)
+	if _, exists := snap.groupKindNamespaced[scopeKey]; !exists {
+		snap.groupKindNamespaced[scopeKey] = res.Namespaced
 	}
 
 	// #2066: record every distinct Group for this Kind (not every served
@@ -328,6 +347,72 @@ func (r *APIResourceRegistry) IsNamespacedKind(kind string) bool {
 		return true
 	}
 	return namespaced
+}
+
+// groupKindScopeKey builds the snapshot key for a per-(API group, Kind) scope
+// answer. The NUL separator cannot appear in an API group or Kind.
+func groupKindScopeKey(group, kind string) string {
+	return group + "\x00" + kind
+}
+
+// namespacedFor returns the discovered scope for kind within the API group
+// named by apiVersion. The second return value is false when the group cannot
+// be parsed from apiVersion or the snapshot does not know that (group, Kind),
+// in which case the caller must fall back to the per-Kind answer (#2670).
+func (r *APIResourceRegistry) namespacedFor(kind, apiVersion string) (bool, bool) {
+	if apiVersion == "" {
+		return false, false
+	}
+	gv, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil {
+		return false, false
+	}
+	r.mu.RLock()
+	snap := r.snapshot
+	r.mu.RUnlock()
+	if snap == nil {
+		return false, false
+	}
+	namespaced, ok := snap.groupKindNamespaced[groupKindScopeKey(gv.Group, kind)]
+	return namespaced, ok
+}
+
+// targetClusterScoped reports whether a target kind has no namespace. An
+// identity that names its API group is decided by that group's discovered
+// scope first: a custom resource may reuse a core Kind with the opposite scope
+// (e.g. a namespaced `tenant.example.com/v1 Node`), and the static map cannot
+// see the group (#2670). The static scope map remains the fallback for kinds it
+// lists, and API discovery extends the answer to kinds outside the map (which
+// covers cluster-scoped CRDs). An unknown kind stays namespaced, because
+// IsNamespacedKind defaults to true and dropping a namespace a resource needs is
+// worse than keeping one it does not.
+func targetClusterScoped(registry *APIResourceRegistry, kind, apiVersion string) bool {
+	if registry != nil {
+		if namespaced, ok := registry.namespacedFor(kind, apiVersion); ok {
+			return !namespaced
+		}
+	}
+	if scope.IsClusterScopedKind(kind) {
+		return true
+	}
+	if registry == nil {
+		return false
+	}
+	return !registry.IsNamespacedKind(kind)
+}
+
+// IsClusterScopedTargetKind applies the same target-scope precedence to this
+// registry's snapshot. Owner-chain traversal uses it so a discovered
+// cluster-scoped CRD owner is normalized exactly like the adapter path (#2670).
+func (r *APIResourceRegistry) IsClusterScopedTargetKind(kind, apiVersion string) bool {
+	return targetClusterScoped(r, kind, apiVersion)
+}
+
+// IsClusterScopedTarget exposes the classification to the Gateway ingress path so
+// that the scope identity and the adapters' fingerprint normalization take one
+// answer (#2670).
+func IsClusterScopedTarget(registry *APIResourceRegistry, kind, apiVersion string) bool {
+	return targetClusterScoped(registry, kind, apiVersion)
 }
 
 // KindToGVRCandidates returns every discovered GroupVersionResource for a

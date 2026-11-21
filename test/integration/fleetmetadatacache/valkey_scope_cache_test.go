@@ -186,10 +186,11 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 			"IT-FLEET-VALKEY-006: a namespace-level kubernaut.ai/managed=true label must be honored for fleet resources through the real Valkey-backed chain, same as local (ADR-053 parity)")
 	})
 
-	It("IT-FLEET-VALKEY-007 [Issue #2311, AC-4]: FederatedScopeChecker does not fall back to namespace for cluster-scoped kinds", func() {
-		// Mirrors UT-SCOPE-001-013's cluster-scoped guarantee for the fleet
+	It("IT-FLEET-VALKEY-007 [Issue #2311, #2670, AC-6]: FederatedScopeChecker does not fall back to namespace for cluster-scoped kinds", func() {
+		// Mirrors UT-SCOPE-2670-002's cluster-scoped guarantee for the fleet
 		// path: a Node has no namespace to inherit from, so a coincidentally
-		// matching Namespace-shaped key must never be consulted.
+		// matching Namespace-shaped key must never be consulted. The Node is
+		// present with an absent label, which is decisive unmanaged.
 		nsKey, err := scopecache.BuildKey("prod-west", "", "v1", "Namespace", "", "worker-node-7")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.Set(ctx, nsKey, 30*time.Second)).To(Succeed())
@@ -205,7 +206,8 @@ var _ = Describe("Fleet Scope Cache Valkey Integration (BR-INTEGRATION-065)", Or
 			Name:      "worker-node-7",
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(managed.State).To(Equal(scope.ScopeUnsupported),
-			"IT-FLEET-VALKEY-007: Node is cluster-scoped and must only ever be resolved from its own resource-level label")
+		Expect(managed.State).To(Equal(scope.ScopeVerifiedUnmanaged),
+			"IT-FLEET-VALKEY-007: Node resolves at level 1 only; the namespace key must not authorize it")
+		Expect(managed.Provenance).To(Equal(scope.ScopeSourceNone))
 	})
 })

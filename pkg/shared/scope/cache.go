@@ -27,6 +27,11 @@ import "k8s.io/apimachinery/pkg/runtime/schema"
 // RBAC configuration, cache setup, and documentation remain consistent
 // across services.
 //
+// The version is nominal ("v1"): RBAC is group/resource scoped, and any
+// informer must be built from the target identity's own apiVersion. Notable
+// exception: HorizontalPodAutoscaler is served as autoscaling/v2, so a v1
+// informer would never observe it. ScopeGVKs has no production caller today.
+//
 // Reference: ADR-053 (Resource Scope Management Architecture)
 func ScopeGVKs() []schema.GroupVersionKind {
 	gvks := make([]schema.GroupVersionKind, 0, len(kindToGroup))

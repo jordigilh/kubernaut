@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -319,7 +320,7 @@ var _ = Describe("Scope Manager", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.State).To(Equal(scope.ScopeInvalid), "invalid resource label must fail closed instead of inheriting namespace scope")
 			Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
-			Expect(result.Reason).To(Equal("invalid_resource_label"))
+			Expect(result.Reason).To(Equal(scope.ReasonInvalidResourceLabel))
 		})
 
 		// UT-SCOPE-2592-LABEL-003: an empty-string label value is a present-but-
@@ -553,6 +554,201 @@ var _ = Describe("Scope Manager", func() {
 			Expect(resolution.ClusterScoped).To(BeTrue())
 			Expect(resolution.Included).To(BeFalse(), "Cluster-scoped resource with opt-out label should be unmanaged")
 			Expect(resolution.Source).To(Equal(scope.ScopeSourceResourceLabel))
+		})
+	})
+
+	// ─────────────────────────────────────────────
+	// Cluster-Scoped Target Authorization (typed Check lane)
+	// ─────────────────────────────────────────────
+
+	// Issue #2670: BR-SCOPE-001 FR-SCOPE-004 Option A. A labelable cluster-scoped
+	// target authorizes through its own observed kubernaut.ai/managed label. The
+	// 2-level hierarchy degenerates to level 1 because no namespace exists to
+	// inherit. ScopeUnsupported is reserved for the non-labelable pseudo-target
+	// (DD-GATEWAY-CLUSTER-SCOPE-SIGNALS). AC-4: only verified_managed authorizes.
+	// AC-6: no inherited privilege. SI-10: invalid input fails closed.
+	Describe("Cluster-Scoped Target Authorization (BR-SCOPE-001 FR-SCOPE-004)", func() {
+
+		It("UT-SCOPE-2670-001 [BR-SCOPE-001, AC-4]: a labeled Node is verified managed from its own resource label", func() {
+			node := makeNode("worker-01", map[string]string{
+				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
+			})
+			setup(node)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-01"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged), "#2670: a labeled Node must authorize remediation")
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
+		})
+
+		It("UT-SCOPE-2670-002 [BR-SCOPE-001, AC-6]: an unlabeled Node is verified unmanaged with no namespace to inherit", func() {
+			ns := makeNamespace("worker-02", map[string]string{
+				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
+			})
+			node := makeNode("worker-02", nil)
+			setup(ns, node)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-02"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedUnmanaged))
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceNone), "a coincidentally named managed Namespace must never authorize a Node")
+		})
+
+		It("UT-SCOPE-2670-003 [BR-SCOPE-001]: an explicitly opted-out Node is verified unmanaged from its resource label", func() {
+			node := makeNode("worker-03", map[string]string{
+				scope.ManagedLabelKey: scope.ManagedLabelValueFalse,
+			})
+			setup(node)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-03"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedUnmanaged))
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
+		})
+
+		It("UT-SCOPE-2670-004 [BR-SCOPE-001, SI-10]: an invalid Node label fails closed instead of authorizing", func() {
+			node := makeNode("worker-04", map[string]string{
+				scope.ManagedLabelKey: "yes",
+			})
+			setup(node)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "worker-04"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeInvalid))
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+			Expect(result.Reason).To(Equal(scope.ReasonInvalidResourceLabel))
+		})
+
+		It("UT-SCOPE-2670-005 [BR-SCOPE-001]: an absent Node is a missing observation, never verified unmanaged", func() {
+			setup()
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Node", Name: "deleted-node"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeUnavailable))
+			Expect(result.Reason).To(Equal(scope.ReasonObservationMissing))
+			Expect(result.Retryable).To(BeTrue())
+		})
+
+		It("UT-SCOPE-2670-006 [BR-SCOPE-001, SI-10]: a cluster-scoped kind carrying a namespace is rejected as ambiguous", func() {
+			node := makeNode("worker-06", map[string]string{
+				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
+			})
+			setup(node)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Namespace: "default", Kind: "Node", Name: "worker-06"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeInvalid), "a cluster-scoped kind cannot gain scope from a supplied namespace")
+			Expect(result.Reason).To(Equal("invalid_cluster_scoped_namespace"))
+		})
+
+		It("UT-SCOPE-2670-007 [BR-SCOPE-001, AC-4]: a labeled PersistentVolume is verified managed", func() {
+			pv := &corev1.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pvc-abc123",
+					Labels: map[string]string{
+						scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
+					},
+				},
+			}
+			setup(pv)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Kind: "PersistentVolume", Name: "pvc-abc123"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
+		})
+
+		It("UT-SCOPE-2670-008 [BR-SCOPE-001, AC-4]: a labeled cluster-scoped custom resource is verified managed", func() {
+			gvk := schema.GroupVersionKind{Group: "storage.example.com", Version: "v1", Kind: "ClusterVolume"}
+			cr := &unstructured.Unstructured{}
+			cr.SetGroupVersionKind(gvk)
+			cr.SetName("volume-a")
+			cr.SetLabels(map[string]string{scope.ManagedLabelKey: scope.ManagedLabelValueTrue})
+			k8sClient = fake.NewClientBuilder().WithScheme(runtime.NewScheme()).WithObjects(cr).Build()
+			mgr = scope.NewManager(k8sClient)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind, Name: "volume-a"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged), "#2670: a labeled cluster-scoped CRD must not be refused as unsupported")
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
+		})
+
+		It("UT-SCOPE-2670-009 [BR-SCOPE-001]: a non-labelable cluster-level pseudo-target stays unsupported", func() {
+			setup()
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Kind: "ClusterScope", Name: "ClusterNotUpgradeable"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeUnsupported), "a cluster-level intent has no backing object to carry a label")
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+			Expect(result.Reason).To(Equal("cluster_scoped_target_unsupported"))
+		})
+
+		It("UT-SCOPE-2670-010 [BR-SCOPE-001, SI-10]: a namespace-less identity is terminal for a known namespaced kind and an observation gap for an unknown kind", func() {
+			setup()
+
+			deployment, err := mgr.Check(ctx, scope.ResourceIdentity{Group: "apps", Version: "v1", Kind: "Deployment", Name: "orphan"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(deployment.State).To(Equal(scope.ScopeInvalid))
+			Expect(deployment.Reason).To(Equal("namespaced_target_without_namespace"))
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Group: "storage.example.com", Version: "v1", Kind: "ClusterVolume", Name: "volume-b"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeUnavailable))
+			Expect(result.Reason).To(Equal(scope.ReasonObservationMissing))
+		})
+
+		It("UT-SCOPE-2670-011 [BR-SCOPE-001]: a Namespace object is a legitimate target whose own label decides", func() {
+			ns := makeNamespace("tenant-a", map[string]string{
+				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
+			})
+			setup(ns)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Kind: "Namespace", Name: "tenant-a"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged), "a namespace-level alert targets the object; its own label applies at level 1")
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
+		})
+	})
+
+	// Issue #2670 §2 D5: PVC is namespaced, so it keeps the 2-level hierarchy and
+	// must never be added to clusterScopedKinds (that would reject every PVC via
+	// the cluster-scoped-kind-with-namespace guard).
+	Describe("PersistentVolumeClaim target (BR-SCOPE-001)", func() {
+
+		makePVC := func(namespace, name string, labels map[string]string) *corev1.PersistentVolumeClaim {
+			return &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+					Name:      name,
+					Labels:    labels,
+				},
+			}
+		}
+
+		It("UT-SCOPE-2670-013 [BR-SCOPE-001]: a PVC keeps the namespaced hierarchy and is terminal without a namespace", func() {
+			ns := makeNamespace("data", map[string]string{
+				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
+			})
+			labeled := makePVC("data", "data-service-data", map[string]string{
+				scope.ManagedLabelKey: scope.ManagedLabelValueTrue,
+			})
+			inherited := makePVC("data", "logs-data", nil)
+			setup(ns, labeled, inherited)
+
+			result, err := mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Namespace: "data", Kind: "PersistentVolumeClaim", Name: "data-service-data"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceResourceLabel))
+
+			result, err = mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Namespace: "data", Kind: "PersistentVolumeClaim", Name: "logs-data"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeVerifiedManaged))
+			Expect(result.Provenance).To(Equal(scope.ScopeSourceNamespaceLabel))
+
+			result, err = mgr.Check(ctx, scope.ResourceIdentity{Version: "v1", Kind: "PersistentVolumeClaim", Name: "logs-data"})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.State).To(Equal(scope.ScopeInvalid))
+			Expect(result.Reason).To(Equal("namespaced_target_without_namespace"))
 		})
 	})
 
