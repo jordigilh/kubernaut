@@ -638,7 +638,6 @@ type operatorAuthWebhookSpec struct{}
 type operatorFleetSpec struct {
 	Enabled    bool                     `yaml:"enabled"`
 	MCPGateway operatorFleetGatewaySpec `yaml:"mcpGateway"`
-	ScopeCheck operatorFleetScopeSpec   `yaml:"scopeCheck"`
 	OAuth2     operatorFleetOAuth2Spec  `yaml:"oauth2"`
 }
 
@@ -646,10 +645,6 @@ type operatorFleetGatewaySpec struct {
 	Endpoint  string `yaml:"endpoint"`
 	Type      string `yaml:"type"`
 	Namespace string `yaml:"namespace,omitempty"`
-}
-
-type operatorFleetScopeSpec struct {
-	Backend string `yaml:"backend"`
 }
 
 type operatorFleetOAuth2Spec struct {
@@ -872,7 +867,7 @@ func applyOperatorCRFeatureOverrides(spec *operatorCRSpec, options OperatorCROpt
 		return err
 	}
 	if options.Fleet != nil && options.Fleet.Enabled {
-		spec.Fleet = &operatorFleetSpec{Enabled: true, MCPGateway: operatorFleetGatewaySpec{Endpoint: options.Fleet.GatewayEndpoint, Type: options.Fleet.GatewayType, Namespace: options.Fleet.GatewayNamespace}, ScopeCheck: operatorFleetScopeSpec{Backend: options.Fleet.ScopeBackend}, OAuth2: operatorFleetOAuth2Spec{TokenURL: options.Fleet.TokenURL, CredentialsSecretRef: options.Fleet.ReadCredentialsSecret, Scopes: options.Fleet.Scopes}}
+		spec.Fleet = &operatorFleetSpec{Enabled: true, MCPGateway: operatorFleetGatewaySpec{Endpoint: options.Fleet.GatewayEndpoint, Type: options.Fleet.GatewayType, Namespace: options.Fleet.GatewayNamespace}, OAuth2: operatorFleetOAuth2Spec{TokenURL: options.Fleet.TokenURL, CredentialsSecretRef: options.Fleet.ReadCredentialsSecret, Scopes: options.Fleet.Scopes}}
 		spec.WorkflowExecution = &operatorWorkflowExecutionSpec{Fleet: &operatorWorkflowFleetSpec{OAuth2CredentialsSecretRef: options.Fleet.WriteCredentialsSecret}}
 	}
 	return nil
