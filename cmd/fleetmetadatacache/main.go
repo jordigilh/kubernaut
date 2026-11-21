@@ -416,8 +416,12 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 	deps.clusterRegistry, deps.registrationGuard, deps.readiness = clusterRegistry, registrationGuard, readinessSnapshot
 	syncer, err := buildFMCSyncer(cfg, deps, logger)
 	if err != nil {
-		logger.Error(err, "Failed to build the FMC sync source")
-		os.Exit(1)
+		// Return the error so main's dependency-wiring choreography runs
+		// (bootstrap health server shutdown, "Failed to construct FMC
+		// dependencies", exit code 1). An os.Exit here would skip both
+		// (IT-FMC-SRC-2661-005).
+		deps.close()
+		return nil, fmt.Errorf("build FMC sync source: %w", err)
 	}
 	deps.syncer = syncer
 	return deps, nil

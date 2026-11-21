@@ -303,6 +303,9 @@ func (w *acmWalk) addPage(rawItems []map[string]json.RawMessage, clusterID strin
 		if uid == "" {
 			return observationError(observation.FailureMalformedContent, fmt.Errorf("ACM page item has no _uid"))
 		}
+		// Bytewise comparison, matching `orderBy: "uid asc"` for the
+		// lowercase-hex uids Search returns; a collation divergence would
+		// fail the kind closed here, never publish a reordered walk.
 		if w.lastUID != "" && uid <= w.lastUID {
 			return observationError(observation.FailureMalformedContent,
 				fmt.Errorf("ACM traversal uid %q does not follow %q", uid, w.lastUID))
@@ -557,6 +560,10 @@ func projectedLabelState(labelValue json.RawMessage) (scope.LabelState, bool) {
 	case occurrences == 1:
 		return found, true
 	default:
+		// Deliberate asymmetry with fallbackKeyState: a present-but-empty
+		// semicolon projection is a well-formed "object has no labels"
+		// answer, so it is Absent — while a present-but-empty legacy key is
+		// unusable data and Invalid. Neither can become true or false.
 		return scope.LabelStateAbsent, true
 	}
 }
@@ -640,9 +647,9 @@ func labelStateOf(value string) scope.LabelState {
 		return scope.LabelStateTrue
 	case "false":
 		return scope.LabelStateFalse
-	case "":
-		return scope.LabelStateAbsent
 	default:
+		// Callers pre-check the empty value (an empty managed value is
+		// corruption, never absence), so it lands here as invalid too.
 		return scope.LabelStateInvalid
 	}
 }

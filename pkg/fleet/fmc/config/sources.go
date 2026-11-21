@@ -32,6 +32,13 @@ import (
 // `declared` records that a valid block was present, so presence can never
 // masquerade as absence and silently fall back to the MCP collector
 // (D4.1a rule 2).
+//
+// Known residual, one level above this guard: the strict decoding covers the
+// `sources` subtree only, because D4.1a keeps every other root key's
+// historical lenient decoding. A root-level typo of the key itself
+// (`Sources:` instead of `sources:`) is therefore dropped by the lenient
+// decode and selects the MCP collector. D4.1a's scope stops at the subtree;
+// closing the root level would need its own decision.
 type SourcesConfig struct {
 	ACM      *ACMSourceConfig `yaml:"acm,omitempty"`
 	declared bool

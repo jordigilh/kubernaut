@@ -118,6 +118,11 @@ type ACMHTTPSearch struct {
 
 // ReloadCA installs rotated CA material on the live client. A no-op when the
 // deployment uses system trust.
+//
+// Boundary (TEST_PLAN §13): no production watcher is wired to this method
+// yet, so a CA rotation currently requires a process restart; until a watcher
+// exists, handshakes fail closed after rotation (incomplete observations, the
+// previous proof ages out) rather than trusting the new CA automatically.
 func (s *ACMHTTPSearch) ReloadCA(pemData []byte) error {
 	if s.reloader == nil {
 		return nil
@@ -163,11 +168,11 @@ func (s *ACMHTTPSearch) Search(ctx context.Context, options ACMSearchOptions) (A
 		Variables: map[string]any{"input": []acmSearchInput{acmSearchInputFor(options)}},
 	})
 	if err != nil {
-		return ACMSearchPage{}, fmt.Errorf("build ACM search request: %w", err)
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("build ACM search request: %w", err))
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint+acmGraphQLPath, bytes.NewReader(body))
 	if err != nil {
-		return ACMSearchPage{}, fmt.Errorf("build ACM search request: %w", err)
+		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("build ACM search request: %w", err))
 	}
 	request.Header.Set("Content-Type", "application/json")
 	response, err := s.client.Do(request)
