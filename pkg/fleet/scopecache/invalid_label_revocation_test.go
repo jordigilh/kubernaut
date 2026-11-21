@@ -164,48 +164,52 @@ var _ = Describe("Invalid-label revocation on the fenced lane (BR-SCOPE-001, #26
 		Expect(result.Reason).To(Equal("invalid_namespace_label"))
 	})
 
-	It("UT-FMC-2686-003 [BR-SCOPE-001, #2686]: a committed invalid record revokes a previously verified-managed target (AC-6, SI-10)", func() {
-		f := newStagedRepairFixture()
-		DeferCleanup(f.server.Close)
-		DeferCleanup(f.store.Close)
+	DescribeTable("UT-FMC-2686-003 [BR-SCOPE-001, #2686]: a committed invalid record revokes a previously verified target (AC-6, SI-10)",
+		func(previouslyCommitted scope.LabelState, previouslyVerified scope.ScopeState) {
+			f := newStagedRepairFixture()
+			DeferCleanup(f.server.Close)
+			DeferCleanup(f.store.Close)
 
-		info := registry.ClusterInfo{ID: f.part.ClusterID, RegistrationUID: f.part.RegistrationUID}
-		identity, managed := f.identity("checkout", "true")
-		target := scope.ResourceIdentity{
-			ClusterID: identity.ClusterID, Group: identity.Group, Version: identity.Version,
-			Kind: identity.Kind, Namespace: identity.Namespace, Name: identity.Name,
-		}
+			info := registry.ClusterInfo{ID: f.part.ClusterID, RegistrationUID: f.part.RegistrationUID}
+			identity, committed := f.identity("checkout", string(previouslyCommitted))
+			target := scope.ResourceIdentity{
+				ClusterID: identity.ClusterID, Group: identity.Group, Version: identity.Version,
+				Kind: identity.Kind, Namespace: identity.Namespace, Name: identity.Name,
+			}
 
-		start1, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
-			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
-		})
-		Expect(err).ToNot(HaveOccurred())
-		f.commitGeneration(start1, []scopecache.RepairObservation{managed})
+			start1, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+				Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			f.commitGeneration(start1, []scopecache.RepairObservation{committed})
 
-		readiness := cleanReadiness(f.part, info, 1, f.fence, start1.Generation)
-		client, err := scopecache.NewClientWithStatusStore(f.store, &staticRegistrationGuard{
-			snapshot: registry.RegistrationSnapshot{Info: info, Revision: 1}, found: true,
-		}, readiness)
-		Expect(err).ToNot(HaveOccurred())
+			readiness := cleanReadiness(f.part, info, 1, f.fence, start1.Generation)
+			client, err := scopecache.NewClientWithStatusStore(f.store, &staticRegistrationGuard{
+				snapshot: registry.RegistrationSnapshot{Info: info, Revision: 1}, found: true,
+			}, readiness)
+			Expect(err).ToNot(HaveOccurred())
 
-		authorized, err := client.Check(f.ctx, target)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(authorized.State).To(Equal(scope.ScopeVerifiedManaged), "the committed true record still authorizes before the label breaks")
+			authorized, err := client.Check(f.ctx, target)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(authorized.State).To(Equal(previouslyVerified), "the committed record still decides before the label breaks")
 
-		_, invalid := f.identity("checkout", "invalid")
-		start2, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
-			Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
-		})
-		Expect(err).ToNot(HaveOccurred())
-		f.commitGeneration(start2, []scopecache.RepairObservation{invalid})
-		publishCleanGeneration(readiness, f.part, info, 1, f.fence, start2.Generation)
+			_, invalid := f.identity("checkout", "invalid")
+			start2, err := f.store.BeginRepair(f.ctx, scopecache.BeginRepairRequest{
+				Partition: f.part, RegistrationUID: f.part.RegistrationUID, ExpectedRegistryRevision: 1, WriterFence: f.fence,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			f.commitGeneration(start2, []scopecache.RepairObservation{invalid})
+			publishCleanGeneration(readiness, f.part, info, 1, f.fence, start2.Generation)
 
-		revoked, err := client.Check(f.ctx, target)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(revoked.State).To(Equal(scope.ScopeInvalid), "an invalid managed label must revoke the authorization, not retain the last committed state")
-		Expect(revoked.Provenance).To(Equal(scope.ScopeSourceUnavailable))
-		Expect(revoked.Reason).To(Equal("invalid_resource_label"))
-	})
+			revoked, err := client.Check(f.ctx, target)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(revoked.State).To(Equal(scope.ScopeInvalid), "an invalid managed label must revoke the previous outcome, not retain the last committed state")
+			Expect(revoked.Provenance).To(Equal(scope.ScopeSourceUnavailable))
+			Expect(revoked.Reason).To(Equal("invalid_resource_label"))
+		},
+		Entry("revokes a previously verified-managed target (committed true)", scope.LabelStateTrue, scope.ScopeVerifiedManaged),
+		Entry("replaces a previously verified-unmanaged classification (committed false)", scope.LabelStateFalse, scope.ScopeVerifiedUnmanaged),
+	)
 
 	It("UT-FMC-2686-004 [BR-SCOPE-001, #2686]: a partition readiness failure is never flattened into the invalid outcome", func() {
 		f := newStagedRepairFixture()

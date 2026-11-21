@@ -18,6 +18,7 @@ package fmc_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -34,13 +35,13 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-// invalidLabelReader serves one complete source scan whose single item carries
-// an explicitly invalid managed-label state (e.g. kubernaut.ai/managed:
-// "banana"), exactly what observation.ObservedItem.LabelState preserves for
-// the syncer (#2686). A non-nil outOfWhitelist state exercises the write
-// boundary's rejection of states outside knownLabelState.
+// invalidLabelReader serves one complete source scan whose items carry
+// explicit managed-label states (e.g. kubernaut.ai/managed: "banana"),
+// exactly what observation.ObservedItem.LabelState preserves for the syncer
+// (#2686). states[i] is the label state served for item i; an out-of-
+// whitelist state exercises the write boundary's rejection.
 type invalidLabelReader struct {
-	outOfWhitelist scope.LabelState
+	states []scope.LabelState
 }
 
 func (r *invalidLabelReader) Get(_ context.Context, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
@@ -52,27 +53,30 @@ func (r *invalidLabelReader) List(_ context.Context, _ client.ObjectList, _ ...c
 }
 
 func (r *invalidLabelReader) ListObserved(_ context.Context, _ observation.ListRequest) (observation.ListObservation, error) {
-	pod := unstructured.Unstructured{Object: map[string]interface{}{
-		"apiVersion": "v1",
-		"kind":       "Pod",
-		"metadata": map[string]interface{}{
-			"name":      "observed",
-			"namespace": "default",
-			"labels":    map[string]interface{}{"kubernaut.ai/managed": "banana"},
-		},
-	}}
-	state := scope.LabelStateInvalid
-	if r.outOfWhitelist != "" {
-		state = r.outOfWhitelist
+	items := make([]observation.ObservedItem, 0, len(r.states))
+	for index, state := range r.states {
+		pod := unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"metadata": map[string]interface{}{
+				"name":      fmt.Sprintf("observed-%d", index),
+				"namespace": "default",
+				"labels":    map[string]interface{}{"kubernaut.ai/managed": "banana"},
+			},
+		}}
+		items = append(items, observation.ObservedItem{
+			Object: pod, LabelsPresent: true, LabelState: state,
+		})
 	}
 	return observation.ListObservation{
-		Items: []observation.ObservedItem{{
-			Object:        pod,
-			LabelsPresent: true,
-			LabelState:    state,
-		}},
-		Complete: true, PageCount: 1, ItemCount: 1,
+		Items: items, Complete: true, PageCount: 1, ItemCount: len(items),
 	}, nil
+}
+
+func invalidLabelReaderFactory(states ...scope.LabelState) fmc.ObservedReaderFactory {
+	return fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
+		return &invalidLabelReader{states: states}, nil
+	})
 }
 
 // #2686: an invalid managed-label observation is a complete, decisive source
@@ -84,12 +88,9 @@ var _ = Describe("FMC syncer invalid-label observation (BR-SCOPE-001, #2686)", f
 
 	It("UT-FMC-2686-005 [BR-SCOPE-001, #2686]: the legacy write lane records an invalid label state instead of failing the sync", func() {
 		writer := &stubWriter{}
-		readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
-			return &invalidLabelReader{}, nil
-		})
 		syncer := fmc.NewSyncerWithReaderFactory(
 			newStubRegistry(registry.ClusterInfo{ID: "cluster-a"}),
-			readerFactory,
+			invalidLabelReaderFactory(scope.LabelStateInvalid),
 			writer,
 			fmc.Config{KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}},
 			logr.Discard(),
@@ -99,7 +100,7 @@ var _ = Describe("FMC syncer invalid-label observation (BR-SCOPE-001, #2686)", f
 		Expect(syncer.SyncCluster(ctx, registry.ClusterInfo{ID: "cluster-a"})).
 			To(Succeed(), "an invalid label value is a completed observation, not a failed sync")
 
-		key, err := scopecache.BuildKey("cluster-a", "", "v1", "Pod", "default", "observed")
+		key, err := scopecache.BuildKey("cluster-a", "", "v1", "Pod", "default", "observed-0")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(writer.observedStates[key]).To(Equal(scope.LabelStateInvalid),
 			"the legacy cache value must carry the invalid state so readers fail closed")
@@ -109,10 +110,7 @@ var _ = Describe("FMC syncer invalid-label observation (BR-SCOPE-001, #2686)", f
 		info := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a", ToolPrefix: "cluster-a__"}
 		statusStore := &lifecycleStatusStore{}
 		lease := &lifecycleLease{fence: scopecache.WriterFence{HolderPodUID: "pod-a", HolderSessionUID: "session-a", LeaseEpoch: 1, Fence: 1}}
-		readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
-			return &invalidLabelReader{}, nil
-		})
-		syncer := newLifecycleSyncer(newFencedRegistry(info, 1), readerFactory, statusStore, lease, []string{"Pod"})
+		syncer := newLifecycleSyncer(newFencedRegistry(info, 1), invalidLabelReaderFactory(scope.LabelStateInvalid), statusStore, lease, []string{"Pod"})
 
 		Expect(syncer.SyncCluster(ctx, info)).To(Succeed(),
 			"a complete source scan whose label value is invalid must still repair and commit")
@@ -124,23 +122,37 @@ var _ = Describe("FMC syncer invalid-label observation (BR-SCOPE-001, #2686)", f
 		Expect(statusStore.repairRequest.Observations.Items[0].LabelsPresent).To(BeTrue())
 	})
 
-	It("UT-FMC-2686-009 [BR-SCOPE-001, #2686]: the legacy write lane rejects a label state outside the write boundary instead of writing it raw", func() {
+	It("UT-FMC-2686-009 [BR-SCOPE-001, #2686]: the legacy write lane rejects a label state outside the write boundary without partial writes", func() {
 		writer := &stubWriter{}
-		readerFactory := fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
-			return &invalidLabelReader{outOfWhitelist: scope.LabelState("bogus")}, nil
-		})
 		syncer := fmc.NewSyncerWithReaderFactory(
 			newStubRegistry(registry.ClusterInfo{ID: "cluster-a"}),
-			readerFactory,
+			invalidLabelReaderFactory(scope.LabelStateTrue, scope.LabelState("bogus")),
 			writer,
 			fmc.Config{KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}},
 			logr.Discard(),
 			fmc.NewMetrics(prometheus.NewPedanticRegistry()),
 		)
 
+		// A valid item in front of the non-conforming one proves the whole
+		// observation set is validated before any cache mutation: neither
+		// the valid item nor the bogus one may be written.
 		err := syncer.SyncCluster(ctx, registry.ClusterInfo{ID: "cluster-a"})
 		Expect(err).To(MatchError(ContainSubstring("unsupported observation label state")),
 			"both write lanes share knownLabelState as the single write-boundary rule")
-		Expect(writer.keysWritten).To(BeEmpty(), "a rejected observation must not reach the cache")
+		Expect(writer.keysWritten).To(BeEmpty(), "a rejected observation set must not reach the cache, not even its valid prefix")
+
+		// The same syncer must recover on the next, conforming scan: the
+		// rejection is a per-cycle outcome, not a poisoned writer.
+		recovering := fmc.NewSyncerWithReaderFactory(
+			newStubRegistry(registry.ClusterInfo{ID: "cluster-a"}),
+			invalidLabelReaderFactory(scope.LabelStateTrue, scope.LabelStateFalse),
+			writer,
+			fmc.Config{KeyTTL: 30 * time.Second, ResourceKinds: []string{"Pod"}},
+			logr.Discard(),
+			fmc.NewMetrics(prometheus.NewPedanticRegistry()),
+		)
+		Expect(recovering.SyncCluster(ctx, registry.ClusterInfo{ID: "cluster-a"})).
+			To(Succeed(), "a conforming scan after a rejected one must still write")
+		Expect(writer.keysWritten).To(HaveLen(2), "both valid observations must be written after recovery")
 	})
 })

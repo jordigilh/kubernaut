@@ -74,8 +74,9 @@ committed repair, instead of retaining the last-good record until its TTL (45s d
 Local and fenced lanes now share the same rule (the local `scope.Manager` was already
 decisive on invalid labels), and readiness/partition failures keep their own outcomes
 (`partition_unavailable`/`partition_invalid`) — they are never flattened into `invalid`.
-A structurally malformed source payload still fails the scan (source incomplete), which
-keeps the unavailable outcome.
+A structurally malformed source payload still fails the scan as incomplete. The scan
+commits no observation, so the committed record and its clean proof remain readable
+until the next committed repair or until their TTL expires.
 
 ## Alternatives considered
 

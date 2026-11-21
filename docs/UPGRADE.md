@@ -99,7 +99,8 @@ mapping turns it into `ScopeInvalid` (`invalid_resource_label`) immediately — 
 fail-closed rule the local lane applies. Readiness and partition failures are unchanged:
 they keep returning `unavailable` (`partition_unavailable`/`partition_invalid`) and are
 never flattened into `invalid`. A structurally malformed source payload still fails the
-scan as incomplete (unavailable).
+scan as incomplete; the scan commits no observation, so the committed record and its
+clean proof remain readable until the next committed repair or their TTL expires.
 
 ### `ScopeResult.Managed` is removed
 

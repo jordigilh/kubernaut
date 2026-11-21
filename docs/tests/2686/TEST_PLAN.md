@@ -79,7 +79,7 @@ No new components; the change relaxes validation on the existing wired chain.
 |----|----------|----------|----------|
 | UT-FMC-2686-001 | `Observation.Validate` and `RepairObservation.Validate` accept `LabelStateInvalid` | no error (an invalid observation is writable) | yes |
 | UT-FMC-2686-002 | staged repair commits an `invalid` observation over a previously committed `true` record; `ReadVerified` serves it | `ReadVerified` with `Record.LabelState == invalid` (Lua write + read whitelist + Go decode) | yes |
-| UT-FMC-2686-003 | `Client.Check` (production constructor `NewClientWithStatusStore`) against the committed invalid record | first commit `true` → `ScopeVerifiedManaged`; after the invalid commit → `ScopeInvalid`/`invalid_resource_label` (the revocation) | yes |
+| UT-FMC-2686-003 | `Client.Check` (production constructor `NewClientWithStatusStore`) against the committed invalid record | DescribeTable over the previously committed state: `true` → `ScopeVerifiedManaged`, `false` → `ScopeVerifiedUnmanaged`, then after the invalid commit both → `ScopeInvalid`/`invalid_resource_label` (issue-required `true` and `false` transitions) | yes |
 | UT-FMC-2686-004 | committed invalid record exists but the partition is not in the readiness view | `ScopeUnavailable`/`partition_unavailable` — readiness failures are never flattened into `invalid` | yes |
 | UT-FMC-2686-007 | committed invalid **Namespace** label with an unlabeled resource (fenced inheritance) | `ScopeInvalid`/`invalid_namespace_label` — the inheritance branch became reachable with committed invalid records | yes |
 | UT-FMC-2686-008 | legacy reader lane: committed invalid resource label; absent resource label inheriting an invalid namespace label | `ScopeInvalid`/`invalid_resource_label`; `ScopeInvalid`/`invalid_namespace_label` | yes |
@@ -90,7 +90,7 @@ No new components; the change relaxes validation on the existing wired chain.
 |----|----------|----------|----------|
 | UT-FMC-2686-005 | legacy lane: source item with invalid label state | sync succeeds; `SetObservation` receives `LabelStateInvalid` (legacy readers fail closed) | yes |
 | UT-FMC-2686-006 | repair lane: full lifecycle `SyncCluster` with an invalid-label item | sync succeeds (no error); the repair request carries the observation with `LabelState == invalid` | yes |
-| UT-FMC-2686-009 | legacy write lane: reader emits a label state outside `knownLabelState` | sync fails closed; nothing is written to the cache (both lanes share the single write-boundary rule) | yes |
+| UT-FMC-2686-009 | legacy write lane: reader emits a valid item followed by one outside `knownLabelState` | sync fails closed with **no** cache write (whole-set pre-write validation, not even the valid prefix); a subsequent conforming scan on a fresh syncer succeeds and writes both observations | yes |
 
 ### Integration (wiring)
 
@@ -127,6 +127,17 @@ golangci-lint run --timeout=5m
 go test ./pkg/fleet/scopecache/... ./pkg/fleet/fmc/... -count=1
 go test ./test/integration/fleetmetadatacache/... -count=1   # requires envtest/valkey per suite README
 ```
+
+## Lane alignment
+
+- **Local lane**: `pkg/shared/scope/manager.go` was already decisive on invalid labels
+  (`ScopeInvalid`/`invalid_resource_label`); no change was needed.
+- **Fenced lane**: this PR (six enforcement points above).
+- **Direct ACM lane**: already produces `LabelStateInvalid` for malformed/duplicate label
+  projections (`pkg/fleet/acm/client.go` `searchManagedLabels`) and maps it to a fail-closed
+  `ScopeInvalid` — proven by the pre-existing `UT-ACM-2592-LABEL-001`
+  (`pkg/fleet/acm/client_test.go`, "invalid label is invalid, never verified unmanaged").
+  No ACM change was required; the lane is aligned by construction.
 
 ## Out of scope
 
