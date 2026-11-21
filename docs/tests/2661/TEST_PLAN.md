@@ -368,10 +368,28 @@ the true pre-wiring baselines rather than simulated:
   production context seam (Status note above); `UT-FMC-SRC-2661-024` now
   proves the repair path's own deadline-setting that the IT could not observe.
 
-**b1 (config and collector unit slices).** RED evidence rests on the owning
-sessions' reports; those commits are end states (spec and code together), so
-the RED runs are not replayable from history. Replaying them would mean
-re-deriving committed unit work and requires explicit approval.
+**b1 (config and collector unit slices).** RED evidence was recovered by a
+**verification replay** (2026-11-20): the committed specs were run against the
+pre-implementation states, which modifies nothing that survives, so the final
+tree is bit-identical by construction:
+
+- *Greenfield RED*: with `config/sources.go` absent, the config package does
+  not compile (`SourcesConfig`, `decodeSourcesStrict`, `validateACM`
+  undefined); with `acm_source.go`/`acm_search.go` absent, the fmc package
+  does not compile — the specs' contracts do not exist without the
+  implementation.
+- *Review-fix RED, round 2* (`fa4655087`): its three per-key-projection specs
+  fail against `457c37f9c`'s pre-fix code (null/numeric/empty values laundered
+  into decisions instead of invalid).
+- *Review-fix RED, round 3* (`6f065422f`): its three ambiguity specs fail
+  against `fa4655087`'s pre-fix code (two managed-label sources and a
+  space-adjacent separator read as clean states instead of corruption).
+
+A **re-derivation** replay (delete the code and re-implement from the specs)
+was considered and rejected: the outcome cannot be assured identical — the
+review-fix refinements and incidental structure could diverge, and it would
+invalidate the SHAs this record cites. The verification replay provides the
+RED evidence the methodology requires without that risk.
 
 **Standing rule for the remaining phases** (c, REFACTOR, Live): strict
 RED-first — write the failing spec, show it failing for the right reason,
