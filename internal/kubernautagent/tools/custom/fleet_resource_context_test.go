@@ -221,7 +221,7 @@ var _ = Describe("UT-KA-FLEET-031: overlayClientReader (BR-INTEGRATION-1489)", f
 // resolution — issue #2306.
 var _ = Describe("UT-KA-FLEET-032: overlayK8sClient (BR-INTEGRATION-1489)", func() {
 	Describe("GetOwnerChain", func() {
-		It("wraps ResolveTopLevelOwner's result into a single-entry chain", func() {
+		It("wraps ResolveTopLevelOwnerIdentity's result into a single-entry chain", func() {
 			getTool := &fakeGetTool{
 				responseJSON: `{"apiVersion":"apps/v1","kind":"ReplicaSet","metadata":{"name":"api-server-abc","namespace":"production",` +
 					`"ownerReferences":[{"apiVersion":"apps/v1","kind":"Deployment","name":"api-server","uid":"deploy-uid-1","controller":true}]}}`,

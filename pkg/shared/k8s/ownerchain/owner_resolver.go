@@ -67,10 +67,10 @@ const ownerLookupTimeout = 5 * time.Second
 // here would eagerly start informers for nothing (issue #2670).
 // Shared pattern across Gateway scope management and owner chain resolution.
 //
-// Deprecated: Superseded by a KindResolver's KindToGVR() (#1029).
-// Retained as a nil-registry fallback for tests and the exported KindToGroup()/
-// OwnerChainCacheObjects() helpers. Will be removed in a dedicated cleanup PR
-// once all consumers migrate to a KindResolver.
+// Deprecated: Superseded by a KindResolver's KindToGVR() (#1029). Retained
+// only for the exported KindToGroup()/OwnerChainCacheObjects() helpers. Will
+// be removed in a dedicated cleanup PR once all consumers migrate to a
+// KindResolver.
 var kindToGroup = map[string]string{
 	"Pod":              "",
 	"Node":             "",
@@ -197,16 +197,6 @@ type K8sOwnerResolver struct {
 	logger         logr.Logger
 }
 
-// OwnerResolution is the top-level controller resolved from a Kubernetes
-// resource, including the API version carried by its ownerReference. The API
-// version is needed by consumers that carry resource provenance across service
-// boundaries (for example, fleet-target enrichment).
-type OwnerResolution struct {
-	Kind       string
-	Name       string
-	APIVersion string
-}
-
 // NewK8sOwnerResolver creates a new owner resolver backed by the metadata-only
 // informer cache. Pass the same ctrlClient used by scope.NewManager().
 // A logr.Logger is required for diagnostics (the gateway does not use
@@ -244,79 +234,6 @@ func WithRegistry(reg KindResolver) OwnerResolverOption {
 	return func(r *K8sOwnerResolver) {
 		r.registry = reg
 	}
-}
-
-// ResolveTopLevelOwner traverses ownerReferences to find the top-level controller.
-//
-// Algorithm (same as pkg/signalprocessing/ownerchain/builder.go:Build):
-//  1. Fetch resource metadata via cached PartialObjectMetadata
-//  2. Find ownerReference with controller: true
-//  3. Repeat until no more controller owners or MaxOwnerChainDepth reached
-//  4. Return the last owner found (top-level controller)
-//
-// Graceful degradation:
-//   - Unknown kind (not in kindToGroup): returns error (caller falls back to involvedObject)
-//   - Resource not found: returns error (pod may have been deleted)
-//   - No ownerReferences: returns the resource itself (standalone pod, bare deployment)
-//   - Max depth reached: returns deepest owner found (prevents infinite loops)
-func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (ownerKind, ownerName string, err error) {
-	resolution, err := r.ResolveTopLevelOwnerWithAPIVersion(ctx, namespace, kind, name)
-	if err != nil {
-		return "", "", err
-	}
-	return resolution.Kind, resolution.Name, nil
-}
-
-// ResolveTopLevelOwnerWithAPIVersion traverses ownerReferences to find the
-// top-level controller and preserves the API version from the ownerReference
-// that selected it. ResolveTopLevelOwner remains the compatibility wrapper for
-// callers that only need kind and name.
-func (r *K8sOwnerResolver) ResolveTopLevelOwnerWithAPIVersion(ctx context.Context, namespace, kind, name string) (OwnerResolution, error) {
-	logger := r.logger
-
-	// Preserve the kind-only compatibility policy used by KA. It is not GVK
-	// authority for Gateway, which uses ResolveTopLevelOwnerIdentity (DD-FLEET-014).
-	currentKind, currentName := kind, name
-	if currentKind == "Service" {
-		podKind, podName, resolved := r.resolveServiceToWorkload(ctx, namespace, currentName)
-		if !resolved {
-			return OwnerResolution{Kind: currentKind, Name: currentName, APIVersion: "v1"}, nil
-		}
-		currentKind, currentName = podKind, podName
-	}
-	resolution := OwnerResolution{Kind: currentKind, Name: currentName}
-	if gvk, known := r.resolveGVK(currentKind); known {
-		resolution.APIVersion = gvk.GroupVersion().String()
-	}
-	foundOwner := false
-	for i := 0; i < MaxOwnerChainDepth; i++ {
-		gvk, known := r.resolveGVK(currentKind)
-		if !known || (r.registry != nil && !r.registry.IsCoreBatchAppsKind(currentKind)) {
-			logger.V(1).Info("Unknown or CRD kind, stopping compatibility traversal", "kind", currentKind, "level", i)
-			break
-		}
-		step := r.traverseOneOwnerLevel(ctx, namespace, gvk, currentName, foundOwner, i)
-		if step.err != nil {
-			return OwnerResolution{}, step.err
-		}
-		if step.advanced {
-			resolution.Kind, resolution.Name = step.nextKind, step.nextName
-			resolution.APIVersion = step.nextAPIVersion
-			if ownerGVK, ownerKnown := r.resolveGVK(step.nextKind); resolution.APIVersion == "" && ownerKnown {
-				resolution.APIVersion = ownerGVK.GroupVersion().String()
-			}
-			foundOwner = true
-			currentKind, currentName = step.nextKind, step.nextName
-		}
-		if step.stop {
-			break
-		}
-	}
-	logger.V(1).Info("Owner resolution complete",
-		"inputKind", kind, "inputName", name,
-		"resolvedKind", resolution.Kind, "resolvedName", resolution.Name,
-		"resolvedAPIVersion", resolution.APIVersion, "foundOwner", foundOwner)
-	return resolution, nil
 }
 
 // ResolveTopLevelOwnerIdentity carries source and owner-reference GVK authority
@@ -514,8 +431,8 @@ func ownerIdentityGVK(identity sharedtypes.OwnerChainEntry) (schema.GroupVersion
 	return gv.WithKind(identity.Kind), nil
 }
 
-// ownerStepResult captures the outcome of a single ResolveTopLevelOwner
-// traversal step (extracted to keep the driving loop's cognitive complexity
+// ownerStepResult captures the outcome of a single owner-chain traversal step
+// (extracted to keep the driving loop's cognitive complexity
 // low — see Go Anti-Pattern Checklist, unnecessary nesting).
 type ownerStepResult struct {
 	stop           bool // true: caller must break out of the traversal loop
@@ -531,10 +448,10 @@ type ownerStepResult struct {
 	verifyPassthrough bool
 }
 
-// traverseOneOwnerLevel performs one level of owner-chain traversal: resolve
-// the GVK, skip CRD kinds, fetch metadata (with cache-miss fallback), and find
-// (or trust-but-verify) the controller ownerReference. Extracted from
-// ResolveTopLevelOwner's for-loop body.
+// traverseOneOwnerLevel performs one level of owner-chain traversal: skip CRD
+// kinds, fetch metadata (with cache-miss fallback), and find (or
+// trust-but-verify) the controller ownerReference. Extracted from
+// traverseOwnerIdentityChain's for-loop body.
 func (r *K8sOwnerResolver) traverseOneOwnerLevel(
 	ctx context.Context,
 	currentNamespace string,
@@ -639,7 +556,7 @@ func (r *K8sOwnerResolver) resolveMissingControllerRef(
 
 // getResourceMetadata fetches PartialObjectMetadata via the primary (cached)
 // reader, bounded by ownerLookupTimeout to avoid indefinite blocking on
-// informer sync (extracted from ResolveTopLevelOwner for testability).
+// informer sync.
 func (r *K8sOwnerResolver) getResourceMetadata(ctx context.Context, key client.ObjectKey, obj *metav1.PartialObjectMetadata) error {
 	lookupCtx, cancel := context.WithTimeout(ctx, ownerLookupTimeout)
 	defer cancel()
@@ -648,7 +565,7 @@ func (r *K8sOwnerResolver) getResourceMetadata(ctx context.Context, key client.O
 
 // getResourceMetadataFallback retries a metadata fetch via the uncached
 // fallback reader (direct API). Callers must only invoke this when
-// r.fallbackReader is non-nil (checked by ResolveTopLevelOwner before calling).
+// r.fallbackReader is non-nil (checked by the callers before calling).
 //
 // #282: Eliminates pod-level fingerprint fallback caused by cache sync lag
 // after rollout restarts.
@@ -659,8 +576,8 @@ func (r *K8sOwnerResolver) getResourceMetadataFallback(ctx context.Context, key 
 }
 
 // findControllerOwnerRef returns the ownerReference with controller: true, or
-// nil if none exists. Extracted from ResolveTopLevelOwner (used both for the
-// primary cached lookup and the trust-but-verify fallback lookup).
+// nil if none exists (used both for the primary cached lookup and the
+// trust-but-verify fallback lookup).
 func findControllerOwnerRef(refs []metav1.OwnerReference) *metav1.OwnerReference {
 	for j := range refs {
 		if refs[j].Controller != nil && *refs[j].Controller {
@@ -784,27 +701,3 @@ func (r *K8sOwnerResolver) resolveServiceToWorkload(ctx context.Context, namespa
 	return "Pod", selectedPod, true
 }
 
-// resolveGVK returns the GroupVersionKind for a given kind string.
-// Uses the registry if available, otherwise falls back to the static kindToGroup map.
-func (r *K8sOwnerResolver) resolveGVK(kind string) (schema.GroupVersionKind, bool) {
-	if r.registry != nil {
-		gvr, ok := r.registry.KindToGVR(kind)
-		if !ok {
-			return schema.GroupVersionKind{}, false
-		}
-		return schema.GroupVersionKind{
-			Group:   gvr.Group,
-			Version: gvr.Version,
-			Kind:    kind,
-		}, true
-	}
-	group, known := kindToGroup[kind]
-	if !known {
-		return schema.GroupVersionKind{}, false
-	}
-	return schema.GroupVersionKind{
-		Group:   group,
-		Version: "v1",
-		Kind:    kind,
-	}, true
-}
