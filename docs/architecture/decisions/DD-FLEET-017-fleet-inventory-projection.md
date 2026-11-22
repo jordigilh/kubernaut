@@ -669,7 +669,7 @@ source.
 | 2 | Cache-backed page/cursor | same route | FMC page reader over index + proof gate | IT-FMC-INV-2661-002 |
 | 3 | ACM Search source adapter | FMC sync cycle | new adapter under `pkg/fleet/fmc` | IT-FMC-SRC-2661-001 |
 | 4 | Source selection (per deployment) | FMC sync cycle | `cmd/fleetmetadatacache/main.go` selects the collector from `cfg.SourceKind()` (MCP / ACM) | IT-FMC-SRC-2661-002 |
-| 4a | AF→FMC endpoint config | `fleet.fmc.endpoint` | `pkg/fleet/config.go` defines the key; `cmd/apifrontend/backend_deps.go` builds the AF inventory reader from it (replacing `cfg.Fleet.EffectiveEndpoint()` on the inventory path) | IT-AF-2661-001 |
+| 4a | AF→FMC endpoint config | `fleet.fmc.endpoint` | `pkg/fleet/config.go` defines the key; `pkg/fleet/inventory_reader.go` consumes it (replacing `EffectiveEndpoint()` inside `NewInventoryReader`); `cmd/apifrontend/backend_deps.go` remains the production caller via `fleet.NewInventoryReader` and owns the re-expressed startup logs | IT-AF-2661-001 |
 | 5 | AF→FMC dispatch + qualification | `GET /api/v1/console/inventory/managed-resources` | `policyread.Service.ListInventory` / `readerFor` | IT-AF-2661-001 |
 | 6 | AF partial/unavailable mapping | both inventory routes | handler `projectionStatus` | IT-AF-2661-002 |
 | 7 | Namespace-list SAR + typed audit | both non-local reads | `policyread` authorizer / `emitRead` | IT-AF-2661-003 |
