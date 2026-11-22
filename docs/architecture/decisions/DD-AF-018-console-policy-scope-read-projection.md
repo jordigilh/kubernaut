@@ -1,6 +1,6 @@
 # DD-AF-018: Authenticated Console Policy and Managed-Resource Read Projection
 
-**Status**: ✅ Accepted — local Console projection implemented; ACM inventory qualification remains gated
+**Status**: ✅ Accepted — local Console projection implemented; inventory-lane gate removed by #2661 phase c (FMC sole Console inventory contact; qualification enforced by FMC's proof gate; scope lane unchanged)
 **Date**: 2026-11-01
 **Issue**: [#2584](https://github.com/jordigilh/kubernaut/issues/2584)
 **Related**: [BR-SCOPE-001](../../requirements/BR-SCOPE-001-resource-scope-management.md), [BR-SECURITY-016](../../requirements/BR-SECURITY-016-kubernetes-rbac-enforcement.md), [BR-AI-085](../../requirements/BR-AI-085-rego-policy-input-schema.md), [BR-AI-088](../../requirements/BR-AI-088-configurable-confidence-thresholds.md), BR-AUDIT-005, [ADR-053](ADR-053-resource-scope-management.md), [ADR-034](ADR-034-unified-audit-table-design.md), [ADR-068](ADR-068-fleet-federation-architecture.md), [kubernaut-console#164](https://github.com/jordigilh/kubernaut-console/issues/164), [kubernaut-operator#604](https://github.com/jordigilh/kubernaut-operator/pull/604)
@@ -32,6 +32,8 @@ qualification remain pending.** This addendum identifies a proposed change to th
 accepted remote authorization model in §3 below; it does not silently replace that
 decision or assert that the new behavior is implemented. Resolve the model and its
 tests before release. The production ACM Console inventory gate remains closed.
+*(Superseded for the inventory lane 2026-11-22, #2661 phase c — see the release-gate
+amendment below.)*
 
 - Interactive results must contain only resources visible to the user. Prefer ACM
   Search with user-scoped authorization, subject to qualifying token acceptance,
@@ -87,7 +89,8 @@ uses AF's local Kubernetes clients. Console policy-scope and managed-resource li
 operations are local-only for this release; a non-local list request returns a
 state-only `unavailable` response and never falls back to the hub. Non-local exact
 reads retain the existing typed FMC/ACM control-plane path and managed-scope check.
-*(Superseded 2026-11-22, #2661 phase c — see the amendment above: non-local
+*(Superseded 2026-11-22, #2661 phase c — see the 2026-11-22 release-gate
+amendment below: non-local
 managed-resource lists dispatch to FMC and every non-local arm is gated by the
 namespace-list SAR before the managed-scope checker. Policy-scope listing stays
 local-only.)*
@@ -108,7 +111,8 @@ only for namespaced resources, and safe defaults. The inventory projection must
 use ACM's observed typed Search representation, preserve explicit cluster and
 opaque identity, and not claim completeness without evidence. This release does not
 enable remote inventory list projection. *(Superseded 2026-11-22, #2661 phase c —
-see the amendment above: remote managed-resource list projection is enabled through
+see the 2026-11-22 release-gate amendment below: remote managed-resource list
+projection is enabled through
 FMC.)* The shared scope contract (now
 `ScopeChecker.Check`; #2662 deleted the `IsManagedResource` boolean lane)
 is canonical and preserves backend errors so callers can distinguish an unavailable
@@ -146,7 +150,11 @@ fail-closed release limitation, not completed ACM inventory functionality.
 above is **removed**. FMC is the sole Console inventory contact: the AF
 inventory reader is built only from `fleet.fmc.endpoint` (absent fails closed
 to a nil reader), non-local Console lists dispatch to FMC, and the former
-`BackendACM → nil` inventory branch and its log site are deleted. Qualification
+`BackendACM → nil` inventory branch and its log site are deleted. Every
+non-local read arm (list, exact get, policy scope) is additionally gated by a
+non-local namespace-list SAR (`list/core/v1/namespaces`) before any reader or
+the managed-scope checker is consulted — a denial is `403 forbidden` with one
+typed audit event. Qualification
 enforcement is FMC's server-side proof gate (state-only 503 for an unproven
 partition) plus the fail-closed endpoint wiring — see DD-FLEET-017 D6.2's
 amendment. The **scope lane is unchanged**: the shared ACM scope checker and
@@ -173,7 +181,10 @@ The local `cluster_id=local` inventory path is local-only and metadata-only. It 
 `metadata.Interface` and Kubernetes `PartialObjectMetadata` pages; construction fails with
 `local inventory metadata client is required` when that dependency is absent. The reader never
 falls back to dynamic full-object listing. ACM/FMC list operations remain unavailable through
-the Console policy/inventory list surface. Existing exact/get behavior is otherwise unchanged,
+the Console policy/inventory list surface. *(Superseded for the inventory-list lane
+2026-11-22, #2661 phase c: non-local managed-resource lists dispatch to FMC
+(`fleet.fmc.endpoint`), gated by the non-local namespace-list SAR. Policy-scope
+listing and the local lane stay local-only.)* Existing exact/get behavior is otherwise unchanged,
 apart from the common serialized-response safety guard; local exact reads use the same bounded
 metadata projection as local list reads.
 

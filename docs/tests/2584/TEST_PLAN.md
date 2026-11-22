@@ -868,7 +868,10 @@ pre-write response check are the enforceable safeguards.
 
 Console policy/inventory list operations are local-only for this release; ACM/FMC list
 operations remain unavailable. Existing exact/get behavior is unchanged except for the
-common response safety guard. These bounds do not introduce public count/total/reload/
+common response safety guard. *(Superseded for the inventory-list lane 2026-11-22,
+#2661 phase c: non-local managed-resource lists dispatch to FMC
+(`fleet.fmc.endpoint`), gated by the non-local namespace-list SAR. Policy-scope
+listing stays local-only.)* These bounds do not introduce public count/total/reload/
 snapshot semantics; complete and empty pages expose per-read `observed_at`/`observedAt`
 and bounded `freshness` metadata. The Console makes no cross-request snapshot or source
 synchronization claim.
@@ -877,7 +880,10 @@ The containment tests listed in §8 prove metadata-client enforcement, positive 
 page hint, Gateway-aligned default kinds, page traversal, continuation failure,
 cancellation, projection discard, retained-byte exhaustion, shared List/Get concurrency
 cancellation, pre-write response rejection, and production-router local dispatch. They do not
-qualify ACM/FMC list visibility or completeness; that gate remains closed.
+qualify ACM/FMC list visibility or completeness; that gate remains closed. *(Superseded
+for the inventory-list lane 2026-11-22, #2661 phase c — the containment tests
+themselves remain valid for the local lane; the remote list lane is qualified by
+TP-2661.)*
 
 ### 16.5 Prior-art disposition (the seven `_2584_*` drafts, issued with PR #2665)
 
