@@ -8,7 +8,14 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 **Version**: 2.0 (supersedes TP-2661-v1.0, AF→ACM direct)
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
-**Status**: 📝 Draft v3.4 (round-11 pre-implementation review: DD-FLEET-017 §8 row
+**Status**: 📝 Draft v3.5 (round-12 pre-implementation review: the
+`UT-AF-2592-REMOTE-FAIL-CLOSED-001` row now requires a fully contract-valid
+served page — ≥1 item, cluster attribution, `scope.included=true`, canonical
+ID — the current fixture is a zero-item success page that `validateSuccess`
+rejects; `UT-AF-2661-004` gains the non-local `ListPolicyScope` denial arm so
+every arm of the shared `authorize()` branch has a proving scenario; §12(a)
+reverts the DD-FLEET-017 §8 row-4a wording; §7 now carries the §9b re-scoped
+spec IDs). Draft v3.4 (round-11 pre-implementation review: DD-FLEET-017 §8 row
 4a re-synced to the plan's wording and its amendment added to RED/GREEN c; the
 REMOTE-LIST-001/-003 rows name their terminal states and -003's audit
 assertion is re-expressed to `result_state=success` rather than deleted; every
@@ -238,13 +245,13 @@ live run.
 
 | BR | Contract | Scenarios |
 |---|---|---|
-| BR-SCOPE-001 | Managed-only inventory with ADR-053 precedence | UT-FMC-SRC-2661-011/012/014, UT-FMC-INV-2661-011 |
+| BR-SCOPE-001 | Managed-only inventory with ADR-053 precedence | UT-FMC-SRC-2661-011/012/014, UT-FMC-INV-2661-011, UT-AF-2592-REMOTE-FAIL-CLOSED-001, IT-AF-2584-REMOTE-LIST-001/003 |
 | BR-SCOPE-002 | Exact GVK, canonical identity, no inference | UT-FMC-SRC-2661-013/018, UT-FMC-INV-2661-008 |
 | BR-API-001 | Typed, sanitized page, states and freshness | UT-FMC-INV-2661-001..015, IT-AF-2661-001/002, IT-FMC-INV-2661-001/001W, E2E-FMC-INV-2661-001 |
-| BR-SECURITY-016 | Least privilege, user gate, no privileged widening (AC-6, AU-3 on the SAR audit journey) | UT-FMC-INV-2661-010, UT-FMC-SRC-2661-023/025/026, UT-AF-2661-004, IT-AF-2661-003, IT-FMC-SRC-2661-003, E2E-FMC-INV-2661-001 |
+| BR-SECURITY-016 | Least privilege, user gate, no privileged widening (AC-6, AU-3 on the SAR audit journey) | UT-FMC-INV-2661-010, UT-FMC-SRC-2661-023/025/026, UT-AF-2661-004, IT-AF-2661-003, IT-FMC-SRC-2661-003, E2E-FMC-INV-2661-001, IT-AF-2584-REMOTE-LIST-002, IT-AF-2584-ACM-FAIL-CLOSED, UT-AF-2584-FMC-READER |
 | BR-SECURITY-017 | Metadata-only egress | UT-FMC-INV-2661-010, IT-FMC-INV-2661-001 |
 | BR-INTEGRATION-065 | Source abstraction and dispatch | UT-FMC-SRC-2661-001..010/024..026, UT-AF-CFG-2661-001..003, IT-FMC-SRC-2661-001/002/006, IT-AF-2661-001, E2E-FMC-INV-2661-002 |
-| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004/014/015, UT-FMC-SRC-2661-004..009/015..017/019..022/024..026, UT-AF-CFG-2661-002/003, IT-AF-2661-002, IT-AF-2661-004, IT-FMC-INV-2661-002, IT-FMC-SRC-2661-004/005/007 |
+| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004/014/015, UT-FMC-SRC-2661-004..009/015..017/019..022/024..026, UT-AF-CFG-2661-002/003, IT-AF-2661-002, IT-AF-2661-004, IT-FMC-INV-2661-002, IT-FMC-SRC-2661-004/005/007, UT-FLEET-CFG-029 |
 
 ## 8. Test scenarios
 
@@ -306,7 +313,7 @@ live run.
 | UT-AF-CFG-2661-001 | The new `fleet.fmc.endpoint` key parses and selects the FMC inventory endpoint; the AF inventory reader is built from it, never from `fleet.endpoint` (`cfg.Fleet.EffectiveEndpoint()` stays the scope adapter's endpoint, D2.1a) | ✅ |
 | UT-AF-CFG-2661-002 | `fleet.fmc.endpoint` absent under `fleet.backend: fmc` → the inventory path fails closed `unavailable`; it never inherits the scope adapter's endpoint or the ACM Search URL | ✅ |
 | UT-AF-CFG-2661-003 | `fleet.backend: acm` with `fleet.fmc.endpoint` present → the FMC reader is still built from the new key (DD-AF-018 gate removed, both sites); with it absent → `unavailable`, never a direct ACM Search client | ✅ |
-| UT-AF-2661-004 | Non-local namespace-list SAR (the `policyread.Service` authorize path's new non-local branch): a stub authorizer denying `list/core/v1/namespaces` → non-local list is `forbidden`, the remote reader's `listCalls == 0`, exactly one typed audit event with `result_state=forbidden`; granting it proceeds to dispatch. `authorize()` is shared by list, exact-get and policy-scope reads, so the same denial is asserted on a non-local exact get (`forbidden`, reader `getCalls == 0`, one typed audit event) — the branch changes that path from the reader's own outcome (or `unavailable` with no reader wired; today a non-local exact get already dispatches) to `forbidden`, which needs its own proving scenario | ✅ |
+| UT-AF-2661-004 | Non-local namespace-list SAR (the `policyread.Service` authorize path's new non-local branch): a stub authorizer denying `list/core/v1/namespaces` → non-local list is `forbidden`, the remote reader's `listCalls == 0`, exactly one typed audit event with `result_state=forbidden`; granting it proceeds to dispatch. `authorize()` is shared by list, exact-get and policy-scope reads, so the same denial is asserted on a non-local exact get (`forbidden`, reader `getCalls == 0`, one typed audit event) and on a non-local `ListPolicyScope` (`forbidden`, reader untouched, one typed audit event — the branch changes that path from `unavailable` to `forbidden` before the surviving non-local policy-scope rejection) — every arm of the shared branch needs its own proving scenario | ✅ |
 
 ### Tier 2 — Integration
 
@@ -371,7 +378,7 @@ The existing specs below assert behaviour this plan intentionally changes. They 
 
 | Test | Today | Required change |
 |---|---|---|
-| `UT-AF-2592-REMOTE-FAIL-CLOSED-001` (`pkg/apifrontend/policyread/interim_contract_2592_red_test.go`) | Pins "non-local read rejected, no remote reader called" | Re-scope to the new boundary with the terminal state named: non-local dispatch reaches the remote stub (`remote.listCalls ≥ 1`) and never falls back to local (`local.listCalls == 0` kept verbatim); the response is `success` with the stub's served page. The re-scoped stub page must carry a contract-valid freshness envelope (`Freshness{State: fresh, AsOf: …}`) — the current fixture page has neither, and `Page.Validate` rejects it, which would keep the old `unavailable` outcome alive for the wrong reason (validation, not the boundary). The old expectation is replaced, not weakened. |
+| `UT-AF-2592-REMOTE-FAIL-CLOSED-001` (`pkg/apifrontend/policyread/interim_contract_2592_red_test.go`) | Pins "non-local read rejected, no remote reader called" | Re-scope to the new boundary with the terminal state named: non-local dispatch reaches the remote stub (`remote.listCalls ≥ 1`) and never falls back to local (`local.listCalls == 0` kept verbatim); the response is `success` with the stub's served page. The re-scoped stub page must be fully contract-valid: a freshness envelope (`Freshness{State: fresh, AsOf: …}`), **at least one item** (`validateSuccess` rejects a zero-item success page — the current fixture is exactly that), and each item carrying the requested cluster's ID, `scope.included=true` and a canonical ID matching its identity — `Page.Validate` and `readInventoryPage` enforce all three, and any failure would keep the old `unavailable` outcome alive for the wrong reason (validation, not the boundary). The old expectation is replaced, not weakened. |
 | `IT-AF-2584-REMOTE-LIST-003` (`pkg/apifrontend/policyread/service_2584_test.go`) | Asserts remote list rejection with zero requests to a wired ACM client; one audit event with `result_state=unavailable` | Re-scope: dispatch now reaches `RemoteInventory`; the "never contacts ACM Search" half is preserved by asserting the wired reader is the FMC client (fixture receives the request), not by asserting zero dispatch. Terminal state named: the response is a 200-equivalent `success` page with the served items. The audit assertion is re-expressed, not deleted: exactly one event, same attribution fields (user, cluster), `result_state=success` — the AC-6/AU-3 proof moves to the dispatched outcome. The re-scoped stub serves the FMC page route shape — verified against `fmc.NewHTTPClient`'s request (GET `/api/v1/inventory/managed-resources`, page JSON), with at least one group-ful kind (apps/v1) among the served items, every served item carrying the requested cluster's ID and `scope.included=true` (`readInventoryPage` rejects an excluded item by failing the whole page, and `Page.Validate` at `pkg/apifrontend/policyread/service.go:234` rejects a page without a contract-valid freshness envelope — either would keep the state assertions passing for the wrong reason). The current GraphQL core-only fixture would make the state assertions pass for the wrong reason (decode failure, not mapping). |
 | `IT-AF-2584-REMOTE-LIST-001` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Handler-level pin of "non-local list rejected, no remote reader contacted" (503 + `state:unavailable`) | Re-scope to the dispatch boundary with the terminal state named: non-local list reaches FMC when configured — 200 with the served `success` page — and never falls back to local (`local.listCalls == 0` kept verbatim). The re-scoped stub serves the FMC page route shape (verified against `fmc.NewHTTPClient`'s request, at least one group-ful apps/v1 kind, every served item carrying the requested cluster's ID and `scope.included=true`, contract-valid freshness envelope on every served page) — not the current GraphQL core-only fixture. |
 | `IT-AF-2584-REMOTE-LIST-002` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Handler-level pin of "a remote ACM list stays unavailable instead of exposing a partial Search page" — allow authorizer, wired ACM client, zero requests asserted | Re-scope with `-001`: non-local list now dispatches to the wired remote reader (the fixture receives the request). The no-partial-rows half is preserved by asserting the state-only envelope on the reader's own error/partial mapping; the never-ACM half by making the wired fixture the FMC client — serving the FMC page route shape (verified against `fmc.NewHTTPClient`'s request, at least one group-ful apps/v1 kind, every served item carrying the requested cluster's ID and `scope.included=true`, contract-valid freshness envelope on every served page), not the current GraphQL core-only fixture. |
@@ -518,10 +525,11 @@ and policy-scope reads, so leaving the branch would keep a denial surface on
 non-local exact gets that did not exist pre-phase-c — and restores the re-expressed `backend_deps.go` startup log lines and the
 rewritten `buildPolicyReadDeps` doc comment to their pre-phase-c form.
 The §9b re-scoped/re-expressed specs revert to their pre-phase-c form in the
-same unit, and the new phase-c specs (UT-AF-CFG-2661-001..003,
+same unit, the new phase-c specs (UT-AF-CFG-2661-001..003,
 UT-AF-2661-004, IT-AF-2661-001, IT-AF-2661-003, IT-AF-2661-004, and
 IT-AF-2661-002 if its forbidden case is driven through the non-local SAR
-branch) are deleted with the code unit — an executor
+branch) are deleted with the code unit, and the DD-FLEET-017 §8 row-4a
+wording reverts to its pre-phase-c form — an executor
 who reverts only the code sites leaves a red suite; (b) disable the ACM source
 adapter so the partition falls back to its previous proven state or
 `unavailable`. No compatibility mode, no data migration.
