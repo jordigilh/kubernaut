@@ -335,6 +335,42 @@ var _ = Describe("FMC lifecycle handoff (BR-SCOPE-001, BR-INTEGRATION-065)", fun
 		Expect(statusStore.repairRequest.Observations.PageCount).To(Equal(5))
 	})
 
+	It("UT-FMC-SRC-2661-013 [BR-SCOPE-001, BR-SAFETY-001]: two items mapping to one canonical ID fail the sync before any write", func() {
+		current := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a", ToolPrefix: "current__"}
+		registryClient := newFencedRegistry(current, 7)
+		statusStore := &lifecycleStatusStore{}
+		lease := &lifecycleLease{
+			fence: scopecache.WriterFence{HolderPodUID: "pod-a", HolderSessionUID: "session-a", LeaseEpoch: 1, Fence: 1},
+			lost:  make(chan struct{}),
+		}
+		// Two distinct observations with the same canonical identity
+		// (cluster, group, version, kind, namespace, name): distinct Search
+		// `_uid`s would pass the collector's traversal guards, so only the
+		// syncer's duplicate-identity abort can fail the sync (DD-FLEET-017
+		// D4.5: ambiguous identity fails the kind, never a smaller clean set).
+		duplicate := unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "v1",
+			"kind":       "Pod",
+			"metadata":   map[string]any{"name": "web", "namespace": "payments"},
+		}}
+		reader := &lifecycleReader{
+			pageCounts: map[string]int{"Pod": 1},
+			items:      []unstructured.Unstructured{duplicate, duplicate},
+		}
+		syncer := newLifecycleSyncer(registryClient, fmc.ObservedReaderFactoryFunc(func(_ context.Context, _ registry.ClusterInfo) (fmc.ObservedReader, error) {
+			return reader, nil
+		}), statusStore, lease, []string{"Pod"})
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		err := syncer.SyncCluster(ctx, current)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("duplicate resource identity"),
+			"an ambiguous identity must fail the sync, not publish a smaller clean set")
+		Expect(statusStore.repairRequest).To(BeNil(),
+			"the abort happens during collection, before any staged write or commit")
+	})
+
 	It("UT-FMC-PRES-011 [BR-SCOPE-001]: starts the failed-repair cleanup deadline when cleanup begins", func() {
 		current := registry.ClusterInfo{ID: "cluster-a", RegistrationUID: "registration-a", ToolPrefix: "current__"}
 		registryClient := newFencedRegistry(current, 7)

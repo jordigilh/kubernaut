@@ -51,6 +51,22 @@ var kindToGVK = map[string]schema.GroupVersionKind{
 	"Namespace":   {Group: "", Version: "v1", Kind: "Namespace"},
 }
 
+// KindGVKs resolves configured resource-kind names to their exact GVK. It is
+// exported so the production composition root can hand a source adapter the
+// same mapping the MCP collector uses, instead of keeping a second copy that
+// could drift. An unknown kind is an error, never a guess (DD-FLEET-017 D4.1).
+func KindGVKs(kinds []string) (map[string]schema.GroupVersionKind, error) {
+	resolved := make(map[string]schema.GroupVersionKind, len(kinds))
+	for _, kind := range kinds {
+		gvk, known := kindToGVK[kind]
+		if !known {
+			return nil, fmt.Errorf("unknown resource kind %q (add to kindToGVK map)", kind)
+		}
+		resolved[kind] = gvk
+	}
+	return resolved, nil
+}
+
 // ObservedReader is the typed, complete-scan source contract used by FMC.
 // A bare client.Reader is intentionally not accepted because it cannot prove
 // source completeness or preserve explicit false/invalid label state.
@@ -430,6 +446,13 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		return scopecache.RepairResult{}, err
 	}
 	partition := scopecache.PartitionStateKey{ClusterID: cluster.ID, RegistrationUID: cluster.RegistrationUID}
+	// DD-FLEET-017 D4.1a rule 7b: exactly one component sets the collection
+	// deadline, and it is this one. The staging generation has a fixed lifetime,
+	// so every kind of this repair shares one window instead of each deriving a
+	// fresh fallback (a seven-kind sync would otherwise outlive the generation).
+	// The start time is captured before beginRepair so the budget measures the
+	// whole repair, not just the part after the begin round trip.
+	repairStart := time.Now()
 	start, err := s.beginRepair(ctx, partition, cluster, snapshot, fence)
 	if err != nil {
 		if start.Token.Value != "" {
@@ -450,7 +473,11 @@ func (s *Syncer) repairPartition(ctx context.Context, cluster registry.ClusterIn
 		s.markRepairUncertain(ctx, start, cluster.ID, repairUncertainFailureFromResult(result, commitFailure, retErr))
 	}()
 
-	observations, err := s.collectRepairObservations(ctx, cluster)
+	repairCtx := ctx
+	if !isACMCollectionDeadlineSet(ctx) {
+		repairCtx = WithCollectionDeadline(ctx, repairStart.Add(RepairCollectionBudget))
+	}
+	observations, err := s.collectRepairObservations(repairCtx, cluster)
 	if err != nil {
 		return scopecache.RepairResult{}, err
 	}

@@ -8,9 +8,32 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 **Version**: 2.0 (supersedes TP-2661-v1.0, AF→ACM direct)
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
-**Status**: 📝 Draft v2. DD-FLEET-017 D1–D6 and the ADR-068 amendment were
-approved 2026-11-18; this plan awaits its own approval. No test or implementation
-result is claimed.
+**Status**: 📝 Draft v2.5 (round-2 pre-implementation review: §9b extended with
+the four missed re-scopes — `IT-AF-2584-REMOTE-LIST-002`, the cross-cluster
+probe inside `IT-AF-2584-005`, `UT-AF-2584-FMC-READER` and the
+`IT-AF-ROUTE-010 / IT-AF-PRES-007` table; DD-FLEET-017 §8 amended with wiring
+rows 1a/4a so the single-authority claim holds; the REFACTOR status-table
+clause reworded to name the real per-package dedup). Draft v2.4 (phase-c
+planning hardened by a grounded pre-implementation
+review: `fleet.fmc.endpoint` config slice added as Tier 1c + wiring row 4a, §9b
+extended with the three 2584 re-scopes, DD-AF-018 gate sites named in phase c
+and rollback, REFACTOR narrowed to in-package deduplication, AC-6/AU-3 tagged on
+the SAR audit journey). Draft v2.3: DD-FLEET-017 D1–D6 and the ADR-068 amendment were
+approved 2026-11-18; increment 2 (this plan's ACM source adapter) was authorised
+for execution on 2026-11-20. **Implemented code slices:** the `sources.acm`
+configuration surface (`UT-FMC-SRC-2661-001..010`), the ACM collector
+(`UT-FMC-SRC-2661-011..019`, `021..026`; `020` lives in
+`pkg/fleet/scopecache/inventory_page_test.go`), and the Tier 2 integration
+specs `IT-FMC-SRC-2661-001..007` (commits `73e66c805`, `06a017fe9` and the
+#2691 review fixes, `work/2661-inc2-acm-adapter`), which prove wiring rows 3–4 through production
+construction (`buildFMCSyncer`/`buildACMSource`/`NewACMHTTPSearch` over
+configs from the production loader; the fenced commit path against miniredis
+with pinned server time). Known limitation: `IT-FMC-SRC-2661-004` proves the
+one-deadline-per-repair sharing semantics (D4.1a rule 7b) through the
+production context seam with a shortened staging lifetime — the repair path's
+own 55 s budget-setting is proven by `UT-FMC-SRC-2661-024` (§11b).
+**Not yet proven:** the AF dispatch/SAR ITs (`IT-AF-2661-001..003`) and every
+E2E claim. Increment 1 carries its own evidence and is merged (`#2681`).
 **Issue**: [#2661](https://github.com/jordigilh/kubernaut/issues/2661)
 (parent [#2593](https://github.com/jordigilh/kubernaut/issues/2593),
 investigation [#2599](https://github.com/jordigilh/kubernaut/issues/2599))
@@ -57,7 +80,7 @@ production path.
 | Metric | Target |
 |---|---|
 | In-scope unit scenarios proven | ≥ 90%, critical 100% |
-| Wiring rows proven through production dispatch | 7/7 |
+| Wiring rows proven through production dispatch | 9/9 |
 | Live control objectives assessed (AC-4, AC-6, SI-10; ASVS V5/V8) | all, on the recorded clusters only |
 | Regressions in local inventory, scope lane, FMC scope checks | zero |
 
@@ -98,6 +121,8 @@ Tested: `pkg/fleet/inventory` (page/identity/freshness validation),
 `pkg/fleet/fmc` (inventory route, page reader, ACM source adapter, sync
 selection), `pkg/fleet/scopecache` (proof-gated reads) as consumed,
 `pkg/apifrontend/policyread` + `handler` (dispatch, qualification, SAR, audit),
+`pkg/fleet/config.go` (the new `fleet.fmc.endpoint` key, phase c) and
+`cmd/apifrontend/backend_deps.go` (its wiring into the AF inventory reader),
 `api/apifrontend/openapi/apifrontend-v1.yaml` only if a documented state
 description changes.
 
@@ -113,7 +138,7 @@ over `httptest`, Valkey via the approved test dependency or the real instance in
 IT, Kubernetes via `envtest`/fake clients, MCP readers via fixtures. No
 `testing.T` business tests, no `XIt`/`PIt`/`Skip()`.
 
-**Pass criteria.** All listed scenarios green; 7/7 wiring rows through production
+**Pass criteria.** All listed scenarios green; 9/9 wiring rows through production
 dispatch; every P0 passing; `go build ./...` and `golangci-lint run` clean; local
 inventory, FMC scope and GW/RO scope suites unchanged; one live ACM journey and
 one GitOps journey executed with results recorded verbatim.
@@ -137,6 +162,7 @@ Membership is settled (registration CR only, DD-FLEET-017 D1.3a).
 | FMC page reader | new reader over `pkg/fleet/scopecache` index/records + proof gate |
 | ACM source adapter | new adapter under `pkg/fleet/fmc` |
 | Sync selection | `pkg/fleet/fmc/syncer.go`, FMC startup wiring |
+| AF fleet config | `pkg/fleet/config.go` (new `fleet.fmc.endpoint` key, phase c), `cmd/apifrontend/backend_deps.go` |
 | AF dispatch | `pkg/apifrontend/policyread/service.go`, `types.go` |
 | AF HTTP/audit | `pkg/apifrontend/handler/console_policyread.go`, `router.go` |
 
@@ -148,13 +174,13 @@ live run.
 
 | BR | Contract | Scenarios |
 |---|---|---|
-| BR-SCOPE-001 | Managed-only inventory with ADR-053 precedence | UT-FMC-SRC-2661-011/012, IT-FMC-SRC-2661-003 |
+| BR-SCOPE-001 | Managed-only inventory with ADR-053 precedence | UT-FMC-SRC-2661-011/012 |
 | BR-SCOPE-002 | Exact GVK, canonical identity, no inference | UT-FMC-SRC-2661-013/018, UT-FMC-INV-2661-008 |
 | BR-API-001 | Typed, sanitized page, states and freshness | UT-FMC-INV-2661-001..010, IT-AF-2661-001/002 |
-| BR-SECURITY-016 | Least privilege, user gate, no privileged widening | UT-FMC-INV-2661-010, IT-AF-2661-003 |
+| BR-SECURITY-016 | Least privilege, user gate, no privileged widening (AC-6, AU-3 on the SAR audit journey) | UT-FMC-INV-2661-010, UT-FMC-SRC-2661-023, IT-AF-2661-003, IT-FMC-SRC-2661-003 |
 | BR-SECURITY-017 | Metadata-only egress | UT-FMC-INV-2661-010, IT-FMC-INV-2661-001 |
-| BR-INTEGRATION-065 | Source abstraction and dispatch | IT-FMC-SRC-2661-001/002/004, IT-AF-2661-001 |
-| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004, UT-FMC-SRC-2661-015..017, IT-AF-2661-002 |
+| BR-INTEGRATION-065 | Source abstraction and dispatch | UT-FMC-SRC-2661-001..010, UT-AF-CFG-2661-001..003, IT-FMC-SRC-2661-001/002, IT-AF-2661-001 |
+| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004, UT-FMC-SRC-2661-004..009/015..017/021/022, IT-AF-2661-002, IT-FMC-SRC-2661-004 |
 
 ## 8. Test scenarios
 
@@ -182,9 +208,19 @@ live run.
 
 | ID | Scenario | Critical |
 |---|---|---|
+| UT-FMC-SRC-2661-001 | `sources` absent → `Sources.ACM` is nil, validation passes, collector stays `SourceMCP`: the rendered config behaves exactly as today (D4.1a rule 1) | ✅ |
+| UT-FMC-SRC-2661-002 | A complete `sources.acm` block parses `endpoint`/`tokenPath`/`caFile` and selects `SourceACM` (D4.1a rules 2, 4) | ✅ |
+| UT-FMC-SRC-2661-003 | `caFile` absent is valid and means system trust; it never fails startup (D4.1a) | ✅ |
+| UT-FMC-SRC-2661-004 | Fail-closed endpoint: plain `http`, relative, host-less or empty → `Validate()` rejects, naming `sources.acm.endpoint` (D4.1a rule 3, SC-8/SI-10) | ✅ |
+| UT-FMC-SRC-2661-005 | Fail-closed token: relative, empty, missing or directory `tokenPath` → rejected, naming the key; the file is opened, not merely stat'ed, and no token material appears in the error (D4.1a rules 3, 6; IA-5) | ✅ |
+| UT-FMC-SRC-2661-006 | A relative `caFile` is rejected, naming the key (SC-8) | ✅ |
+| UT-FMC-SRC-2661-007 | Strict decoding: an unknown key under `sources.acm` (e.g. `endpointURL`) fails loading, so an operator typo cannot silently disable a guard (D4.1a rule 3, CM-6) | ✅ |
+| UT-FMC-SRC-2661-008 | A second or unknown source (`sources.rancher`) is a configuration error, never ignored (D4.1a rule 2) | ✅ |
+| UT-FMC-SRC-2661-009 | Presence selects a source (D4.1a rule 2): a present `sources` block that is empty, null, or names only a null `acm` fails loading, and `acm: {}` loads as ACM then fails validation for its missing endpoint — a named source never resolves back to MCP | ✅ |
+| UT-FMC-SRC-2661-010 | A merged `sources` block is validated, not skipped, and flattening reproduces YAML merge precedence: a direct key wins over a merge, and the earlier merge target wins over a later one (CM-6) | ✅ |
 | UT-FMC-SRC-2661-011 | Observation shape: every object of a configured kind is written with its label state (`true`/`false`/`absent`/`invalid`), matching the MCP collector's cache shape so both sources project identically | ✅ |
-| UT-FMC-SRC-2661-012 | Precedence: explicit `false` overrides namespace `true`; invalid label is invalid, never absent, never inherits; cluster-scoped never inherits | ✅ |
-| UT-FMC-SRC-2661-013 | Identity: missing `apiversion`, cross-cluster item, or two items mapping to one canonical ID fails the kind (not just the item) | ✅ |
+| UT-FMC-SRC-2661-012 | Collector-side precedence: the label state is written per object, and a corrupt projection is invalid, never absent. The read-time precedence clauses — explicit `false` overrides namespace `true`; cluster-scoped never inherits — are owned by `UT-FMC-INV-2661-011` (the shared ADR-053 resolver, proven in `pkg/fleet/fmc/inventory_reader_test.go`). **Review-hardened shapes (rounds 2-3):** a present-but-unusable projection — JSON `null`, an empty managed value, a duplicate key, an entry without `=`, or a space-adjacent separator — is invalid, never absent, never resolved; legacy per-key projections are held to the same rule as the semicolon `label` field; more than one managed-label source at once is corruption, never a precedence choice (parity with the Check lane) | ✅ |
+| UT-FMC-SRC-2661-013 | Identity: missing `apiversion`, cross-cluster item, or two items mapping to one canonical ID fails the kind (not just the item). **Wire shape (#2691 review):** group and version arrive as separate `apigroup`/`apiversion` properties (absent group = core, the live #2592 shape our request filters mirror); a foreign `apigroup` on the requested group fails the kind. **Review-hardened:** an item with no or non-string `cluster` attribution fails the kind — Search visibility is not membership — and a present-but-non-string `namespace` field is a failure, never a silent cluster-scoped reclassification | ✅ |
 | UT-FMC-SRC-2661-014 | Traversal: explicit `orderBy uid asc`, offset chunking, strictly increasing `_uid`, stable `count` → complete collection | ✅ |
 | UT-FMC-SRC-2661-015 | `count` changes mid-walk → exactly one restart from offset 0, then complete; a second change → incomplete | ✅ |
 | UT-FMC-SRC-2661-016 | Duplicate/non-increasing `_uid`, non-final short page, or `sum(items) != count` → incomplete | ✅ |
@@ -192,6 +228,20 @@ live run.
 | UT-FMC-SRC-2661-018 | `_uid` is used only for ordering/dedupe: absent from the cache projection, the page and the canonical ID | ✅ |
 | UT-FMC-SRC-2661-019 | A successfully traversed zero-item collection is recorded as an **applied observation** (never `unavailable`, never the failure envelope) and commits through `empty_verified`; the page layer, not the adapter, decides `empty` vs `partial` (G10) | ✅ |
 | UT-FMC-SRC-2661-020 | One atomic commit writes **both** indexes from the same staged generation: member counts must agree (`LEX_COUNT_MISMATCH` otherwise), the next `begin` clears an abandoned staging's lex index, both enforce the 10 000-member bound, and an empty commit removes both | ✅ |
+| UT-FMC-SRC-2661-021 | **Derived request budget** (D4.1a 7a): each request takes `min(10 s, remaining − 5 s commit reserve)`; when remaining is below the 2 s start floor the collector abandons staging and starts no request, so the previous proof ages out instead of being half-replaced | ✅ |
+| UT-FMC-SRC-2661-022 | **Walk-level page budget**: the 100-page budget is enforced *before* the request — an exhausted budget is reported without sending page 101 — while a walk that completes on the final allowed page still succeeds; the 5000-item ceiling remains defense in depth inside `addPage`. The **aggregate bounds across kinds** (two kinds individually inside every ceiling whose summed pages or items exceed the partition-wide bounds → no `Repair`, no staged write, no `CommitRepair`) are enforced by the repair contract (`ValidatedObservationSet.Validate`) and proven by `IT-FMC-SRC-2661-007` | ✅ |
+| UT-FMC-SRC-2661-023 | `NewACMHTTPSearch` sends `Authorization` from `tokenPath` and validates TLS against `caFile`; replacing the token or CA material changes the next request **WITHOUT rebuilding the client**; no secret appears in the URL, a log line or a status | ✅ |
+| UT-FMC-SRC-2661-024 | **Deadline ownership (D4.1a rule 7b)**: `repairPartition` sets exactly one collection deadline per repair, at repair start, from `RepairCollectionBudget` — every configured kind's collection sees the identical value — and never overwrites a deadline already present on the context | ✅ |
+| UT-FMC-SRC-2661-025 | **Transport hardening (review round 1)**: one Search reply is byte-bounded before decoding, so the 50-item logical guard is never the only defense against a hostile or broken endpoint; chunk failures are classified transport/tool/malformed and mapped onto the matching observation failure — an HTTP or GraphQL answer is never reported as a network outage, and a TLS failure as a tool failure | ✅ |
+| UT-FMC-SRC-2661-026 | **Transport reply integrity (#2691 review)**: redirect answers are refused outright (the bearer can never be routed to a different target); the reply is exactly one JSON value under the byte bound (trailing data is malformed); the searchResult count is explicitly provided and nonnegative — a missing, null or negative count is a tool failure, never a proven empty collection, while an explicit zero with empty items remains the well-formed empty answer; the endpoint is parsed once and the route joined to its path (no query or fragment) | ✅ |
+
+### Tier 1c — AF fleet endpoint config (`pkg/fleet/config.go`, phase c)
+
+| ID | Scenario | Critical |
+|---|---|---|
+| UT-AF-CFG-2661-001 | The new `fleet.fmc.endpoint` key parses and selects the FMC inventory endpoint; the AF inventory reader is built from it, never from `fleet.endpoint` (`cfg.Fleet.EffectiveEndpoint()` stays the scope adapter's endpoint, D2.1a) | ✅ |
+| UT-AF-CFG-2661-002 | `fleet.fmc.endpoint` absent under `fleet.backend: fmc` → the inventory path fails closed `unavailable`; it never inherits the scope adapter's endpoint or the ACM Search URL | ✅ |
+| UT-AF-CFG-2661-003 | `fleet.backend: acm` with `fleet.fmc.endpoint` present → the FMC reader is still built from the new key (DD-AF-018 gate removed, both sites); with it absent → `unavailable`, never a direct ACM Search client | ✅ |
 
 ### Tier 2 — Integration
 
@@ -199,11 +249,16 @@ live run.
 |---|---|---|
 | IT-FMC-INV-2661-001 | Production mux serves list and exact read; response is the shared sanitized schema; unknown route/method behaviour unchanged | ✅ |
 | IT-FMC-INV-2661-002 | End-to-end over real cache semantics: proven partition → `success`/`empty`; broken/staged/incomplete partition → `partial`/`unavailable`, with no staging key ever served | ✅ |
-| IT-FMC-SRC-2661-001 | The ACM adapter runs inside the real sync cycle and writes through the fenced/staged path (no direct Valkey writes) | ✅ |
-| IT-FMC-SRC-2661-002 | Source selection: an MCP-sourced cluster keeps its existing collector and never calls Search; an ACM-sourced cluster uses the adapter; an unknown source is `unavailable`, not guessed | ✅ |
+| IT-FMC-SRC-2661-001 | From `buildFMCSyncer`→sync, an ACM-configured deployment makes Search calls and reaches `BeginRepair`→`Repair`→`CommitRepair`; a direct Valkey write, or a missing Search call, fails the spec | ✅ |
+| IT-FMC-SRC-2661-002 | Build two production syncers — one from an absent-`sources` config, one from `sources.acm` — and assert MCP-only versus ACM-only call surfaces; an invalid `sources` block fails at load/validate, the steps that precede syncer construction in the startup order | ✅ |
+| IT-FMC-SRC-2661-003 | Through the production `ACMHTTPSearch` construction: bearer header present, TLS validated against `caFile`, then token rotation and CA rotation both take effect on the same client | ✅ |
+| IT-FMC-SRC-2661-004 | Two configured kinds under one repair context share a single deadline (rule 7b): the start floor refuses a request, no clean commit is published, and the previous proof ages to `stale` then `unavailable` | ✅ |
+| IT-FMC-SRC-2661-005 | A `sources.acm` block that fails production construction (e.g. an absent `caFile` that passes path-shape validation) exits through main's dependency-wiring choreography — the "Failed to construct FMC dependencies" log and the bootstrap health-server shutdown — never a bare `os.Exit` inside `wireFMCDependencies` (D4.1a rule 3, fail closed observably) | ✅ |
+| IT-FMC-SRC-2661-006 | **MCP readiness scoping (DD-FLEET-017 D1)**: an ACM-selected deployment stays ready when the MCP gateway is down (membership comes from the registration CRs; the ACM collector never calls MCP) **and on a cold start with zero registrations** (nothing ever runs a cycle, so the wiring layer owns the flag), while an MCP-selected deployment stays unready for the same outage — the protocol gate applies only to the selected source | ✅ |
+| IT-FMC-SRC-2661-007 | **Aggregate bounds across kinds (D2.7)**: two configured kinds, each individually inside the 50-per-page and 100-page walk ceilings, whose summed items and pages exceed the partition-wide ceilings — the repair contract refuses the sync ("out of bounds"), no clean commit is published, and each kind's walk completed individually legally | ✅ |
 | IT-AF-2661-001 | AF list dispatch reaches the endpoint from `fleet.fmc.endpoint` (asserted by the request the fixture receives, including with `fleet.backend: acm`) and returns the FMC page — the inventory path never inherits the scope adapter's endpoint | ✅ |
 | IT-AF-2661-002 | AF maps `partial`/`unavailable` → `503` state-only, `forbidden` → `403`, `not_found` → `404`; no rows or cursors leak | ✅ |
-| IT-AF-2661-003 | Namespace-list SAR denial → `403` state-only with zero requests to FMC; one typed audit event per read with `result_state`, no records | ✅ |
+| IT-AF-2661-003 [AC-6, AU-3] | Namespace-list SAR denial → `403` state-only with zero requests to FMC; one typed audit event per read with `result_state`, no records | ✅ |
 
 ### Tier 3 — Live / E2E
 
@@ -234,6 +289,14 @@ Kubernetes client reachable from the inventory path.
 but denies `list/core/v1/namespaces`. Assertions: `403`, `forbidden`, FMC
 fixture sees zero requests, exactly one audit event with `result_state=forbidden`.
 
+**IT-FMC-SRC-2661-003 (construction split).** The bearer, TLS-validation and
+token-rotation assertions run through `buildACMSource` (the production
+composition `buildFMCSyncer` uses). The CA-rotation half constructs
+`NewACMHTTPSearch` directly with the loaded config's values — the identical
+call `buildACMSource` makes — because `ACMSource` does not expose its transport
+for `ReloadCA`. Both halves use the production constructor; only the
+composition root differs.
+
 ## 9b. Tests retired or re-scoped by this plan
 
 Two existing specs assert behaviour this plan intentionally changes. They are
@@ -242,44 +305,138 @@ Two existing specs assert behaviour this plan intentionally changes. They are
 | Test | Today | Required change |
 |---|---|---|
 | `UT-AF-2592-REMOTE-FAIL-CLOSED-001` (`pkg/apifrontend/policyread/interim_contract_2592_red_test.go`) | Pins "non-local read rejected, no remote reader called" | Re-scope to the new boundary: non-local dispatch reaches FMC when the endpoint is configured and never falls back to local. The old expectation is replaced, not weakened. |
+| `IT-AF-2584-REMOTE-LIST-003` (`pkg/apifrontend/policyread/service_2584_test.go`) | Asserts remote list rejection with zero requests to a wired ACM client | Re-scope: dispatch now reaches `RemoteInventory`; the "never contacts ACM Search" half is preserved by asserting the wired reader is the FMC client (fixture receives the request), not by asserting zero dispatch. |
+| `IT-AF-2584-REMOTE-LIST-001` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Handler-level pin of "non-local list rejected, no remote reader contacted" | Re-scope to the dispatch boundary: non-local list reaches FMC when configured; no local fallback. |
+| `IT-AF-2584-REMOTE-LIST-002` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Handler-level pin of "a remote ACM list stays unavailable instead of exposing a partial Search page" — allow authorizer, wired ACM client, zero requests asserted | Re-scope with `-001`: non-local list now dispatches to the wired remote reader (the fixture receives the request). The no-partial-rows half is preserved by asserting the state-only envelope on the reader's own error/partial mapping; the never-ACM half by making the wired fixture the FMC client, not by asserting zero dispatch. |
+| cross-cluster probe inside `IT-AF-2584-005` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Asserts `remote.listCalls == 0` — "a non-local list must be refused before remote dispatch" — with both backends wired and an allow authorizer | Re-express the probe: a non-local list now reaches the wired remote stub (`remote.listCalls ≥ 1`) and still never falls back to local (`local.listCalls == 0` kept verbatim). The guessed-opaque-ID half of the spec is unchanged. |
+| `IT-AF-2584-ACM-FAIL-CLOSED` (`cmd/apifrontend/policyread_wiring_2584_test.go`) | Asserts `deps.RemoteInventory` is nil for `Backend: fleet.BackendACM` | Re-scope: with `fleet.fmc.endpoint` configured the FMC reader is wired under `backend: acm` (DD-AF-018 gate removed); with it absent, `RemoteInventory` stays nil and reads fail closed `unavailable`. |
+| `UT-AF-2584-FMC-READER` (`cmd/apifrontend/policyread_wiring_2584_test.go`) | Asserts the FMC Console reader is wired from `fleet.endpoint` (`Backend: fleet.BackendFMC`, `Endpoint` set → `RemoteInventory` non-nil) | Re-scope to the new key: the reader is wired when `fleet.fmc.endpoint` is set (keeping `fleet.endpoint` present proves non-inheritance), and stays nil when only `fleet.endpoint` is set. The old expectation is replaced, not weakened: the inventory path no longer reads the scope adapter's endpoint (D2.1a, `UT-AF-CFG-2661-001`). |
+| `IT-AF-ROUTE-010 / IT-AF-PRES-007` DescribeTable (`cmd/apifrontend/policyread_wiring_2584_test.go`) | Drives `deps.RemoteInventory` through exact reads with `Backend: fleet.BackendFMC, Endpoint: server.URL`; the "verified managed" entry expects success through the wired reader | Re-scope the fixture config to set `fleet.fmc.endpoint = server.URL` (with or without `fleet.endpoint`) so the table keeps proving the retain-enum authority through production wiring. No assertion weakens — only the config key that selects the reader changes. |
 | `UT-FLEET-2584-ACM-EMPTY-001` (`pkg/fleet/acm/inventory_2584_red_test.go`) | **Already narrowed by its author (2026-11-18)**: asserts only "an applied zero-item Search is an empty observation, not unavailable"; no `Page.Validate()`/completeness claim, no AF read boundary | No re-scope needed. This plan adds the adapter-side shape assertion in `UT-FMC-SRC-2661-019` (applied zero-item observation, never a failure envelope) and keeps the state decision in `UT-FMC-INV-2661-002/003` (page assembly). |
 
 ## 10. Wiring Manifest
 
-Identical to DD-FLEET-017 §8 (single authority).
+Identical to DD-FLEET-017 §8 (single authority; that table is amended in the
+same change so rows 1a/4a and the row 2/4 wording match here).
 
 | # | Component | Production entry point | Wiring location | IT ID |
 |---|---|---|---|---|
 | 1 | FMC inventory route | `GET /api/v1/inventory/managed-resources` | `pkg/fleet/fmc/handler.go` `RegisterRoutes` | IT-FMC-INV-2661-001 |
+| 1a | FMC inventory production assembly | same route, real mux | `buildFMCServers` in `cmd/fleetmetadatacache/main.go` — done only when the authenticated production mux returns 503 state-only for an unproven partition, the exact route is registered, and an unknown route stays 404 | IT-FMC-INV-2661-001W |
 | 2 | Cache-backed page/cursor | same route | FMC page reader over index + proof gate | IT-FMC-INV-2661-002 |
 | 3 | ACM Search source adapter | FMC sync cycle | new adapter under `pkg/fleet/fmc` | IT-FMC-SRC-2661-001 |
-| 4 | Source selection per cluster | FMC sync cycle | adapter selection table (MCP / ACM) | IT-FMC-SRC-2661-002 |
+| 4 | Source selection (per deployment) | FMC sync cycle | `cmd/fleetmetadatacache/main.go` selects the collector from `cfg.SourceKind()` (MCP / ACM) | IT-FMC-SRC-2661-002 |
+| 4a | AF→FMC endpoint config | `fleet.fmc.endpoint` | `pkg/fleet/config.go` defines the key; `cmd/apifrontend/backend_deps.go` builds the AF inventory reader from it (replacing `cfg.Fleet.EffectiveEndpoint()` on the inventory path) | IT-AF-2661-001 |
 | 5 | AF→FMC dispatch + qualification | `GET /api/v1/console/inventory/managed-resources` | `policyread.Service.ListInventory` / `readerFor` | IT-AF-2661-001 |
 | 6 | AF partial/unavailable mapping | both inventory routes | handler `projectionStatus` | IT-AF-2661-002 |
 | 7 | Namespace-list SAR + typed audit | both non-local reads | `policyread` authorizer / `emitRead` | IT-AF-2661-003 |
 
 ## 11. Implementation sequence and TDD budget
 
-| Phase | Work | Budget |
-|---|---|---|
-| 0 | ADR-068/DD-FLEET amendment drafted and approved; SDL provenance recorded; paginated Search document added as a **new** constant | 60–90 min (excluding approval latency) |
-| RED a | UT-FMC-INV-2661-001..014 (page contract, proof gate, managed projection, cursor drift, lex ordering/prefix/missing index) | 130 min |
-| GREEN a | FMC inventory route + page reader + `Page.Validate()` freshness checks | 120 min |
-| RED b | UT-FMC-SRC-2661-011..019 (collector) | 90 min |
-| GREEN b | ACM source adapter + sync selection + fenced publication incl. the lex identity key in the staged commit | 180 min |
-| RED/GREEN c | IT-FMC-* and IT-AF-2661-001..003; AF dispatch + SAR + status mapping | 120 min |
-| REFACTOR | Collapse the two page-assembly paths into one projection helper; single state/status table; no new types | 45 min |
-| Validate | affected UT/IT with `-race`, build, repo compile, full lint, local/FMC/scope regressions | 60–90 min |
-| Live | E2E-FMC-INV-2661-001/002, evidence captured | 90–120 min |
+| Phase | Work | Evidence / IDs | Done only when (completion condition) |
+|---|---|---|---|
+| 0 | ADR-068/DD-FLEET amendment drafted and approved; SDL provenance recorded; paginated Search document added as a **new** constant | — | 60–90 min (excluding approval latency) |
+| RED a | UT-FMC-INV-2661-001..014 (page contract, proof gate, managed projection, cursor drift, lex ordering/prefix/missing index) | — | 130 min |
+| GREEN a | FMC inventory route + page reader + `Page.Validate()` freshness checks | — | 120 min |
+| RED b1 — collector contracts | `pkg/fleet/fmc/acm_source.go`, `acm_search.go` | UT-FMC-SRC-2661-011..019, 021..022 | Done only when every collector UT passes; no production caller is claimed |
+| GREEN b1 — collector package | `ACMSource`, `ACMHTTPSearch`, traversal guards | same UTs | Done only when the collector is independently testable and still unwired |
+| RED b2 — source composition | `cmd/fleetmetadatacache/main.go` `buildFMCSyncer` | IT-FMC-SRC-2661-002 | Fails while `buildFMCSyncer` always builds the MCP reader |
+| GREEN b2 — deployment selection | `buildFMCSyncer` reads `cfg.SourceKind()` | IT-FMC-SRC-2661-002 | Done only when absent `sources` selects MCP and `sources.acm` selects ACM **through production construction** |
+| RED b3 — repair publication and budget | `pkg/fleet/fmc/syncer.go` repair path | IT-FMC-SRC-2661-001, -004; UT-FMC-SRC-2661-020/022 | Fails without fenced repair, one repair-wide deadline and the commit reserve |
+| GREEN b3 — fenced publication | same repair path | same | Done only when Search observations reach BeginRepair→Repair→CommitRepair, with the shared deadline set once per repair and no direct Valkey write |
+| RED b4 — transport credentials | `NewACMHTTPSearch` production construction | UT-FMC-SRC-2661-023; IT-FMC-SRC-2661-003 | Fails without bearer, CA and rotation assertions |
+| GREEN b4 — transport credentials | `NewACMHTTPSearch` | same | Done only when request-level auth, trust and rotation pass without client recreation |
+| RED/GREEN c | IT-FMC-* and IT-AF-2661-001..003; AF dispatch + SAR + status mapping; the `fleet.fmc.endpoint` key (UT-AF-CFG-2661-001..003 first, wiring row 4a) and removal of both DD-AF-018 gate sites — `pkg/fleet/inventory_reader.go` (the `BackendACM → nil, nil` branch) and the `cmd/apifrontend/backend_deps.go` log-and-skip site | — | 120 min + the config slice |
+| REFACTOR | In-package deduplication only (AGENTS.md: no new types or components in REFACTOR): collapse the shared tail of the two page-assembly paths — `pkg/apifrontend/policyread/local_inventory.go` `list`'s final page construction and `pkg/fleet/fmc/inventory_reader.go` `assemble` — into one helper inside the package that already owns the common `Page` type (`pkg/fleet/inventory`), if and only if it needs no new exported type; and collapse the parallel per-state switches in `pkg/apifrontend/handler/console_policyread.go` — `projectionStatus` and `projectionMessage` — into one state→(status, message) table in that package. A merge of `projectionStatus` with `inventoryWireStatus` (`pkg/fleet/fmc/handler.go`) is explicitly out of scope: they live in different packages and their 2xx semantics differ (the AF switch has no success arm; FMC maps success/empty→200), so merging would change behavior | — | 45 min |
+| Validate | affected UT/IT with `-race`, build, repo compile, full lint, local/FMC/scope regressions | — | 60–90 min |
+| Live | E2E-FMC-INV-2661-001/002, evidence captured | — | 90–120 min |
 
 Total ≈ 12–15 h plus CI. The lex index adds ~1.5–2.5 h of code and, critically,
 **re-qualification of the DD-FLEET-016 atomic swap** (~0.5–1 day of IT/live
 evidence) because it changes the committed keyspace.
 
+### 11a. Budget ownership (D4.1a rules 7a–7b) — one deadline per repair
+
+The collector reads its deadline from the context, so exactly one component may
+set it. That component is the repair path, not the collector:
+
+- `repairPartition` computes **one** deadline immediately after a successful
+  `BeginRepair`, from that generation's staging lifetime, and wraps the context
+  with `fmc.WithCollectionDeadline`.
+- The same context is passed through every kind's `ReaderFor`/`ListObserved`, so
+  N kinds share one window instead of each receiving a fresh fallback. The
+  per-kind path must never derive a new budget.
+- Within the window the collector reserves the commit cost (5 s), refuses to
+  start a request below the 2 s floor, and abandons the repair when the deadline
+  is exhausted — no clean commit, the previous proof ages out.
+
+Proving this is `IT-FMC-SRC-2661-004` (two kinds, one context) and
+`UT-FMC-SRC-2661-021` (start floor). Without this rule the 55 s fallback is a
+per-kind constant and a seven-kind sync can outlive a 60 s staging generation.
+
+### 11b. TDD compliance record (methodology enforcement)
+
+The project methodology is RED-first without exception. This section records
+a breach found in increment 2 and its remediation, and binds the remaining
+phases.
+
+**Breach.** The b2 wiring (source selection, `7d905be27`) and the b3 deadline
+wiring (inside the review-fix commit `457c37f9c`) landed **before** their RED
+specs existed — the IT specs were written afterwards against committed code,
+which inverts this plan's own §11 ordering ("Fails while `buildFMCSyncer`
+always builds the MCP reader").
+
+**Remediation (executed 2026-11-20).** The RED phases were recovered against
+the true pre-wiring baselines rather than simulated:
+
+- **b3 / rule 7b ownership**: `UT-FMC-SRC-2661-024` (internal to `pkg/fleet/fmc`
+  because `deadlineKey` is deliberately unexported) was written first, then run
+  against `c72b0503e` (the last commit without the deadline wiring): it fails
+  with the deadline unset — the right reason. Green at HEAD.
+- **b2 / source selection**: the four IT specs do not compile against
+  `8ec562999` (the pre-wiring `buildFMCSyncer` returns one value, no error) —
+  the authentic first RED for the wiring. Green at HEAD; behavioral failure
+  modes are additionally pinned by the mutation-control runs recorded with
+  `73e66c805` (severed catalog, severed sources, removed rotation, removed
+  shared deadline).
+- `IT-FMC-SRC-2661-004`'s sharing semantics remain proven through the
+  production context seam (Status note above); `UT-FMC-SRC-2661-024` now
+  proves the repair path's own deadline-setting that the IT could not observe.
+
+**b1 (config and collector unit slices).** RED evidence was recovered by a
+**verification replay** (2026-11-20): the committed specs were run against the
+pre-implementation states, which modifies nothing that survives, so the final
+tree is bit-identical by construction:
+
+- *Greenfield RED*: with `config/sources.go` absent, the config package does
+  not compile (`SourcesConfig`, `decodeSourcesStrict`, `validateACM`
+  undefined); with `acm_source.go`/`acm_search.go` absent, the fmc package
+  does not compile — the specs' contracts do not exist without the
+  implementation.
+- *Review-fix RED, round 2* (`fa4655087`): its three per-key-projection specs
+  fail against `457c37f9c`'s pre-fix code (null/numeric/empty values laundered
+  into decisions instead of invalid).
+- *Review-fix RED, round 3* (`6f065422f`): its three ambiguity specs fail
+  against `fa4655087`'s pre-fix code (two managed-label sources and a
+  space-adjacent separator read as clean states instead of corruption).
+
+A **re-derivation** replay (delete the code and re-implement from the specs)
+was considered and rejected: the outcome cannot be assured identical — the
+review-fix refinements and incidental structure could diverge, and it would
+invalidate the SHAs this record cites. The verification replay provides the
+RED evidence the methodology requires without that risk.
+
+**Standing rule for the remaining phases** (c, REFACTOR, Live): strict
+RED-first — write the failing spec, show it failing for the right reason,
+then implement. Implement-first is not an option; when RED-first is genuinely
+impossible, escalate for approval before writing any implementation code.
+
 ## 12. Rollback
 
-Two independent, atomic reverts: (a) re-gate AF dispatch (the rejection returns,
-FMC keeps serving internally); (b) disable the ACM source adapter so the
+Two independent, atomic reverts: (a) re-gate AF dispatch (restore the
+`pkg/fleet/inventory_reader.go` `BackendACM → nil, nil` branch and the
+`cmd/apifrontend/backend_deps.go` skip site — the rejection returns, FMC keeps
+serving internally); (b) disable the ACM source adapter so the
 partition falls back to its previous proven state or `unavailable`. No
 compatibility mode, no data migration.
 
@@ -290,3 +447,6 @@ per-user remote visibility (#2600), no offset-snapshot guarantee, no Rancher or
 further sources, no remote policy-scope, no Console rendering evidence, no live
 result before the run. The peer model in current code and ADR-068 is not
 migration-tested by this plan; the amendment is a prerequisite, not a test item.
+CA rotation (`ReloadCA` on the live client) is proven as a capability of the
+production constructor with no production watcher wired yet; it is not claimed
+as operational rotation behavior.

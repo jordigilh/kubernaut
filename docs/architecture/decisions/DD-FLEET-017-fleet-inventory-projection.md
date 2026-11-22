@@ -442,9 +442,12 @@ the cache.
 5. **Identity projection.** Canonical six-field ID, `_uid` used only for
    ordering and duplicate detection, never serialized, never part of the public
    ID (DD-FLEET-015: no target-UID claim). Cross-cluster, missing-`apiversion`
-   or ambiguous items fail the kind, not just the item. Collection also emits
-   the lexicographic identity key (D2.5a) so one atomic commit writes both
-   indexes from the same staged generation.
+   or ambiguous items fail the kind, not just the item. The collector emits a
+   validated canonical identity and nothing index-shaped: the repair writer
+   passes identity plus `public_id` to `repair_reconcile`, which composes the
+   lexicographic member and atomically stages and swaps **both** indexes for one
+   staged generation (D2.5a). Index ownership lives in the writer, not in the
+   source adapter.
 6. **Label precedence** stays ADR-053, evaluated by the shared resolver; an
    invalid label is invalid, never absent, and never falls through to
    inheritance.
@@ -517,6 +520,30 @@ Rules:
    and a value below normal Search latency makes it fail under load. Tuning
    latency means changing the staging cap or the chunking (DD-FLEET-016
    territory), not a per-deployment knob.
+7b. **One deadline per repair, owned by the repair path.** The collector reads its
+   deadline from the context; exactly one component may put it there. The FMC
+   repair path sets it once, immediately after a successful `BeginRepair`, from
+   that generation's staging lifetime, and passes the same context through every
+   kind's collection. N kinds share one window. A per-kind fallback would let a
+   seven-kind sync outlive the 60 s staged generation, which is why the collector
+   must never derive its own budget in production.
+
+**Cross-repo status (2026-11-20).** The operator half of D4.1a is implemented and
+merged: kubernaut-operator#649 (`feat/647-fmc-acm-source-config`, merge commit
+`fb8a3f0c`, closes kubernaut-operator#647). It renders exactly
+`sources.acm.{endpoint, tokenPath, caFile}` and, for consumers, the key-less
+fleet block that increment 1d accepts. Two facts from that landing bind this
+side:
+
+1. **Our strict decoding is now load-bearing.** The operator relies on FMC
+   rejecting a mismatch rather than silently ignoring it; an operand without
+   increment 2 decodes `sources` leniently and would drop the block while
+   running the MCP collector.
+2. **A present-but-empty `sources` block is a startup failure here.** The
+   operator therefore rejects an empty declaration at admission
+   (`UT-FLEET-647-VALIDATE-005`) and its renderer cannot emit one
+   (`UT-FLEET-647-SRC-009`); rules 1-2 of this section are the contract both
+   sides now test.
 
 **Alternatives.** (i) Reuse the v1 per-request adapter (rejected in D2).
 (ii) Keyset continuation — unsupported (spike: silent `count=0`).
@@ -638,9 +665,11 @@ source.
 | # | Component | Production entry point | Wiring location | IT ID |
 |---|---|---|---|---|
 | 1 | FMC inventory route | `GET /api/v1/inventory/managed-resources` | `pkg/fleet/fmc/handler.go` `RegisterRoutes` | IT-FMC-INV-2661-001 |
-| 2 | Cache-backed page/cursor + lex ordering | same route | FMC page reader over the lex index + proof gate | IT-FMC-INV-2661-002 |
+| 1a | FMC inventory production assembly | same route, real mux | `buildFMCServers` in `cmd/fleetmetadatacache/main.go` — done only when the authenticated production mux returns 503 state-only for an unproven partition, the exact route is registered, and an unknown route stays 404 | IT-FMC-INV-2661-001W |
+| 2 | Cache-backed page/cursor | same route | FMC page reader over index + proof gate | IT-FMC-INV-2661-002 |
 | 3 | ACM Search source adapter | FMC sync cycle | new adapter under `pkg/fleet/fmc` | IT-FMC-SRC-2661-001 |
-| 4 | Source selection per cluster | FMC sync cycle | adapter selection table (MCP / ACM) | IT-FMC-SRC-2661-002 |
+| 4 | Source selection (per deployment) | FMC sync cycle | `cmd/fleetmetadatacache/main.go` selects the collector from `cfg.SourceKind()` (MCP / ACM) | IT-FMC-SRC-2661-002 |
+| 4a | AF→FMC endpoint config | `fleet.fmc.endpoint` | `pkg/fleet/config.go` defines the key; `cmd/apifrontend/backend_deps.go` builds the AF inventory reader from it (replacing `cfg.Fleet.EffectiveEndpoint()` on the inventory path) | IT-AF-2661-001 |
 | 5 | AF→FMC dispatch + qualification | `GET /api/v1/console/inventory/managed-resources` | `policyread.Service.ListInventory` / `readerFor` | IT-AF-2661-001 |
 | 6 | AF partial/unavailable mapping | both inventory routes | handler `projectionStatus` | IT-AF-2661-002 |
 | 7 | Namespace-list SAR + typed audit | both non-local reads | `policyread` authorizer / `emitRead` | IT-AF-2661-003 |
