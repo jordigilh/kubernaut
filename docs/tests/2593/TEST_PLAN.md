@@ -1135,7 +1135,10 @@ non-verified result returns a state-only unavailable response with no resource; 
 not map to `NotFound`, `managed:false`, an allow, or a local-reader fallback. Only a
 verified managed result proceeds, and only a verified unmanaged result may map to the
 existing not-found behavior. Non-local list/policy-scope remains unavailable/no rows under
-DD-AF-018. The test must traverse `Service.GetInventory` and the configured scope checker,
+DD-AF-018. *(Superseded for the managed-resource list lane 2026-11-22, #2661
+phase c — see DD-AF-018's 2026-11-22 release-gate amendment and TP-2661 §9b:
+non-local lists dispatch to FMC under the namespace-list SAR; policy-scope
+listing stays local-only.)* The test must traverse `Service.GetInventory` and the configured scope checker,
 not call the helper in isolation.
 
 **External gate registration and ownership.** `IT-AF-CACHE-006`,
@@ -1149,7 +1152,9 @@ owner), exact approved plan path and revision, exact test file and source revisi
 command, artifact path, authorization reference, UTC start/end, exit status, redaction
 status, expected/actual result, and current plan/test-plan hashes. Missing registration,
 identity, reviewer independence, or wire artifact keeps the gate unavailable and preserves
-AF non-local unavailable/no rows and FMC inventory no rows.
+AF non-local unavailable/no rows and FMC inventory no rows. *(Superseded for the
+managed-resource list lane 2026-11-22, #2661 phase c — see DD-AF-018's 2026-11-22
+release-gate amendment: non-local lists dispatch to FMC under the namespace-list SAR.)*
 
 ### 5.4.2 R10 plan-executability amendments
 

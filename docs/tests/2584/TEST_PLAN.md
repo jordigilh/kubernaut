@@ -692,7 +692,10 @@ and verifies remote inventory list, exact read, and policy-scope list return
 `unavailable` with no records. `UT-AF-2584-FMC-READER` verifies that FMC wiring
 remains enabled. The ACM shared scope checker is unaffected by the inventory
 gate. Live least-privilege visibility, pagination, and production AF journey evidence
-are required before enabling ACM inventory. Complete local and qualified remote pages
+are required before enabling ACM inventory. *(Superseded for the inventory-list
+lane 2026-11-22, #2661 phase c — the DD-AF-018 inventory-lane gate is removed
+and both named tests are re-scoped per TP-2661 §9b; the absent-key fail-closed
+half of `IT-AF-2584-ACM-FAIL-CLOSED` remains valid.)* Complete local and qualified remote pages
 may expose per-read observation/freshness metadata, but no backend synchronization
 watermark or cross-request snapshot is claimed.
 
