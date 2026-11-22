@@ -37,7 +37,7 @@ Gateway signal routes run [`pkg/shared/auth/middleware.go`](../../../../../pkg/s
 | `security_event` (reason `authorization_service_unavailable`) | `authorization` / `authorize` / `failure` | SAR API call fails; fail-closed 500 (Issue #2664: previously unlogged) | `actor_type="user"`, `actor_id=<username>`, `status_code=500` |
 | `security_event` (reason `authorization_granted`) | `authorization` / `grant` / `success` | SAR allows the webhook (Issue #2664: granted decisions are now observable) | `actor_type="user"`, `actor_id=<username>`, `status_code=200` (the authorization decision, not the downstream response) |
 
-All events carry `correlation_id` (the service request ID: Gateway's `RequestIDMiddleware`, otherwise chi `RequestID`, exposed as `X-Request-ID`; empty only when the caller is behind no correlation middleware and sent no header). The two outage events additionally carry DD-ERROR-001 `error_details` (`message`, `code=ERR_AUTH_SERVICE_UNAVAILABLE`/`ERR_AUTHZ_SERVICE_UNAVAILABLE`, `component=auth-middleware`, `retry_possible=true`).
+All events carry `correlation_id` (the service request ID: Gateway's `RequestIDMiddleware`, otherwise chi `RequestID`, exposed as `X-Request-ID`; always present in the four production consumers because chi `RequestID` runs before auth; empty only if a future caller registers auth with no request-ID middleware and sends no header). The two outage events additionally carry DD-ERROR-001 `error_details` (`message`, `code=ERR_AUTH_SERVICE_UNAVAILABLE`/`ERR_AUTHZ_SERVICE_UNAVAILABLE`, `component=auth-middleware`, `retry_possible=true`).
 
 **Controls:** FedRAMP AU-2, AU-3, AC-6; SOC2 CC7.2; OWASP ASVS V2/V3/V7.
 
