@@ -8,7 +8,11 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 **Version**: 2.0 (supersedes TP-2661-v1.0, AF→ACM direct)
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
-**Status**: 📝 Draft v2.7 (round-4 pre-implementation review: `UT-AF-2661-004`
+**Status**: 📝 Draft v2.8 (round-5 pre-implementation review: `IT-AF-2661-004`
+added to BR-SAFETY-001 in §7; §12(a) now removes the `authorize()` non-local
+SAR branch — it is shared by list, exact-get and policy-scope reads — and
+names the re-expressed startup logs and the deletion of the new phase-c specs
+with the code unit). Draft v2.7 (round-4 pre-implementation review: `UT-AF-2661-004`
 added for the non-local namespace-list SAR (the `authorize()` change is now
 named in RED/GREEN c — the AC-6 control had IT-only proof); `IT-AF-2661-004`
 added for fail-closed inventory startup observability, including the
@@ -196,7 +200,7 @@ live run.
 | BR-SECURITY-016 | Least privilege, user gate, no privileged widening (AC-6, AU-3 on the SAR audit journey) | UT-FMC-INV-2661-010, UT-FMC-SRC-2661-023, UT-AF-2661-004, IT-AF-2661-003, IT-FMC-SRC-2661-003 |
 | BR-SECURITY-017 | Metadata-only egress | UT-FMC-INV-2661-010, IT-FMC-INV-2661-001 |
 | BR-INTEGRATION-065 | Source abstraction and dispatch | UT-FMC-SRC-2661-001..010, UT-AF-CFG-2661-001..003, IT-FMC-SRC-2661-001/002, IT-AF-2661-001 |
-| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004, UT-FMC-SRC-2661-004..009/015..017/021/022, UT-AF-CFG-2661-002/003, IT-AF-2661-002, IT-FMC-INV-2661-002, IT-FMC-SRC-2661-004 |
+| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004, UT-FMC-SRC-2661-004..009/015..017/021/022, UT-AF-CFG-2661-002/003, IT-AF-2661-002, IT-AF-2661-004, IT-FMC-INV-2661-002, IT-FMC-SRC-2661-004 |
 
 ## 8. Test scenarios
 
@@ -462,9 +466,16 @@ reverts with it), so pre-phase-c behavior — including the fmc-backend reader
 built from the scope adapter's endpoint or its auto-derivation — returns
 exactly. Restoring only the two DD-AF-018 sites is not a rollback: it would
 leave `fleet.fmc.endpoint` mandatory for fmc-backend inventory, silently
-unavailable to deployments that never set it. The §9b re-scoped/re-expressed
-specs revert to their pre-phase-c form in the same unit — an executor who
-reverts only the code sites leaves a red suite; (b) disable the ACM source
+unavailable to deployments that never set it. The revert also removes the
+`policyread.Service` `authorize()` non-local namespace-list SAR branch
+(UT-AF-2661-004/IT-AF-2661-003) — `authorize()` is shared by list, exact-get
+and policy-scope reads, so leaving the branch would keep a denial surface on
+non-local exact gets that did not exist pre-phase-c — and restores the
+re-expressed `backend_deps.go` startup log lines to their pre-phase-c form.
+The §9b re-scoped/re-expressed specs revert to their pre-phase-c form in the
+same unit, and the new phase-c specs (UT-AF-CFG-2661-001..003,
+UT-AF-2661-004, IT-AF-2661-004) are deleted with the code unit — an executor
+who reverts only the code sites leaves a red suite; (b) disable the ACM source
 adapter so the partition falls back to its previous proven state or
 `unavailable`. No compatibility mode, no data migration.
 
