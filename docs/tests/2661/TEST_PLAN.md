@@ -628,7 +628,11 @@ AF deployment configs (E2E infrastructure and charts) is deferred to
 [#2695](https://github.com/jordigilh/kubernaut/issues/2695) — deployment
 plumbing, not this plan's contract. Validation of a present-but-malformed
 `fleet.fmc.endpoint` (no scheme, plain `http`, host-less) is likewise deferred:
-the value stays fail-closed (per-request `unavailable`), and adding
-`Validate()`-level rejection with CM-6/SI-10 parity to `sources.acm.endpoint`
-would expand the phase-c config slice beyond its approved Tier 1c shape — it
-needs its own decision if wanted.
+`NewInventoryReader` checks only for an empty value, so a reachable plain-`http`
+endpoint is **not** rejected and can serve successful (unencrypted) inventory
+reads — only an unreachable or absent endpoint fails closed per-request
+(`unavailable`). Adding `Validate()`-level rejection with CM-6/SI-10 parity to
+`sources.acm.endpoint` would expand the phase-c config slice beyond its
+approved Tier 1c shape — it needs its own decision if wanted, and until then
+the SC-8 posture of a plain-`http` value is an accepted, documented risk of
+that deferral.

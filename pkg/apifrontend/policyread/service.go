@@ -301,9 +301,10 @@ func (s *Service) authorize(ctx context.Context, user *auth.UserIdentity, capabi
 		}
 		return nil
 	}
-	// Non-local reads carry no local target surface, so the namespace list is
-	// the authorization boundary (TP-2661 phase c): a caller who may not list
-	// the remote cluster's namespaces may not project any of its inventory.
+	// Non-local reads carry no local target surface, so the hub namespace list
+	// is the authorization boundary (TP-2661 phase c). The SAR runs against
+	// the hub cluster and carries no remote cluster identity. A caller who
+	// may not list hub namespaces may not project any remote inventory.
 	// This arm is shared by list, exact-get and policy-scope reads because
 	// authorize() is their common gate — a denial must surface before any
 	// reader is consulted.
@@ -311,7 +312,9 @@ func (s *Service) authorize(ctx context.Context, user *auth.UserIdentity, capabi
 }
 
 // authorizeRemoteNamespaceList enforces the non-local namespace-list SAR
-// (list/core/v1/namespaces). A denial surfaces as forbidden; an authorizer
+// (list/core/v1/namespaces), evaluated against the hub cluster — the SAR
+// carries no remote cluster identity, so this is not a per-cluster
+// authorization guarantee. A denial surfaces as forbidden; an authorizer
 // failure surfaces as unavailable. It never touches a reader.
 func (s *Service) authorizeRemoteNamespaceList(ctx context.Context, user *auth.UserIdentity) error {
 	allowed, err := s.dependencies.Authorizer.CheckTarget(ctx, user.Username, user.Groups, auth.TargetAccess{
