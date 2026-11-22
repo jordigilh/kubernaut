@@ -189,6 +189,17 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		return recorder.Code
 	}
 
+	postWithRequestID := func(authHeader string) (int, string) {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, probeAdapter{}.GetRoute(), strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "application/json")
+		if authHeader != "" {
+			req.Header.Set("Authorization", authHeader)
+		}
+		server.Handler().ServeHTTP(recorder, req)
+		return recorder.Code, recorder.Header().Get("X-Request-ID")
+	}
+
 	It("IT-AUTH-2664-050: an unauthenticated request through the production route emits an enriched authentication failure event", func() {
 		Expect(post("")).To(Equal(http.StatusUnauthorized))
 
@@ -275,5 +286,16 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		Expect(last.fields["event_outcome"]).To(Equal("failure"))
 		Expect(last.fields["actor_type"]).To(Equal("user"))
 		Expect(last.fields["actor_id"]).To(Equal(testUser))
+	})
+
+	It("IT-AUTH-2664-055: the security-event correlation_id matches the request ID returned to the client", func() {
+		status, requestID := postWithRequestID("")
+		Expect(status).To(Equal(http.StatusUnauthorized))
+		Expect(requestID).NotTo(BeEmpty(), "Gateway must return X-Request-ID")
+
+		last := logs.securityEvents()
+		Expect(last).NotTo(BeEmpty())
+		Expect(last[len(last)-1].fields["correlation_id"]).To(Equal(requestID),
+			"clients and access logs must be able to find security events by the request ID they were given")
 	})
 })

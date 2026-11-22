@@ -54,13 +54,13 @@ DS's `/api/v1` routes run [`pkg/shared/auth/middleware.go`](../../../../../pkg/s
 | `security_event` (reason `authorization_service_unavailable`) | `authorization` / `authorize` / `failure` | SAR API call fails; fail-closed 500 (Issue #2664: previously unlogged) | `actor_type="user"`, `actor_id=<username>`, `status_code=500` |
 | `security_event` (reason `authorization_granted`) | `authorization` / `grant` / `success` | SAR allows the request (Issue #2664: granted decisions are now observable) | `actor_type="user"`, `actor_id=<username>`, `status_code=200` (the authorization decision, not the downstream response) |
 
-All events carry `correlation_id` (the request correlation ID from chi/X-Request-ID; empty only when the caller is behind no correlation middleware and sent no header). The two outage events additionally carry DD-ERROR-001 `error_details` (`message`, `code=ERR_AUTH_SERVICE_UNAVAILABLE`/`ERR_AUTHZ_SERVICE_UNAVAILABLE`, `component=auth-middleware`, `retry_possible=true`).
+All events carry `correlation_id` (the service request ID: Gateway's `RequestIDMiddleware`, otherwise chi `RequestID`, exposed as `X-Request-ID`; empty only when the caller is behind no correlation middleware and sent no header). The two outage events additionally carry DD-ERROR-001 `error_details` (`message`, `code=ERR_AUTH_SERVICE_UNAVAILABLE`/`ERR_AUTHZ_SERVICE_UNAVAILABLE`, `component=auth-middleware`, `retry_possible=true`).
 
 **Controls:** FedRAMP AU-2 (auditable events), AU-3 (record content and actor attribution), AC-6 (least-privilege grant/deny decisions); SOC2 CC7.2 (monitoring of security decisions); OWASP ASVS V2 (authentication), V3 (identity attribution), V7 (no credential material in logs — the bearer token is never a field).
 
 **Volume:** one `grant` line per authorization decision (SAR check): one per authorized read request, two per write/mutate request because those routes run both the router-wide `get` middleware and the route-level `create`/`update` middleware. Alongside DS's existing access-log line this is roughly 2 lines/request for reads and 3 for writes. The middleware applies no sampling or level gate; the host logger's configured level and zap sampling still apply, so a dedicated unsampled security-event logger is tracked in issue #2694.
 
-**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..011) proves the field contract and classifications; `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..054) proves the same events flow through a production `RegisterAdapter` auth chain.
+**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..012) proves the field contract and classifications; `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..055) proves the same events flow through a production `RegisterAdapter` auth chain.
 
 ---
 

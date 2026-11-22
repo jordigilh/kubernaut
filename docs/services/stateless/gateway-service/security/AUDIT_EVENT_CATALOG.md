@@ -37,13 +37,13 @@ Gateway signal routes run [`pkg/shared/auth/middleware.go`](../../../../../pkg/s
 | `security_event` (reason `authorization_service_unavailable`) | `authorization` / `authorize` / `failure` | SAR API call fails; fail-closed 500 (Issue #2664: previously unlogged) | `actor_type="user"`, `actor_id=<username>`, `status_code=500` |
 | `security_event` (reason `authorization_granted`) | `authorization` / `grant` / `success` | SAR allows the webhook (Issue #2664: granted decisions are now observable) | `actor_type="user"`, `actor_id=<username>`, `status_code=200` (the authorization decision, not the downstream response) |
 
-All events carry `correlation_id` (the request correlation ID from chi/X-Request-ID; empty only when the caller is behind no correlation middleware and sent no header). The two outage events additionally carry DD-ERROR-001 `error_details` (`message`, `code=ERR_AUTH_SERVICE_UNAVAILABLE`/`ERR_AUTHZ_SERVICE_UNAVAILABLE`, `component=auth-middleware`, `retry_possible=true`).
+All events carry `correlation_id` (the service request ID: Gateway's `RequestIDMiddleware`, otherwise chi `RequestID`, exposed as `X-Request-ID`; empty only when the caller is behind no correlation middleware and sent no header). The two outage events additionally carry DD-ERROR-001 `error_details` (`message`, `code=ERR_AUTH_SERVICE_UNAVAILABLE`/`ERR_AUTHZ_SERVICE_UNAVAILABLE`, `component=auth-middleware`, `retry_possible=true`).
 
 **Controls:** FedRAMP AU-2, AU-3, AC-6; SOC2 CC7.2; OWASP ASVS V2/V3/V7.
 
 **Volume:** one `grant` line per authorization decision (SAR check). Gateway signal routes run a single auth middleware, so this is one line per authorized request, in addition to Gateway's existing per-request "Request completed" line. The middleware applies no sampling or level gate; the host logger's configured level and zap sampling still apply, so a dedicated unsampled security-event logger is tracked in issue #2694.
 
-**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..011); `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..054, production `RegisterAdapter` chain).
+**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..012); `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..055, production `RegisterAdapter` chain).
 
 ---
 

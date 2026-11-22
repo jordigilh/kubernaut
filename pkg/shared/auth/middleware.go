@@ -463,17 +463,24 @@ func securityEventClassification(reason string) (eventType, action string) {
 //
 // ADR-034's canonical correlation_id is the remediation ID, which the payload
 // handler owns and which does not exist yet when authentication runs. The auth
-// middleware therefore records the standard request correlation ID (chi's
-// RequestID, or the X-Request-ID header -- see
+// middleware therefore records the standard request correlation ID: the
+// X-Request-ID request header when the service's request-ID middleware set it
+// (Gateway's RequestIDMiddleware rewrites it to the ID it returns and logs),
+// otherwise chi's RequestID context value (see
 // docs/architecture/LOG_CORRELATION_ID_STANDARD.md). It groups every security
 // decision made for one request (e.g. DS's base "get" and route-level "create"
 // grant lines). It is empty only when the caller is not behind a correlation-ID
 // middleware and sent no header.
 func requestCorrelationID(r *http.Request) string {
-	if id := chimiddleware.GetReqID(r.Context()); id != "" {
+	// The request header is authoritative when a service's request-ID
+	// middleware has set it (Gateway's RequestIDMiddleware overwrites it with the
+	// canonical ID it returns and logs). chi's RequestID reads an incoming header
+	// and otherwise generates one, so the fallbacks agree when no service
+	// middleware rewrote it.
+	if id := r.Header.Get("X-Request-ID"); id != "" {
 		return id
 	}
-	return r.Header.Get("X-Request-ID")
+	return chimiddleware.GetReqID(r.Context())
 }
 
 // securityErrorDetails is the DD-ERROR-001 standardized error payload attached
