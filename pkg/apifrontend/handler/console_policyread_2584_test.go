@@ -281,8 +281,8 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: Console inventory list (local 
 		// refusal), so the response is 200 success.
 		local := &consoleInventoryStub{page: successfulPage()}
 		remote := &consoleInventoryStub{page: successfulFMCPage()}
-		// Both backends are wired so the non-local probe can distinguish "the
-		// service refused the request" from "no remote reader was configured".
+		// Both backends are wired so the non-local probe proves dispatch went
+		// to the remote reader specifically, not that no reader existed.
 		service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory:  local,
 			RemoteInventory: remote,
@@ -292,7 +292,8 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: Console inventory list (local 
 		Expect(err).NotTo(HaveOccurred())
 		readHandler := handler.NewConsolePolicyReadHandler(service, logrDiscard())
 
-		// A non-local cluster is refused: neither backend is consulted.
+		// A non-local cluster dispatches to the wired remote reader; the
+		// local hub reader is never consulted.
 		crossCluster := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=prod-east", http.NoBody)
 		crossCluster = crossCluster.WithContext(auth.WithUserIdentity(crossCluster.Context(), &auth.UserIdentity{Username: "alice"}))
 		crossRecorder := httptest.NewRecorder()
