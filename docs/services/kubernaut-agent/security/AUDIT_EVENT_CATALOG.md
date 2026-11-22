@@ -186,7 +186,9 @@ KA's HTTP routes also run [`pkg/shared/auth/middleware.go`](../../../../pkg/shar
 | `security_event` (`authorization_service_unavailable`) | `authorization` / `authorize` / `failure` | SAR call fails; fail-closed 500 (previously unlogged) | `actor_type="user"`, `actor_id=<username>`, `status_code=500` |
 | `security_event` (`authorization_granted`) | `authorization` / `grant` / `success` | SAR allows the request | `actor_type="user"`, `actor_id=<username>`, `status_code=200` (the authorization decision, not the downstream response) |
 
-**Controls:** FedRAMP AU-2/AU-3/AC-6; SOC2 CC7.2; OWASP ASVS V2/V3/V7. **Volume:** one grant line per SAR decision (KA routes run a single auth middleware). Not sampled or config-gated per BR-SECURITY-016. FleetMetadataCache (`cmd/fleetmetadatacache/main.go`) is a fourth consumer of the same middleware and has no audit catalog yet — a pre-existing documentation gap, not introduced here.
+All events carry `correlation_id` (the request correlation ID from chi/X-Request-ID; empty only when the caller is behind no correlation middleware and sent no header). The two outage events additionally carry DD-ERROR-001 `error_details` (`message`, `code=ERR_AUTH_SERVICE_UNAVAILABLE`/`ERR_AUTHZ_SERVICE_UNAVAILABLE`, `component=auth-middleware`, `retry_possible=true`).
+
+**Controls:** FedRAMP AU-2/AU-3/AC-6; SOC2 CC7.2; OWASP ASVS V2/V3/V7. **Volume:** one grant line per SAR decision (KA routes run a single auth middleware). The middleware applies no sampling or level gate; the host logger's configured level and zap sampling still apply, so a dedicated unsampled security-event logger is tracked in issue #2694. FleetMetadataCache (`cmd/fleetmetadatacache/main.go`) is a fourth consumer of the same middleware and has no audit catalog yet — a pre-existing documentation gap, not introduced here.
 
 ---
 

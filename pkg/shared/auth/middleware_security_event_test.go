@@ -108,8 +108,9 @@ func (c *captureLog) lastSecurityEvent() capturedEvent {
 
 var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", func() {
 	const (
-		testUser  = "system:serviceaccount:kubernaut-system:caller"
-		testToken = "secret-bearer-token-value"
+		testUser          = "system:serviceaccount:kubernaut-system:caller"
+		testToken         = "secret-bearer-token-value"
+		testCorrelationID = "req-2664-correlation"
 	)
 
 	var (
@@ -244,6 +245,9 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(event.fields["event_outcome"]).To(Equal("failure"))
 			Expect(event.fields["actor_type"]).To(Equal("external"))
 			Expect(event.fields["status_code"]).To(Equal("500"))
+			Expect(event.fields["error_details"]).To(ContainSubstring("ERR_AUTH_SERVICE_UNAVAILABLE"),
+				"DD-ERROR-001: outage events carry standardized error_details")
+			Expect(event.fields["error_details"]).To(ContainSubstring("auth-middleware"))
 			assertADR034Fields(event)
 		})
 
@@ -262,6 +266,7 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(event.fields["event_outcome"]).To(Equal("failure"))
 			Expect(event.fields["actor_type"]).To(Equal("user"))
 			Expect(event.fields["actor_id"]).To(Equal(testUser))
+			Expect(event.fields["error_details"]).To(ContainSubstring("ERR_AUTHZ_SERVICE_UNAVAILABLE"))
 			assertADR034Fields(event)
 		})
 	})
@@ -377,6 +382,34 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 				Expect(event.fields["event_action"]).To(Equal(tc.wantAction),
 					"reason %q must classify consistently", tc.wantReason)
 			}
+		})
+
+		It("UT-AUTH-2664-012: correlation_id groups the security decisions of one request", func() {
+			doRequestWithCorrelation := func(mw *auth.Middleware, authHeader, correlationID string) {
+				recorder := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/audit/events", nil)
+				req.Header.Set("X-Request-ID", correlationID)
+				if authHeader != "" {
+					req.Header.Set("Authorization", authHeader)
+				}
+				mw.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusOK)
+				})).ServeHTTP(recorder, req)
+			}
+
+			mw := newMiddleware(validAuthenticator())
+			doRequestWithCorrelation(mw, "Bearer "+testToken, testCorrelationID)
+
+			events := logs.securityEvents()
+			Expect(events).To(HaveLen(1))
+			Expect(events[0].fields["correlation_id"]).To(Equal(testCorrelationID),
+				"auth events must be queryable by the request correlation ID (ADR-034 AU-3)")
+
+			doRequestWithCorrelation(mw, "", testCorrelationID)
+			events = logs.securityEvents()
+			Expect(events).To(HaveLen(2))
+			Expect(events[1].fields["correlation_id"]).To(Equal(testCorrelationID),
+				"grant and denial for the same request share one correlation_id")
 		})
 	})
 })

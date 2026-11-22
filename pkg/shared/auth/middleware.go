@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strings"
 
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 )
@@ -175,20 +176,20 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request) (userInfo UserInfo, ok bool) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		m.logSecurityEvent(r, "missing_auth_header", "", http.StatusUnauthorized)
+		m.logSecurityEvent(r, "missing_auth_header", "", http.StatusUnauthorized, nil)
 		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Missing Authorization header")
 		return UserInfo{}, false
 	}
 
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		m.logSecurityEvent(r, "invalid_auth_format", "", http.StatusUnauthorized)
+		m.logSecurityEvent(r, "invalid_auth_format", "", http.StatusUnauthorized, nil)
 		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid Authorization header format")
 		return UserInfo{}, false
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	if token == "" {
-		m.logSecurityEvent(r, "empty_bearer_token", "", http.StatusUnauthorized)
+		m.logSecurityEvent(r, "empty_bearer_token", "", http.StatusUnauthorized, nil)
 		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Empty Bearer token")
 		return UserInfo{}, false
 	}
@@ -196,7 +197,7 @@ func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request)
 	userInfo, err := m.authenticator.ValidateTokenFull(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, ErrTokenInvalid) {
-			m.logSecurityEvent(r, invalidTokenReason(err), "", http.StatusUnauthorized)
+			m.logSecurityEvent(r, invalidTokenReason(err), "", http.StatusUnauthorized, nil)
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
 			return UserInfo{}, false
 		}
@@ -206,7 +207,7 @@ func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request)
 		)
 		// Issue #2664 (AU-2/AU-3): a TokenReview outage is a security-relevant,
 		// fail-closed decision and must be auditable, not only logged as an error.
-		m.logSecurityEvent(r, "authentication_service_unavailable", "", http.StatusInternalServerError)
+		m.logSecurityEvent(r, "authentication_service_unavailable", "", http.StatusInternalServerError, err)
 		// Issue #673 C-2: Generic error message; details logged server-side only
 		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authentication service unavailable")
 		return UserInfo{}, false
@@ -240,14 +241,14 @@ func (m *Middleware) authorizeRequest(w http.ResponseWriter, r *http.Request, us
 		)
 		// Issue #2664 (AU-2/AU-3): a SAR outage is a security-relevant,
 		// fail-closed decision and must be auditable, not only logged as an error.
-		m.logSecurityEvent(r, "authorization_service_unavailable", user, http.StatusInternalServerError)
+		m.logSecurityEvent(r, "authorization_service_unavailable", user, http.StatusInternalServerError, err)
 		// Issue #673 C-2: Generic error message; details logged server-side only
 		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authorization service unavailable")
 		return false
 	}
 
 	if !allowed {
-		m.logSecurityEvent(r, "authorization_denied", user, http.StatusForbidden)
+		m.logSecurityEvent(r, "authorization_denied", user, http.StatusForbidden, nil)
 		m.writeError(w, http.StatusForbidden, "Forbidden", "Insufficient permissions")
 		return false
 	}
@@ -342,17 +343,19 @@ const (
 // (FedRAMP AU-2/AU-3, SOC2 CC7.2). The action/type are derived from the
 // reason rather than hardcoded: a fail-closed TokenReview/SAR outage is an
 // outage ("authenticate"/"authorize"), not a denial decision ("deny").
-func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, statusCode int) {
+// Fail-closed outage events also carry DD-ERROR-001 standardized error_details.
+func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, statusCode int, cause error) {
 	if holder, ok := r.Context().Value(failureReasonKey{}).(*string); ok {
 		*holder = reason
 	}
 	eventType, eventAction := securityEventClassification(reason)
-	m.logger.Info("security_event",
+	fields := []interface{}{
 		"event_id", uuid.NewString(),
 		"event_type", eventType,
 		"event_action", eventAction,
 		"event_outcome", "failure",
 		"reason", reason,
+		"correlation_id", requestCorrelationID(r),
 		"actor_type", securityActorType(user),
 		"actor_id", user,
 		"user", user,
@@ -363,7 +366,13 @@ func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, stat
 		"resource", m.config.Resource,
 		"resource_name", m.config.ResourceName,
 		"verb", m.config.Verb,
-	)
+	}
+	// DD-ERROR-001 / DD-AUDIT-003: error events carry standardized
+	// error_details. Denials have no dependency error and omit the field.
+	if cause != nil {
+		fields = append(fields, "error_details", newSecurityErrorDetails(reason, cause))
+	}
+	m.logger.Info("security_event", fields...)
 }
 
 // logSecurityGrant emits the positive authorization decision required by
@@ -374,10 +383,15 @@ func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, stat
 // authorized read request and two per DS write/mutate request because those
 // routes run both the base "get" and the route-level "create"/"update"
 // middleware. That roughly doubles the per-request log line count of a service
-// that already writes an access-log line per request. It is intentionally not
-// sampled or config-gated: BR-SECURITY-016 requires every grant to be
-// observable, and a sampling knob would make AC-6 least-privilege review
-// depend on an operator setting.
+// that already writes an access-log line per request.
+//
+// This method applies no sampling and no level gate of its own, but it logs
+// through the host service's logger: that logger's configured level and zap
+// sampling still apply (zap's production config samples repeated message keys).
+// Guaranteeing delivery under that configuration requires a dedicated
+// unsampled security-event logger in the service wiring -- a host-logger
+// change outside this middleware, tracked in issue #2694 rather than done here.
+// What this middleware guarantees is that every decision calls the emitter.
 //
 // The event is emitted as soon as the SAR check allows the request, before the
 // downstream handler runs: status_code=200 records the authorization decision
@@ -390,6 +404,7 @@ func (m *Middleware) logSecurityGrant(r *http.Request, user string) {
 		"event_action", "grant",
 		"event_outcome", "success",
 		"reason", "authorization_granted",
+		"correlation_id", requestCorrelationID(r),
 		"actor_type", securityActorType(user),
 		"actor_id", user,
 		"user", user,
@@ -441,6 +456,48 @@ func securityEventClassification(reason string) (eventType, action string) {
 			return securityEventTypeAuthorization, "authorize"
 		}
 		return securityEventTypeAuthentication, "authenticate"
+	}
+}
+
+// requestCorrelationID resolves the request-scoped correlation identifier.
+//
+// ADR-034's canonical correlation_id is the remediation ID, which the payload
+// handler owns and which does not exist yet when authentication runs. The auth
+// middleware therefore records the standard request correlation ID (chi's
+// RequestID, or the X-Request-ID header -- see
+// docs/architecture/LOG_CORRELATION_ID_STANDARD.md). It groups every security
+// decision made for one request (e.g. DS's base "get" and route-level "create"
+// grant lines). It is empty only when the caller is not behind a correlation-ID
+// middleware and sent no header.
+func requestCorrelationID(r *http.Request) string {
+	if id := chimiddleware.GetReqID(r.Context()); id != "" {
+		return id
+	}
+	return r.Header.Get("X-Request-ID")
+}
+
+// securityErrorDetails is the DD-ERROR-001 standardized error payload attached
+// to fail-closed outage events (DD-AUDIT-003: every error event carries it).
+type securityErrorDetails struct {
+	Message       string `json:"message"`
+	Code          string `json:"code"`
+	Component     string `json:"component"`
+	RetryPossible bool   `json:"retry_possible"`
+}
+
+// securityErrorDetails maps a TokenReview/SAR dependency failure to the
+// DD-ERROR-001 contract. Both dependencies are Kubernetes API reads, so the
+// failure is transient and retryable.
+func newSecurityErrorDetails(reason string, cause error) securityErrorDetails {
+	code := "ERR_AUTH_SERVICE_UNAVAILABLE"
+	if reason == "authorization_service_unavailable" {
+		code = "ERR_AUTHZ_SERVICE_UNAVAILABLE"
+	}
+	return securityErrorDetails{
+		Message:       cause.Error(),
+		Code:          code,
+		Component:     "auth-middleware",
+		RetryPossible: true,
 	}
 }
 
