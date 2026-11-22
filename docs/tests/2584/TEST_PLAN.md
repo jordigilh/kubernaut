@@ -111,7 +111,9 @@ coverage and a production-path integration test. No implementation may be declar
 while any of those ITs is absent or failing — with one recorded exception: R7's ACM lane
 is **NOT QUALIFIED** (§8.2/§14) and its fixture-level IT label was retired, so R7 is
 satisfied by `IT-AF-2584-008` and `IT-FLEET-2584-001` only. The ACM Console inventory gate
-remains closed, so no implementation relies on that lane.
+remains closed, so no implementation relies on that lane. *(Superseded for the
+inventory-list lane 2026-11-22, #2661 phase c — see TP-2661 §9b for the re-scoped
+2584 specs.)*
 
 ---
 
@@ -723,7 +725,8 @@ cases `IT-AF-2593-REGISTRY-003` exercise both supported registry adapters.
 cluster-scoped defaults, and unavailable registries. These are targeted
 business/control checks, not a complete requirements-coverage assessment or
 proof of a production HTTP journey. The ACM Console inventory gate remains
-in place, and no new audit event is introduced by this checker change.
+in place, and no new audit event is introduced by this checker change. *(Superseded
+for the inventory-list lane 2026-11-22, #2661 phase c.)*
 
 #### Bounded inventory prototype (2026-11-03)
 
@@ -834,7 +837,8 @@ Namespace access, subject to independent user authorization and other gates.
 
 This is an approved contract decision, not evidence of implementation or a test
 pass. The historical bounded prototype and its results above remain as recorded;
-the production ACM inventory gate remains closed pending qualification.
+the production ACM inventory gate remains closed pending qualification. *(Superseded
+for the inventory-list lane 2026-11-22, #2661 phase c.)*
 
 | Future scenario | Required outcome |
 |---|---|

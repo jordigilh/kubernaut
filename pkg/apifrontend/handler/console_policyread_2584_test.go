@@ -23,7 +23,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console inventory list", func() {
+var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: Console inventory list (local projection; non-local FMC dispatch under the namespace-list SAR)", func() {
 	It("IT-AF-2584-REMOTE-LIST-001 [BR-SCOPE-001]: dispatches a non-local inventory list to the FMC client without falling back locally", func() {
 		// TP-2661 phase c re-scope: the boundary moved from refusal to
 		// remote-only dispatch (DD-FLEET-017 D2.1a). The stub serves the FMC

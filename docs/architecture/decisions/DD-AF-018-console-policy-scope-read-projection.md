@@ -82,7 +82,8 @@ additive and do not replace or alter A2A, MCP, or `/a2a/access` behavior.
 > DD-FLEET-017 v2). The statements below that name FMC *and* ACM as peers are
 > superseded for inventory; the **scope** lane and the existing `ScopeChecker`
 > routing are unchanged. The temporary ACM inventory gate remains closed until
-> FMC's ACM source is qualified.
+> FMC's ACM source is qualified. *(Superseded for the inventory lane 2026-11-22,
+> #2661 phase c — see the release-gate amendment below.)*
 
 Every request has an explicit cluster identity. `local` identifies the hub cluster and
 uses AF's local Kubernetes clients. Console policy-scope and managed-resource list
@@ -463,7 +464,8 @@ history source is unavailable.
   remote-cluster reader.~~ *(amended 2026-11-18, #2661: for the **inventory** lane FMC is the
   only contact and ACM is an FMC source — see the note in §1. The scope lane and the
   no-direct-cluster-reader rule are unchanged; remote Console list stays unavailable until the
-  gate is removed.)*
+  gate is removed. (Removed 2026-11-22, #2661 phase c — see §1's release-gate
+  amendment.)*
 - Read attempts are attributable through the same typed DataStorage audit path as other
   AF business/security events.
 - A missing backend or incomplete history cannot produce a misleading partial view.
@@ -478,7 +480,11 @@ history source is unavailable.
   closed as superseded.
 - Remote Console list qualification remains gated on shared FMC/ACM inventory evidence;
   remote exact/get and `IsManagedResource` checks use the shared canonical scope contract
-  and preserve backend errors.
+  and preserve backend errors. *(Superseded for the inventory lane 2026-11-22, #2661
+  phase c — remote list is enabled through FMC, the sole Console inventory contact;
+  qualification is enforced by FMC's proof gate and the fail-closed
+  `fleet.fmc.endpoint` wiring — see §1's release-gate amendment. The scope/exact-get
+  sentence is unchanged.)*
 - DataStorage OpenAPI and generated client artifacts must change for the typed read events.
 - Historical matching remains bounded by existing CRD fields until a separately approved
   index exists.
