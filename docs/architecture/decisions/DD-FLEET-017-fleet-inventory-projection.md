@@ -3,8 +3,10 @@
 **Status**: 📝 Draft v2 — **re-scoped 2026-11-18** after corpus triage.
 Supersedes the ACM-direct draft (`AF → ACM Search`), which targeted an
 architecture decision already replaced on 2026-11-11. **D1–D6 approved
-2026-11-18.** Nothing is implemented; implementation waits on the amendment's
-approval.
+2026-11-18.** Increment 2 (FMC inventory API/page reader, ACM Search source
+adapter, source selection) and phase c (`fleet.fmc.endpoint`, AF non-local
+list dispatch, the DD-AF-018 inventory-lane gate removal) have since landed —
+see §1.3 for the per-piece state.
 **Prerequisite**: the ADR-068 / DD-FLEET amendment removing the peer-adapter
 model — **approved 2026-11-18** (ADR-068 "One federation-facing contact
 (peer → facade)", with cross-references in DD-FLEET-011, DD-FLEET-015 and
@@ -71,8 +73,8 @@ those are not fleet-control-plane queries.
 | Piece | State |
 |---|---|
 | FMC as the single federation-facing contact for federated inventory | **Decided** (2026-11-11); ADR-068/DD-FLEET amendment **approved 2026-11-18** |
-| FMC inventory API (`/api/v1/inventory/managed-resources`) | **Served by FMC** since increment 2 (`pkg/fleet/fmc/handler.go:91-92` registers the list/exact routes); AF is a client only and never serves or proxies it |
-| FMC ACM Search source adapter | **Not implemented** — no ACM code in `pkg/fleet/fmc` or `cmd/fleetmetadatacache` |
+| FMC inventory API (`/api/v1/inventory/managed-resources`) | **Served by FMC** since increment 2 (`pkg/fleet/fmc/handler.go:91-93` registers the list/exact routes); AF is a client only and never serves or proxies it |
+| FMC ACM Search source adapter | **Implemented** (increment 2, #2691): `pkg/fleet/fmc/acm_source.go` + `acm_search.go`, source selection from `cfg.SourceKind()` in `cmd/fleetmetadatacache/main.go` |
 | AF→FMC dispatch | **Implemented** (#2661 phase c, 2026-11-22): the non-local rejection is removed; non-local lists dispatch to FMC, gated by the non-local namespace-list SAR |
 | ACM Console inventory | **Ungated (inventory lane)**: #2661 phase c removed the DD-AF-018 inventory-lane gate; FMC is the sole Console inventory contact, `fleet.fmc.endpoint` fails closed when absent |
 | Code model | The **peer model** shrank with #2661 phase c: `fleet.NewInventoryReader`'s ACM branch and one of AF's two `fleet.backend` branches are gone; the scope lane's peer surface (`fleet.NewScopeChecker`, AF's scope-checker branch) is unchanged |
