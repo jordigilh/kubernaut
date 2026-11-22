@@ -243,7 +243,8 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 			"name":       mustJSON("payments"),
 			"namespace":  json.RawMessage("42"),
 		}
-		source := newACMSource(&fakeACMSearch{replies: chunked([]map[string]json.RawMessage{item})}, func(config *fmc.ACMSourceConfig) {
+		search := &fakeACMSearch{replies: chunked([]map[string]json.RawMessage{item})}
+		source := newACMSource(search, func(config *fmc.ACMSourceConfig) {
 			config.Kinds = map[string]schema.GroupVersionKind{"Namespace": {Version: "v1", Kind: "Namespace"}}
 		})
 
@@ -252,9 +253,71 @@ var _ = Describe("ACM source collector — guards the first pass could not see (
 		// instead of failing on a kind mismatch first.
 		observed, err := readAllKind(source, "v1", "Namespace")
 
+		Expect(search.calls).ToNot(BeEmpty(),
+			"Search must have run, so the failure comes from the namespace validation and not from a pre-Search error")
 		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("namespace"),
+			"the failure must be the namespace contract, not any other identity check")
 		Expect(observed.Complete).To(BeFalse())
+		Expect(observed.Failure).To(Equal(observation.FailureItem),
+			"a malformed namespace field is an item failure, never a silent cluster-scoped reclassification")
 	})
+
+	// UT-FMC-SRC-2661-013 (#2691 review): JSON null must not decode as an
+	// empty string — the empty value is valid for cluster-scoped items, so
+	// null would launder into "no namespace" and be accepted.
+	It("UT-FMC-SRC-2661-013: a JSON null namespace on a cluster-scoped kind fails the kind, never a silent empty one", func() {
+		item := map[string]json.RawMessage{
+			"_uid":       mustJSON("uid-1"),
+			"cluster":    mustJSON(acmSourceCluster),
+			"apiversion": mustJSON("v1"),
+			"kind":       mustJSON("Namespace"),
+			"name":       mustJSON("payments"),
+			"namespace":  json.RawMessage("null"),
+		}
+		search := &fakeACMSearch{replies: chunked([]map[string]json.RawMessage{item})}
+		source := newACMSource(search, func(config *fmc.ACMSourceConfig) {
+			config.Kinds = map[string]schema.GroupVersionKind{"Namespace": {Version: "v1", Kind: "Namespace"}}
+		})
+
+		observed, err := readAllKind(source, "v1", "Namespace")
+
+		Expect(search.calls).ToNot(BeEmpty(),
+			"Search must have run, so the failure comes from the namespace validation and not from a pre-Search error")
+		Expect(err).To(HaveOccurred(),
+			"a present-but-null namespace is corruption, not an omitted field; it must never pass as a valid cluster-scoped item")
+		Expect(err.Error()).To(ContainSubstring("namespace"))
+		Expect(observed.Complete).To(BeFalse())
+		Expect(observed.Failure).To(Equal(observation.FailureItem))
+	})
+
+	// UT-FMC-SRC-2661-013 (#2691 review): the two well-formed shapes stay
+	// valid — an omitted namespace and an explicit empty string.
+	DescribeTable("UT-FMC-SRC-2661-013: an omitted or explicitly empty namespace stays valid for a cluster-scoped item",
+		func(mutate func(map[string]json.RawMessage)) {
+			item := map[string]json.RawMessage{
+				"_uid":       mustJSON("uid-1"),
+				"cluster":    mustJSON(acmSourceCluster),
+				"apiversion": mustJSON("v1"),
+				"kind":       mustJSON("Namespace"),
+				"name":       mustJSON("payments"),
+				"label":      mustJSON("kubernaut.ai/managed=true"),
+			}
+			mutate(item)
+			source := newACMSource(&fakeACMSearch{replies: chunked([]map[string]json.RawMessage{item})}, func(config *fmc.ACMSourceConfig) {
+				config.Kinds = map[string]schema.GroupVersionKind{"Namespace": {Version: "v1", Kind: "Namespace"}}
+			})
+
+			observed, err := readAllKind(source, "v1", "Namespace")
+
+			Expect(err).ToNot(HaveOccurred(),
+				"both shapes are the documented wire form for cluster-scoped items and must keep collecting")
+			Expect(observed.Complete).To(BeTrue())
+			Expect(observed.Items).To(HaveLen(1))
+		},
+		Entry("omitted namespace", func(item map[string]json.RawMessage) { delete(item, "namespace") }),
+		Entry("explicit empty string", func(item map[string]json.RawMessage) { item["namespace"] = mustJSON("") }),
+	)
 })
 
 // UT-FMC-SRC-2661-023: the transport contract, over real TLS servers.

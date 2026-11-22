@@ -484,12 +484,14 @@ func requireExactAPIVersion(raw map[string]json.RawMessage, gvk schema.GroupVers
 
 // requireNamespaceFor enforces the namespace contract: a cluster-scoped item
 // must not carry one, a namespaced item must, and a malformed field is an item
-// failure rather than a silent reclassification.
+// failure rather than a silent reclassification. The namespace is read with
+// searchString so a JSON null or non-string value is corruption — the empty
+// string is VALID for cluster-scoped items and must never be reachable from
+// corrupt data (#2691 review).
 func requireNamespaceFor(raw map[string]json.RawMessage, kind, name string) (string, error) {
-	namespace, present := searchStringValue(raw, "namespace")
-	if _, found := raw["namespace"]; found && !present {
-		return "", identityFailure(observation.FailureItem,
-			fmt.Errorf("acm item %s/%s has a namespace field that is not a string", kind, name))
+	namespace, err := searchString(raw, "namespace")
+	if err != nil {
+		return "", identityFailure(observation.FailureItem, err)
 	}
 	clusterScoped := scope.IsClusterScopedKind(kind)
 	if clusterScoped && namespace != "" {

@@ -252,6 +252,26 @@ var _ = Describe("ACM search transport hardening (DD-FLEET-017 D4.3)", func() {
 		ExpectWithOffset(1, paths).To(ConsistOf("/searchapi/graphql"),
 			"the route is joined to the endpoint's path, so a trailing slash cannot double it")
 	})
+
+	It("UT-FMC-SRC-2661-026: repeated trailing slashes on the endpoint do not alter the request route", func() {
+		var paths []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			paths = append(paths, r.URL.Path)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":0,"items":[]}]}}`))
+		}))
+		DeferCleanup(server.Close)
+		// #2691 review: TrimSuffix removes only one slash, so an endpoint
+		// like https://search.example// still produced //searchapi/graphql.
+		search, err := fmc.NewACMHTTPSearch(server.URL+"//", tokenPath, "", 5*time.Second)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = search.Search(context.Background(), fmc.ACMSearchOptions{
+			ClusterID: acmSourceCluster, Version: "v1", Kind: "Pod", OrderBy: "uid asc", Limit: 50,
+		})
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+		ExpectWithOffset(1, paths).To(ConsistOf("/searchapi/graphql"),
+			"every trailing slash is trimmed before the route is joined, so any count of them yields the same single-slash route")
+	})
 })
 
 // transportUnrelatedCA writes a throwaway self-signed certificate that signs

@@ -185,7 +185,10 @@ func (s *ACMHTTPSearch) Search(ctx context.Context, options ACMSearchOptions) (A
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("build ACM search request: %w", err))
 	}
 	requestURL := *s.endpoint
-	requestURL.Path = strings.TrimSuffix(s.endpoint.Path, "/") + acmGraphQLPath
+	// TrimRight, not TrimSuffix: an endpoint like https://search.example//
+	// carries more than one trailing slash, and any count of them must yield
+	// the same single-slash route (#2691 review).
+	requestURL.Path = strings.TrimRight(s.endpoint.Path, "/") + acmGraphQLPath
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL.String(), bytes.NewReader(body))
 	if err != nil {
 		return ACMSearchPage{}, searchFailure(ACMSearchFailureTool, fmt.Errorf("build ACM search request: %w", err))
