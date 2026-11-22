@@ -426,13 +426,63 @@ func (m *Middleware) logSecurityGrant(r *http.Request, user string) {
 	})
 }
 
-// emitSecurityEvent writes one structured security_event record. Every entry
-// carries the ADR-034 identity and classification fields -- event_id (UUIDv4),
-// event_type, event_action, event_outcome, correlation_id, actor_type and
-// actor_id -- so a decision can be attributed and correlated without parsing
-// free text (FedRAMP AU-2/AU-3, SOC2 CC7.2). event_type/event_action are
-// derived from the reason when a caller does not set them explicitly, so a
-// fail-closed outage is never reported as a denial.
+// securityEventRecord is the typed form of the security_event log record.
+// Its fields mirror the subset of pkg/audit.AuditEvent (ADR-034, DD-AUDIT-002)
+// that this middleware emits on the log channel: event identity, action,
+// outcome, actor and resource context. Keeping one struct means field names
+// and types are refactorable and cannot drift between call sites.
+type securityEventRecord struct {
+	EventID       string
+	EventType     string
+	EventAction   string
+	EventOutcome  string
+	Reason        string
+	CorrelationID string
+	ActorType     string
+	ActorID       string
+	User          string
+	StatusCode    int
+	Method        string
+	Path          string
+	RemoteAddr    string
+	Resource      string
+	ResourceName  string
+	Verb          string
+	ErrorDetails  *securityErrorDetails
+}
+
+// logFields expands the record into logr key/value pairs. This is the single
+// place the wire field names are written.
+func (r securityEventRecord) logFields() []interface{} {
+	fields := []interface{}{
+		"event_id", r.EventID,
+		"event_type", r.EventType,
+		"event_action", r.EventAction,
+		"event_outcome", r.EventOutcome,
+		"reason", r.Reason,
+		"correlation_id", r.CorrelationID,
+		"actor_type", r.ActorType,
+		"actor_id", r.ActorID,
+		"user", r.User,
+		"status_code", r.StatusCode,
+		"method", r.Method,
+		"path", r.Path,
+		"remote_addr", r.RemoteAddr,
+		"resource", r.Resource,
+		"resource_name", r.ResourceName,
+		"verb", r.Verb,
+	}
+	// DD-ERROR-001 / DD-AUDIT-003: error events carry standardized
+	// error_details. Denials and grants have no dependency error and omit it.
+	if r.ErrorDetails != nil {
+		fields = append(fields, "error_details", *r.ErrorDetails)
+	}
+	return fields
+}
+
+// emitSecurityEvent writes one structured security_event record. event_type and
+// event_action are derived from the reason when a caller does not set them
+// explicitly, so a fail-closed outage is never reported as a denial.
 func (m *Middleware) emitSecurityEvent(r *http.Request, evt securityEvent) {
 	if evt.outcome == "failure" {
 		if holder, ok := r.Context().Value(failureReasonKey{}).(*string); ok {
@@ -443,30 +493,26 @@ func (m *Middleware) emitSecurityEvent(r *http.Request, evt securityEvent) {
 	if eventType == "" {
 		eventType, action = securityEventClassification(evt.reason)
 	}
-	fields := []interface{}{
-		"event_id", uuid.NewString(),
-		"event_type", eventType,
-		"event_action", action,
-		"event_outcome", evt.outcome,
-		"reason", evt.reason,
-		"correlation_id", requestCorrelationID(r),
-		"actor_type", securityActorType(evt.user),
-		"actor_id", evt.user,
-		"user", evt.user,
-		"status_code", evt.statusCode,
-		"method", r.Method,
-		"path", r.URL.Path,
-		"remote_addr", r.RemoteAddr,
-		"resource", m.config.Resource,
-		"resource_name", m.config.ResourceName,
-		"verb", m.config.Verb,
+	record := securityEventRecord{
+		EventID:       uuid.NewString(),
+		EventType:     eventType,
+		EventAction:   action,
+		EventOutcome:  evt.outcome,
+		Reason:        evt.reason,
+		CorrelationID: requestCorrelationID(r),
+		ActorType:     securityActorType(evt.user),
+		ActorID:       evt.user,
+		User:          evt.user,
+		StatusCode:    evt.statusCode,
+		Method:        r.Method,
+		Path:          r.URL.Path,
+		RemoteAddr:    r.RemoteAddr,
+		Resource:      m.config.Resource,
+		ResourceName:  m.config.ResourceName,
+		Verb:          m.config.Verb,
+		ErrorDetails:  evt.errorDetails,
 	}
-	// DD-ERROR-001 / DD-AUDIT-003: error events carry standardized
-	// error_details. Denials and grants have no dependency error and omit it.
-	if evt.errorDetails != nil {
-		fields = append(fields, "error_details", *evt.errorDetails)
-	}
-	m.logger.Info("security_event", fields...)
+	m.logger.Info("security_event", record.logFields()...)
 }
 
 // securityActorType classifies who made the decision for ADR-034 actor_type,
