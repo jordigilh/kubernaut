@@ -368,10 +368,6 @@ type stubOwnerResolver struct {
 	err       error
 }
 
-func (s *stubOwnerResolver) ResolveTopLevelOwner(_ context.Context, _, _, _ string) (string, string, error) {
-	return s.ownerKind, s.ownerName, s.err
-}
-
 func (s *stubOwnerResolver) ResolveTopLevelOwnerIdentity(_ context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
 	return sharedtypes.OwnerChainEntry{Namespace: resource.Namespace, Kind: s.ownerKind, Name: s.ownerName}, s.err
 }

@@ -24,11 +24,10 @@ limitations under the License.
 // (kubernetes-event adapter -> ResolveFingerprintWithCluster -> ProcessSignal
 // -> CRDCreator) and produce TWO RemediationRequests, not one collapsed RR.
 //
-// The standalone-resource case deliberately constructs the registry-miss gap:
-// the real ownerchain.K8sOwnerResolver is constructed WITHOUT a registry, so
-// resolveGVK's static kindToGroup map misses the grouped kind "Route" and
-// resolution returns an empty APIVersion — the group must come from the M1
-// seeding (input resource.APIVersion).
+// The standalone-resource case deliberately constructs the no-registry gap:
+// the real ownerchain.K8sOwnerResolver is constructed WITHOUT a registry, and
+// the identity path never consults a static kind table — a standalone Route's
+// group can only come from the M1 seeding (input resource.APIVersion).
 //
 // BUSINESS REQUIREMENTS:
 // - BR-GATEWAY-004: cross-adapter deduplication consistency (group dimension)
@@ -199,12 +198,12 @@ var _ = Describe("Fingerprint Group Dimension (#2650, BR-GATEWAY-004)", Ordered,
 	})
 
 	It("IT-GW-2650-001: two cross-group signals for the same ns/kind/name create two RRs (standalone resources, registry-miss gap)", func() {
-		By("1. Wiring the production kubernetes-event adapter with the real ownerchain resolver (no registry: static kindToGroup misses Route)")
+		By("1. Wiring the production kubernetes-event adapter with the real ownerchain resolver (no registry: standalone Route relies on M1 seeding for its group)")
 
-		// No WithRegistry: resolveGVK falls back to the static kindToGroup map,
-		// which does not know "Route" — resolution.APIVersion comes back empty
-		// for the standalone resource, so the group can only come from the
-		// input resource's apiVersion (M1 seeding).
+		// No WithRegistry: the identity path never consults a static kind
+		// table — a standalone Route's group can only come from the input
+		// resource's apiVersion (M1 seeding), and no ownerReference exists
+		// to advance the chain.
 		resolver := ownerchain.NewK8sOwnerResolver(k8sClient, testLogger)
 		adapter := adapters.NewKubernetesEventAdapter(resolver)
 

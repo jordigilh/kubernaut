@@ -173,30 +173,6 @@ var _ = Describe("BR-GATEWAY-004 BR-SCOPE-002 authoritative owner GVK", func() {
 		Expect(resolved).To(Equal(input))
 	})
 
-	It("UT-GW-2593-GVK-011 keeps legacy missing-version compatibility separate from Gateway authority", func() {
-		child := ownerGVKObject("v1", "Pod", "child", "", "Deployment", "parent")
-		resolver := ownerchain.NewK8sOwnerResolver(fake.NewClientBuilder().WithObjects(child).Build(), logr.Discard())
-		kind, name, err := resolver.ResolveTopLevelOwner(context.Background(), "prod", "Pod", "child")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(kind).To(Equal("Deployment"))
-		Expect(name).To(Equal("parent"))
-		owner, err := resolver.ResolveTopLevelOwnerWithAPIVersion(context.Background(), "prod", "Pod", "child")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(owner.APIVersion).To(Equal("apps/v1"), "main's compatibility API retains its kind-based fallback")
-		_, _, err = types.ResolveFingerprint(context.Background(), resolver,
-			types.ResourceIdentifier{Namespace: "prod", Kind: "Pod", Name: "child", APIVersion: "v1"}, logr.Discard())
-		Expect(err).To(HaveOccurred(), "legacy lookup policy must not authorize Gateway GVK")
-	})
-
-	It("UT-GW-2593-GVK-012 preserves explicit owner provenance in the KA compatibility API", func() {
-		child := ownerGVKObject("v1", "Pod", "child", "apps/v1beta2", "Deployment", "parent")
-		resolver := ownerchain.NewK8sOwnerResolver(fake.NewClientBuilder().WithObjects(child).Build(), logr.Discard())
-		owner, err := resolver.ResolveTopLevelOwnerWithAPIVersion(context.Background(), "prod", "Pod", "child")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(owner.Kind).To(Equal("Deployment"))
-		Expect(owner.Name).To(Equal("parent"))
-		Expect(owner.APIVersion).To(Equal("apps/v1beta2"), "owner provenance must not be replaced with the lookup preference")
-	})
 })
 
 func ownerGVKObject(version, kind, name, ownerVersion, ownerKind, ownerName string) *unstructured.Unstructured {
