@@ -71,7 +71,7 @@ those are not fleet-control-plane queries.
 | Piece | State |
 |---|---|
 | FMC as the single federation-facing contact for federated inventory | **Decided** (2026-11-11); ADR-068/DD-FLEET amendment **approved 2026-11-18** |
-| FMC inventory API (`/api/v1/inventory/managed-resources`) | **Client only**; FMC serves only `/api/v1/scope/check` and `/api/v1/clusters` (`pkg/fleet/fmc/handler.go:74-75`) |
+| FMC inventory API (`/api/v1/inventory/managed-resources`) | **Served by FMC** since increment 2 (`pkg/fleet/fmc/handler.go:91-92` registers the list/exact routes); AF is a client only and never serves or proxies it |
 | FMC ACM Search source adapter | **Not implemented** — no ACM code in `pkg/fleet/fmc` or `cmd/fleetmetadatacache` |
 | AF→FMC dispatch | **Implemented** (#2661 phase c, 2026-11-22): the non-local rejection is removed; non-local lists dispatch to FMC, gated by the non-local namespace-list SAR |
 | ACM Console inventory | **Ungated (inventory lane)**: #2661 phase c removed the DD-AF-018 inventory-lane gate; FMC is the sole Console inventory contact, `fleet.fmc.endpoint` fails closed when absent |
