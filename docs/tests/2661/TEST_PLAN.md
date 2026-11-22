@@ -8,7 +8,9 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 **Version**: 2.0 (supersedes TP-2661-v1.0, AF→ACM direct)
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
-**Status**: 📝 Draft v4.6 (round-23 pre-implementation review: ADR-068's separate
+**Status**: 📝 Draft v4.7 (round-24 pre-implementation review: §10's preamble
+matches RED/GREEN c and §12 — the DD-FLEET-017 §8 amendment already shipped;
+RED/GREEN c verifies the identity, it does not re-amend). Draft v4.6 (round-23 pre-implementation review: ADR-068's separate
 2026-11-03 qualification note — "ACM Console inventory remains disabled until …
 qualified" — joins the amendment set and §12(a)'s revert list; phase c
 discharged the condition, enforcement being FMC's proof-gated 503 plus the
@@ -456,8 +458,9 @@ The existing specs below assert behaviour this plan intentionally changes. They 
 
 ## 10. Wiring Manifest
 
-Identical to DD-FLEET-017 §8 (single authority; that table is amended in the
-same change so rows 1a/4a and the row 2/4 wording match here).
+Identical to DD-FLEET-017 §8 (single authority; rows 1a/4a and the row 2/4
+wording already shipped with #2691's and this branch's documentation commits —
+RED/GREEN c verifies the identity, it does not re-amend).
 
 | # | Component | Production entry point | Wiring location | IT ID |
 |---|---|---|---|---|
