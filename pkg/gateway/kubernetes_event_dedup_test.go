@@ -41,15 +41,11 @@ type mockOwnerResolver struct {
 	resolveFunc func(ctx context.Context, namespace, kind, name string) (string, string, error)
 }
 
-func (m *mockOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, kind, name string) (string, string, error) {
-	if m.resolveFunc != nil {
-		return m.resolveFunc(ctx, namespace, kind, name)
-	}
-	return "", "", fmt.Errorf("no resolve function configured")
-}
-
 func (m *mockOwnerResolver) ResolveTopLevelOwnerIdentity(ctx context.Context, resource sharedtypes.OwnerChainEntry) (sharedtypes.OwnerChainEntry, error) {
-	kind, name, err := m.ResolveTopLevelOwner(ctx, resource.Namespace, resource.Kind, resource.Name)
+	if m.resolveFunc == nil {
+		return sharedtypes.OwnerChainEntry{}, fmt.Errorf("no resolve function configured")
+	}
+	kind, name, err := m.resolveFunc(ctx, resource.Namespace, resource.Kind, resource.Name)
 	return sharedtypes.OwnerChainEntry{Namespace: resource.Namespace, Kind: kind, Name: name}, err
 }
 
