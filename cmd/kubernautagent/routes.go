@@ -150,6 +150,7 @@ func registerAPIRoutes(r chi.Router, ctx context.Context, p apiRoutesParams) (*m
 		// shows up as a per-hop breakdown against enrichment, tool calls,
 		// and the DS/audit writes. No-op cost when no TracerProvider is
 		// registered.
+		r.Use(chimiddleware.RequestID) // Issue #2664: correlation_id for security_event before auth
 		r.Use(otelhttp.NewMiddleware("kubernautagent.http",
 			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 				return r.Method + " " + r.URL.Path

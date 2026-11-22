@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -410,6 +412,34 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(events).To(HaveLen(2))
 			Expect(events[1].fields["correlation_id"]).To(Equal(testCorrelationID),
 				"grant and denial for the same request share one correlation_id")
+		})
+
+		It("UT-AUTH-2664-013: chi RequestID supplies a fallback correlation_id when the caller sends no header", func() {
+			mw := newMiddleware(validAuthenticator())
+
+			var contextRequestID string
+			router := chi.NewRouter()
+			router.Use(chimiddleware.RequestID)
+			router.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					contextRequestID = chimiddleware.GetReqID(r.Context())
+					next.ServeHTTP(w, r)
+				})
+			})
+			router.Handle("/api/v1/audit/events", mw.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})))
+
+			recorder := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/audit/events", nil)
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			router.ServeHTTP(recorder, req)
+
+			events := logs.securityEvents()
+			Expect(events).To(HaveLen(1))
+			Expect(contextRequestID).NotTo(BeEmpty())
+			Expect(events[0].fields["correlation_id"]).To(Equal(contextRequestID),
+				"FMC/KA rely on chi RequestID being registered before auth")
 		})
 	})
 })
