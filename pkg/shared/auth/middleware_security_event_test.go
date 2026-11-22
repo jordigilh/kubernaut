@@ -52,7 +52,7 @@ import (
 // capturedEvent is one structured log record emitted by the middleware.
 type capturedEvent struct {
 	message string
-	fields  map[string]string
+	fields  map[string]any
 }
 
 // captureLog is a logr.LogSink that records structured log entries so tests
@@ -68,9 +68,9 @@ func (c *captureLog) Init(_ logr.RuntimeInfo) {}
 func (c *captureLog) Enabled(_ int) bool { return true }
 
 func (c *captureLog) Info(_ int, msg string, keysAndValues ...interface{}) {
-	fields := make(map[string]string, len(keysAndValues)/2)
+	fields := make(map[string]any, len(keysAndValues)/2)
 	for i := 0; i+1 < len(keysAndValues); i += 2 {
-		fields[fmt.Sprint(keysAndValues[i])] = fmt.Sprint(keysAndValues[i+1])
+		fields[fmt.Sprint(keysAndValues[i])] = keysAndValues[i+1]
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -162,7 +162,7 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 		Expect(event.fields["event_outcome"]).To(BeElementOf("success", "failure", "pending"),
 			"event_outcome must match the ADR-034 enum")
 
-		parsed, err := uuid.Parse(event.fields["event_id"])
+		parsed, err := uuid.Parse(event.fields["event_id"].(string))
 		Expect(err).NotTo(HaveOccurred(), "event_id must be a UUID (ADR-034)")
 		Expect(parsed.Version()).To(Equal(uuid.Version(4)), "event_id must be a UUIDv4")
 	}
@@ -180,7 +180,7 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(event.fields["event_outcome"]).To(Equal("failure"))
 			Expect(event.fields["actor_type"]).To(Equal("external"))
 			Expect(event.fields["actor_id"]).To(BeEmpty())
-			Expect(event.fields["status_code"]).To(Equal("401"))
+			Expect(event.fields["status_code"]).To(Equal(401))
 			assertADR034Fields(event)
 		})
 
@@ -246,10 +246,11 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(event.fields["event_action"]).NotTo(Equal("deny"))
 			Expect(event.fields["event_outcome"]).To(Equal("failure"))
 			Expect(event.fields["actor_type"]).To(Equal("external"))
-			Expect(event.fields["status_code"]).To(Equal("500"))
-			Expect(event.fields["error_details"]).To(ContainSubstring("ERR_AUTH_SERVICE_UNAVAILABLE"),
+			Expect(event.fields["status_code"]).To(Equal(500))
+			Expect(event.fields["error_details"]).To(HaveField("Code", "ERR_AUTH_SERVICE_UNAVAILABLE"),
 				"DD-ERROR-001: outage events carry standardized error_details")
-			Expect(event.fields["error_details"]).To(ContainSubstring("auth-middleware"))
+			Expect(event.fields["error_details"]).To(HaveField("Component", "auth-middleware"))
+			Expect(event.fields["error_details"]).To(HaveField("RetryPossible", true))
 			assertADR034Fields(event)
 		})
 
@@ -268,7 +269,7 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(event.fields["event_outcome"]).To(Equal("failure"))
 			Expect(event.fields["actor_type"]).To(Equal("user"))
 			Expect(event.fields["actor_id"]).To(Equal(testUser))
-			Expect(event.fields["error_details"]).To(ContainSubstring("ERR_AUTHZ_SERVICE_UNAVAILABLE"))
+			Expect(event.fields["error_details"]).To(HaveField("Code", "ERR_AUTHZ_SERVICE_UNAVAILABLE"))
 			assertADR034Fields(event)
 		})
 	})

@@ -56,7 +56,7 @@ import (
 
 type wiringLogEntry struct {
 	message string
-	fields  map[string]string
+	fields  map[string]any
 }
 
 type wiringLogSink struct {
@@ -69,9 +69,9 @@ func (s *wiringLogSink) Init(_ logr.RuntimeInfo) {}
 func (s *wiringLogSink) Enabled(_ int) bool { return true }
 
 func (s *wiringLogSink) Info(_ int, msg string, keysAndValues ...interface{}) {
-	fields := make(map[string]string, len(keysAndValues)/2)
+	fields := make(map[string]any, len(keysAndValues)/2)
 	for i := 0; i+1 < len(keysAndValues); i += 2 {
-		fields[fmt.Sprint(keysAndValues[i])] = fmt.Sprint(keysAndValues[i+1])
+		fields[fmt.Sprint(keysAndValues[i])] = keysAndValues[i+1]
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -214,7 +214,7 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		Expect(event.fields["path"]).To(Equal(probeAdapter{}.GetRoute()))
 		Expect(event.fields["resource_name"]).To(Equal("gateway-service"))
 
-		parsed, err := uuid.Parse(event.fields["event_id"])
+		parsed, err := uuid.Parse(event.fields["event_id"].(string))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(parsed.Version()).To(Equal(uuid.Version(4)))
 	})
@@ -249,7 +249,7 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		Expect(last.fields["event_action"]).To(Equal("grant"))
 		Expect(last.fields["event_outcome"]).To(Equal("success"))
 		Expect(last.fields["actor_id"]).To(Equal(testUser))
-		Expect(last.fields["status_code"]).To(Equal("200"),
+		Expect(last.fields["status_code"]).To(Equal(200),
 			"status_code records the authorization decision, not the probe's 400")
 	})
 
