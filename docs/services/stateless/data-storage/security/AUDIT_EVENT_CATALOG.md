@@ -60,7 +60,7 @@ All events carry `correlation_id` (the service request ID: Gateway's `RequestIDM
 
 **Volume:** one `grant` line per authorization decision (SAR check): one per authorized read request, two per write/mutate request because those routes run both the router-wide `get` middleware and the route-level `create`/`update` middleware. Alongside DS's existing access-log line this is roughly 2 lines/request for reads and 3 for writes. The middleware applies no sampling or level gate; the host logger's configured level and zap sampling still apply, so a dedicated unsampled security-event logger is tracked in issue #2694.
 
-**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..012) proves the field contract and classifications; `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..055) proves the same events flow through a production `RegisterAdapter` auth chain.
+**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..013) proves the field contract and classifications; `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..055) proves the same events flow through a production `RegisterAdapter` auth chain.
 
 ---
 

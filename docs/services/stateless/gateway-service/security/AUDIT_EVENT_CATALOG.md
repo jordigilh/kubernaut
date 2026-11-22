@@ -43,7 +43,7 @@ All events carry `correlation_id` (the service request ID: Gateway's `RequestIDM
 
 **Volume:** one `grant` line per authorization decision (SAR check). Gateway signal routes run a single auth middleware, so this is one line per authorized request, in addition to Gateway's existing per-request "Request completed" line. The middleware applies no sampling or level gate; the host logger's configured level and zap sampling still apply, so a dedicated unsampled security-event logger is tracked in issue #2694.
 
-**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..012); `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..055, production `RegisterAdapter` chain).
+**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..013); `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..055, production `RegisterAdapter` chain).
 
 ---
 
