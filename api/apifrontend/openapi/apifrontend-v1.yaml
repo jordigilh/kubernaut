@@ -336,8 +336,9 @@ paths:
         AIAnalysis approval threshold, and bounded historical evaluations.
         Policy source, secrets, arbitrary labels, and full Kubernetes objects are
         never returned. `cluster_id=local` is the only supported list target for
-        this release; non-local policy-scope requests return a state-only
-        `unavailable` response. The endpoint is same-origin compatible and
+        this release; non-local policy-scope listing remains unsupported
+        (state-only `unavailable`), while a denied non-local namespace-list SAR
+        returns `403 forbidden` before the read. The endpoint is same-origin compatible and
         requires the verified interactive user identity from the Bearer token.
       tags: [console]
       security:
@@ -378,7 +379,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ConsoleStateEnvelope"
         "503":
-          description: Required local source is unavailable or incomplete
+          description: Required source is unavailable or incomplete
           content:
             application/json:
               schema:
@@ -426,13 +427,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
         "403":
-          description: Endpoint capability or requested list scope denied
+          description: Endpoint capability, requested list scope, or non-local namespace-list SAR denied
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ConsoleStateEnvelope"
         "503":
-          description: Required local source is unavailable or incomplete
+          description: Required source is unavailable or incomplete
           content:
             application/json:
               schema:
@@ -444,9 +445,10 @@ paths:
       summary: Read one sanitized managed-resource identity
       description: |
         Resolves an opaque resource ID without decoding target identity from the
-        URL. Local exact reads require a target-scope SAR; remote exact reads
-        additionally require the existing managed-scope checker. Denial is
-        intentionally indistinguishable from absence.
+        URL. Local exact reads require a target-scope SAR; non-local exact reads
+        are authorized by the non-local namespace-list SAR before the remote
+        managed-scope checker. A local target denial is intentionally
+        indistinguishable from absence.
       tags: [console]
       security:
         - bearerAuth: []
@@ -479,8 +481,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
+        "403":
+          description: Denied non-local namespace-list SAR (forbidden)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsoleStateEnvelope"
         "404":
-          description: Resource is absent or exact target access is denied
+          description: Resource is absent or local target access is denied
           content:
             application/json:
               schema:
@@ -521,8 +529,9 @@ components:
       in: query
       required: true
       description: Explicit cluster identity; `local` is supported for list and
-        policy-scope reads, while non-local identities remain supported for
-        exact reads only
+        policy-scope reads, while non-local identities are served for exact
+        reads and — with a granted non-local namespace-list SAR — for
+        managed-resource lists dispatched to FMC
       schema:
         type: string
         minLength: 1

@@ -136,6 +136,16 @@ the condition and does not fall back to a different cluster. The shared ACM
 scope checker remains wired for existing consumers. This is a temporary
 fail-closed release limitation, not completed ACM inventory functionality.
 
+**Amendment (2026-11-22, #2661 phase c):** the inventory-lane half of the gate
+above is **removed**. FMC is the sole Console inventory contact: the AF
+inventory reader is built only from `fleet.fmc.endpoint` (absent fails closed
+to a nil reader), non-local Console lists dispatch to FMC, and the former
+`BackendACM → nil` inventory branch and its log site are deleted. Qualification
+enforcement is FMC's server-side proof gate (state-only 503 for an unproven
+partition) plus the fail-closed endpoint wiring — see DD-FLEET-017 D6.2's
+amendment. The **scope lane is unchanged**: the shared ACM scope checker and
+DD-AF-018's scope-projection contract remain exactly as accepted.
+
 #### Console result metadata (2026-11-03/05)
 
 Complete and empty policy-scope and managed-resource pages expose the backend

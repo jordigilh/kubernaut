@@ -73,9 +73,9 @@ those are not fleet-control-plane queries.
 | FMC as the single federation-facing contact for federated inventory | **Decided** (2026-11-11); ADR-068/DD-FLEET amendment **approved 2026-11-18** |
 | FMC inventory API (`/api/v1/inventory/managed-resources`) | **Client only**; FMC serves only `/api/v1/scope/check` and `/api/v1/clusters` (`pkg/fleet/fmc/handler.go:74-75`) |
 | FMC ACM Search source adapter | **Not implemented** — no ACM code in `pkg/fleet/fmc` or `cmd/fleetmetadatacache` |
-| AF→FMC dispatch | Code exists (`fmc.HTTPClient` returns `inventory.Page`), blocked by the non-local rejection (`pkg/apifrontend/policyread/service.go:77`) |
-| ACM Console inventory | **Gated**: `unavailable`, no rows |
-| Code model | Still the **peer model**, in four places: `pkg/fleet/config.go:33-42` (`BackendFMC` / `BackendACM`), `fleet.NewInventoryReader`, `fleet.NewScopeChecker`, and AF's two `fleet.backend` branches in `cmd/apifrontend/backend_deps.go` |
+| AF→FMC dispatch | **Implemented** (#2661 phase c, 2026-11-22): the non-local rejection is removed; non-local lists dispatch to FMC, gated by the non-local namespace-list SAR |
+| ACM Console inventory | **Ungated (inventory lane)**: #2661 phase c removed the DD-AF-018 inventory-lane gate; FMC is the sole Console inventory contact, `fleet.fmc.endpoint` fails closed when absent |
+| Code model | The **peer model** shrank with #2661 phase c: `fleet.NewInventoryReader`'s ACM branch and one of AF's two `fleet.backend` branches are gone; the scope lane's peer surface (`fleet.NewScopeChecker`, AF's scope-checker branch) is unchanged |
 
 ## 2. Scope
 
@@ -591,7 +591,10 @@ punts the whole feature to post-1.6.
    Order matters: (a) can ship without (b); (b) never ships without (a).
 2. Qualification is declared by the reader (an optional capability the FMC
    client implements), not by a configuration flag and not by "whatever URL
-   answers".
+   answers". *(Amended 2026-11-22, #2661 phase c: qualification enforcement is
+   FMC's server-side proof gate — a state-only 503 for an unproven partition —
+   plus the fail-closed `fleet.fmc.endpoint` wiring, superseding the
+   reader-declared-capability mechanism. The scope lane is unchanged.)*
 3. Rollback is an atomic reviewed revert: the rejection and the gate return; no
    compatibility mode, no data migration.
 

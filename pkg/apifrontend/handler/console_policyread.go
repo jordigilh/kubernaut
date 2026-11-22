@@ -194,26 +194,34 @@ func (h *ConsolePolicyReadHandler) writeServiceError(w http.ResponseWriter, r *h
 	}
 }
 
+// consoleStateResponse is the wire mapping for one projection state.
+type consoleStateResponse struct {
+	status  int
+	message string
+}
+
+// consoleStateResponses collapses the former parallel projectionStatus and
+// projectionMessage switches into one table (TP-2661 REFACTOR, in-package
+// only). Unlisted states keep the fail-safe default (503 / "Console
+// projection unavailable"): a bare map lookup would zero-value them and
+// change handler behavior for partial, stale and future states.
+var consoleStateResponses = map[inventory.State]consoleStateResponse{
+	inventory.StateForbidden: {status: http.StatusForbidden, message: "access forbidden"},
+	inventory.StateNotFound:  {status: http.StatusNotFound, message: "resource not found"},
+}
+
 func projectionStatus(state inventory.State) int {
-	switch state {
-	case inventory.StateForbidden:
-		return http.StatusForbidden
-	case inventory.StateNotFound:
-		return http.StatusNotFound
-	default:
-		return http.StatusServiceUnavailable
+	if response, ok := consoleStateResponses[state]; ok {
+		return response.status
 	}
+	return http.StatusServiceUnavailable
 }
 
 func projectionMessage(state inventory.State) string {
-	switch state {
-	case inventory.StateForbidden:
-		return "access forbidden"
-	case inventory.StateNotFound:
-		return "resource not found"
-	default:
-		return "Console projection unavailable"
+	if response, ok := consoleStateResponses[state]; ok {
+		return response.message
 	}
+	return "Console projection unavailable"
 }
 
 func (h *ConsolePolicyReadHandler) writeInvalidFilter(w http.ResponseWriter, r *http.Request) {

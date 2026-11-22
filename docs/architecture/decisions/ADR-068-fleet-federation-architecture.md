@@ -187,6 +187,12 @@ question owned by the migration, not decided here.
 - **ACM Console inventory stays closed.** The release gate remains `unavailable`
   with no rows until FMC's ACM source, the configured hub Search identity,
   completeness and a production journey are qualified (DD-AF-018, #2661).
+  *(Amended 2026-11-22, #2661 phase c: the inventory-lane gate is removed —
+  FMC is the sole Console inventory contact, enforcement being FMC's
+  proof-gated 503 plus the fail-closed `fleet.fmc.endpoint` wiring; see
+  DD-AF-018's 2026-11-22 amendment. The peer-model consequence below also
+  shrank: `fleet.NewInventoryReader`'s ACM branch and one of AF's two
+  `fleet.backend` branches are gone. The scope lane is unchanged.)*
 
 ### Source contract (normative for every FMC source)
 
@@ -1260,6 +1266,11 @@ query listClusters($input: [SearchInput]) {
 > remains disabled until fleet visibility, gateway registration identity and the
 > production AF journey are qualified. The temporary spike privileges were removed
 > and the MCH setting restored. See `docs/tests/2584/TEST_PLAN.md` §16.3.
+>
+> *(Amended 2026-11-22, #2661 phase c: the condition above is discharged for the
+> inventory lane — FMC is the sole Console inventory contact and qualification
+> enforcement is FMC's server-side proof gate plus the fail-closed
+> `fleet.fmc.endpoint` wiring; see DD-AF-018's 2026-11-22 amendment.)*
 
 Kubernaut's ACM adapter queries the Search GraphQL API for resource metadata (name,
 namespace, group, version, kind, cluster, labels) and exact-matches the complete
