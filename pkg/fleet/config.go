@@ -122,6 +122,26 @@ type FleetConfig struct {
 	// unchanged -- see mcpclient.ResilienceConfigFromFleet.
 	// +optional
 	Resilience FleetResilienceConfig `yaml:"resilience,omitempty"`
+
+	// FMC holds the Console inventory endpoint (fleet.fmc.endpoint,
+	// DD-FLEET-017 D2.1a). It is intentionally separate from Endpoint: the
+	// scope adapter keeps using Backend+Endpoint, while the AF inventory
+	// reader is built only from this key, never from Endpoint, the
+	// auto-derived FMC service URL, or the ACM Search URL. An absent value
+	// fails the inventory path closed to no reader (unavailable), which is
+	// why it carries no derivation.
+	// +optional
+	FMC FleetFMCConfig `yaml:"fmc,omitempty"`
+}
+
+// FleetFMCConfig is the FMC-specific slice of FleetConfig (TP-2661 Tier 1c).
+type FleetFMCConfig struct {
+	// Endpoint is the FMC inventory API URL
+	// (e.g., "https://fleetmetadatacache-service.kubernaut-system.svc:8080").
+	// No auto-derivation: absent means the Console inventory path is
+	// unavailable, never inherited from fleet.endpoint.
+	// +optional
+	Endpoint string `yaml:"endpoint,omitempty"`
 }
 
 // FleetResilienceConfig is a plain DTO mirroring the tunable fields of

@@ -12,17 +12,20 @@ import (
 
 // NewInventoryReader creates the authenticated control-plane projection used
 // by Console remote reads. It never creates a remote Kubernetes or MCP reader.
-// A disabled or unconfigured Fleet block returns a nil reader. ACM Console
-// inventory is unavailable until Search visibility and completeness are qualified
-// (DD-AF-018); this does not affect the independent ACM scope checker.
+// The reader is built only from cfg.FMC.Endpoint (fleet.fmc.endpoint,
+// DD-FLEET-017 D2.1a): a disabled Fleet block or an absent FMC inventory
+// endpoint returns a nil reader, and the inventory path never inherits the
+// scope adapter's fleet.endpoint, the auto-derived FMC service URL, or the
+// ACM Search URL. The former DD-AF-018 BackendACM gate is removed: with
+// fleet.fmc.endpoint configured the same FMC reader is wired under any valid
+// backend, because FMC is the sole Console inventory contact.
 func NewInventoryReader(cfg FleetConfig) (inventory.Reader, error) {
-	if !cfg.Enabled || cfg.EffectiveEndpoint() == "" {
-		return nil, nil //nolint:nilnil // disabled Fleet is a valid no-reader state
+	if !cfg.Enabled || cfg.FMC.Endpoint == "" {
+		return nil, nil //nolint:nilnil // disabled Fleet or absent FMC inventory endpoint is a valid no-reader state
 	}
-
 	backendName := cfg.effectiveBackend()
-	if backendName == BackendACM {
-		return nil, nil //nolint:nilnil // ACM Console inventory deliberately fails closed pending qualification
+	if !supportedBackends[backendName] {
+		return nil, fmt.Errorf("fleet: unsupported inventory backend %q", backendName)
 	}
 	transport := http.DefaultTransport
 	caTransport, err := caReloaderTransportOrNil(backendName, cfg.TLSCAFile)
@@ -32,19 +35,13 @@ func NewInventoryReader(cfg FleetConfig) (inventory.Reader, error) {
 	if caTransport != nil {
 		transport = caTransport
 	}
-
-	switch backendName {
-	case BackendFMC:
-		tokenSource := auth.NewDefaultTokenSource()
-		if cfg.TokenPath != "" {
-			tokenSource = auth.NewTokenSource(cfg.TokenPath)
-		}
-		transport = auth.NewAuthTransport(tokenSource, transport)
-		return fmc.NewHTTPClient(cfg.EffectiveEndpoint(), fmc.WithHTTPClient(&http.Client{
-			Timeout:   5 * time.Second,
-			Transport: transport,
-		})), nil
-	default:
-		return nil, fmt.Errorf("fleet: unsupported inventory backend %q", backendName)
+	tokenSource := auth.NewDefaultTokenSource()
+	if cfg.TokenPath != "" {
+		tokenSource = auth.NewTokenSource(cfg.TokenPath)
 	}
+	transport = auth.NewAuthTransport(tokenSource, transport)
+	return fmc.NewHTTPClient(cfg.FMC.Endpoint, fmc.WithHTTPClient(&http.Client{
+		Timeout:   5 * time.Second,
+		Transport: transport,
+	})), nil
 }

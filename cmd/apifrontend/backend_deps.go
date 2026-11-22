@@ -220,9 +220,11 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 }
 
 // buildPolicyReadDeps wires the Console projection sources. Local list reads
-// use AF's metadata client and structured scope manager; remote inventory list
-// reads remain unavailable. The existing remote reader is retained only for
-// exact/get behavior that is outside the local list contract.
+// use AF's metadata client and structured scope manager; non-local reads
+// dispatch to the FMC inventory reader built from fleet.fmc.endpoint
+// (DD-FLEET-017 D2.1a) and never fall back to the local reader. With the key
+// absent the remote reader stays nil and non-local reads fail closed
+// unavailable; local reads are unaffected.
 func buildPolicyReadDeps(cfg *config.Config, deps *backendDeps, logger logr.Logger) error {
 	readGuard := policyread.NewReadGuard(policyread.DefaultInventoryMaxConcurrentReads)
 	deps.ReadGuard = readGuard
@@ -253,11 +255,16 @@ func buildPolicyReadDeps(cfg *config.Config, deps *backendDeps, logger logr.Logg
 		return err
 	}
 	deps.RemoteInventory = remoteInventory
-	if cfg.Fleet.Enabled && cfg.Fleet.Backend == fleet.BackendACM && cfg.Fleet.EffectiveEndpoint() != "" {
-		logger.Info("Console ACM inventory unavailable pending Search visibility and completeness qualification", "decision", "DD-AF-018")
-	}
 	if remoteInventory != nil {
-		logger.Info("Console remote exact inventory projection initialized; list remains unavailable", "backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.EffectiveEndpoint())
+		logger.Info("Console remote inventory projection initialized; list and exact reads dispatch through FMC",
+			"backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.FMC.Endpoint)
+	} else if cfg.Fleet.Enabled {
+		// GA dimension 12 (no silent failures): fleet is enabled but the
+		// inventory lane is unwired — fleet.fmc.endpoint is absent (or
+		// misspelled under the non-strict decode). Non-local reads fail
+		// closed unavailable; this line is the startup signal of that state.
+		logger.Info("Console inventory unavailable: fleet.fmc.endpoint is not configured; non-local reads fail closed",
+			"backend", cfg.Fleet.Backend)
 	}
 	return nil
 }

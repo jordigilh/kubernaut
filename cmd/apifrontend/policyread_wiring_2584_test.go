@@ -56,7 +56,7 @@ var _ = Describe("BR-SCOPE-001: policy-read dependency wiring", func() {
 			defer server.Close()
 			token := filepath.Join(GinkgoT().TempDir(), "token")
 			Expect(os.WriteFile(token, []byte("scope-test"), 0o600)).To(Succeed())
-			cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendFMC, Endpoint: server.URL, TokenPath: token}}
+			cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendFMC, Endpoint: server.URL, TokenPath: token, FMC: fleet.FleetFMCConfig{Endpoint: server.URL}}}
 			scheme := runtime.NewScheme()
 			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 			deps := &backendDeps{k8sTypedClient: crfake.NewClientBuilder().WithScheme(scheme).Build()}
@@ -167,11 +167,16 @@ var _ = Describe("BR-SCOPE-001: policy-read dependency wiring", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(managed.Provenance).To(Equal(scope.ScopeSourceUnavailable))
 	})
-	It("IT-AF-2584-ACM-FAIL-CLOSED [BR-SECURITY-016]: production ACM wiring returns unavailable for Console inventory", func() {
+	It("IT-AF-2584-ACM-FAIL-CLOSED [BR-SECURITY-016]: production ACM wiring fails the Console inventory lane closed without fleet.fmc.endpoint, and wires the FMC reader with it", func() {
+		// TP-2661 phase c re-scope: the DD-AF-018 gate is removed. The wired
+		// half asserts only RemoteInventory non-nil; the nil-reader/read
+		// assertions are driven only by the absent-key config — adding the key
+		// there would make them pass for the wrong reason (transport failure
+		// and the surviving policy-scope rejection, not nil-reader fail-closed).
 		cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendACM, Endpoint: "https://acm.example", TokenPath: "/unused/token"}}
 		deps := &backendDeps{}
 		Expect(buildPolicyReadDeps(cfg, deps, logr.Discard())).To(Succeed())
-		Expect(deps.RemoteInventory).To(BeNil(), "unqualified ACM inventory must not be wired")
+		Expect(deps.RemoteInventory).To(BeNil(), "without fleet.fmc.endpoint the inventory lane fails closed even under backend acm")
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{RemoteInventory: deps.RemoteInventory, Authorizer: projectionAllow{}})
 		Expect(err).NotTo(HaveOccurred())
 		user := &auth.UserIdentity{Username: "alice"}
@@ -186,13 +191,37 @@ var _ = Describe("BR-SCOPE-001: policy-read dependency wiring", func() {
 		_, err = svc.GetInventory(context.Background(), user, inventory.Filters{ClusterID: "prod-east"}, "opaque-id")
 		Expect(err).To(HaveOccurred())
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
+
+		wired := &config.Config{Fleet: fleet.FleetConfig{
+			Enabled: true, Backend: fleet.BackendACM,
+			Endpoint: "https://acm.example", TokenPath: "/unused/token",
+			FMC: fleet.FleetFMCConfig{Endpoint: "https://fmc.example:8443"},
+		}}
+		wiredDeps := &backendDeps{}
+		Expect(buildPolicyReadDeps(wired, wiredDeps, logr.Discard())).To(Succeed())
+		Expect(wiredDeps.RemoteInventory).NotTo(BeNil(), "with fleet.fmc.endpoint the FMC reader is wired under backend acm (DD-AF-018 gate removed)")
 	})
 
-	It("UT-AF-2584-FMC-READER [BR-SECURITY-016]: retains the FMC Console reader", func() {
-		cfg := &config.Config{Fleet: fleet.FleetConfig{Enabled: true, Backend: fleet.BackendFMC, Endpoint: "https://fmc.example"}}
+	It("UT-AF-2584-FMC-READER [BR-SECURITY-016]: retains the FMC Console reader from fleet.fmc.endpoint", func() {
+		// TP-2661 phase c re-scope: the reader is wired from the new key with
+		// fleet.endpoint still present (both keys prove the table's lanes stay
+		// green; key non-inheritance itself is proven by UT-AF-CFG-2661-001/002).
+		// With only the old key the reader stays nil — the inventory path no
+		// longer reads the scope adapter's endpoint (D2.1a).
+		cfg := &config.Config{Fleet: fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  fleet.BackendFMC,
+			Endpoint: "https://scope-adapter.example:8443",
+			FMC:      fleet.FleetFMCConfig{Endpoint: "https://fmc.example:8443"},
+		}}
 		deps := &backendDeps{}
 		Expect(buildPolicyReadDeps(cfg, deps, logr.Discard())).To(Succeed())
-		Expect(deps.RemoteInventory).NotTo(BeNil())
+		Expect(deps.RemoteInventory).NotTo(BeNil(), "the reader is wired from fleet.fmc.endpoint")
+
+		cfg.Fleet.FMC.Endpoint = ""
+		deps = &backendDeps{}
+		Expect(buildPolicyReadDeps(cfg, deps, logr.Discard())).To(Succeed())
+		Expect(deps.RemoteInventory).To(BeNil(), "with only fleet.endpoint set the inventory path fails closed to no reader")
 	})
 	It("IT-AF-2584-001 [BR-API-001]: constructs local typed policy/history and inventory sources from AF clients", func() {
 		scheme := runtime.NewScheme()

@@ -57,7 +57,9 @@ func NewService(cfg Config, deps Dependencies) (*Service, error) {
 }
 
 // ListInventory returns a bounded canonical inventory page after capability
-// and local target-scope authorization.
+// authorization and, for local reads, local target-scope authorization; for
+// non-local reads, the namespace-list SAR authorizes the remote projection
+// before dispatch (TP-2661 phase c).
 func (s *Service) ListInventory(ctx context.Context, user *auth.UserIdentity, filters inventory.Filters) (page inventory.Page, err error) {
 	state := inventory.StateUnavailable
 	defer func() {
@@ -74,11 +76,6 @@ func (s *Service) ListInventory(ctx context.Context, user *auth.UserIdentity, fi
 		state = StateOf(err)
 		return inventory.StateOnly(state), err
 	}
-	if normalized.ClusterID != LocalClusterID {
-		err = stateError(inventory.StateUnavailable, errors.New("remote inventory list unavailable"))
-		state = StateOf(err)
-		return inventory.StateOnly(state), err
-	}
 
 	page, err = s.readInventoryPage(ctx, normalized)
 	if err != nil {
@@ -90,7 +87,9 @@ func (s *Service) ListInventory(ctx context.Context, user *auth.UserIdentity, fi
 }
 
 // GetInventory returns one managed canonical resource. A local target denial
-// is intentionally mapped to not_found to prevent existence probing.
+// is intentionally mapped to not_found to prevent existence probing; a denied
+// non-local namespace-list SAR surfaces as forbidden before the reader
+// (TP-2661 phase c).
 func (s *Service) GetInventory(ctx context.Context, user *auth.UserIdentity, filters inventory.Filters, resourceID string) (resource inventory.Resource, err error) {
 	state := inventory.StateUnavailable
 	defer func() {
@@ -300,6 +299,31 @@ func (s *Service) authorize(ctx context.Context, user *auth.UserIdentity, capabi
 				return stateError(inventory.StateForbidden, errors.New("console target list denied"))
 			}
 		}
+		return nil
+	}
+	// Non-local reads carry no local target surface, so the namespace list is
+	// the authorization boundary (TP-2661 phase c): a caller who may not list
+	// the remote cluster's namespaces may not project any of its inventory.
+	// This arm is shared by list, exact-get and policy-scope reads because
+	// authorize() is their common gate — a denial must surface before any
+	// reader is consulted.
+	return s.authorizeRemoteNamespaceList(ctx, user)
+}
+
+// authorizeRemoteNamespaceList enforces the non-local namespace-list SAR
+// (list/core/v1/namespaces). A denial surfaces as forbidden; an authorizer
+// failure surfaces as unavailable. It never touches a reader.
+func (s *Service) authorizeRemoteNamespaceList(ctx context.Context, user *auth.UserIdentity) error {
+	allowed, err := s.dependencies.Authorizer.CheckTarget(ctx, user.Username, user.Groups, auth.TargetAccess{
+		Verb:     "list",
+		Version:  "v1",
+		Resource: "namespaces",
+	})
+	if err != nil {
+		return stateError(inventory.StateUnavailable, err)
+	}
+	if !allowed {
+		return stateError(inventory.StateForbidden, errors.New("console remote namespace list denied"))
 	}
 	return nil
 }
