@@ -121,6 +121,12 @@ In scope:
    rendering and no GW/RO/AF/EM token mount at all; FMC's own credential is
    `sources.acm.tokenPath`, in a different ConfigMap and mount.
 
+    *(1e is partially consumed 2026-11-22, #2661 phase c: the
+    `NewInventoryReader` ACM branch and one of AF's two `fleet.backend`
+    branches — the inventory lane — are already deleted; see §1.3's Code
+    model row. 1e's remaining scope is the scope-lane peer surface, the
+    `TokenPath` seam above, and the backend key itself.)*
+
    The ordering constraint is **data, not compatibility**: until increment 2
    supplies ACM observations, deleting the ACM scope branch would make every ACM
    scope check fail closed on `main`, because FMC would have no ACM-sourced

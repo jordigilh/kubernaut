@@ -87,6 +87,10 @@ uses AF's local Kubernetes clients. Console policy-scope and managed-resource li
 operations are local-only for this release; a non-local list request returns a
 state-only `unavailable` response and never falls back to the hub. Non-local exact
 reads retain the existing typed FMC/ACM control-plane path and managed-scope check.
+*(Superseded 2026-11-22, #2661 phase c — see the amendment above: non-local
+managed-resource lists dispatch to FMC and every non-local arm is gated by the
+namespace-list SAR before the managed-scope checker. Policy-scope listing stays
+local-only.)*
 The Console path does **not** use AF's MCP `FleetReaderFactory` and does not connect
 directly to a remote Kubernetes cluster. The existing AF `ScopeChecker` remains the
 remote exact-target managed-scope authorization seam; it already routes to FMC or ACM.
@@ -103,7 +107,9 @@ precedence rules, including explicit false, invalid-label provenance, inheritanc
 only for namespaced resources, and safe defaults. The inventory projection must
 use ACM's observed typed Search representation, preserve explicit cluster and
 opaque identity, and not claim completeness without evidence. This release does not
-enable remote inventory list projection. The shared scope contract (now
+enable remote inventory list projection. *(Superseded 2026-11-22, #2661 phase c —
+see the amendment above: remote managed-resource list projection is enabled through
+FMC.)* The shared scope contract (now
 `ScopeChecker.Check`; #2662 deleted the `IsManagedResource` boolean lane)
 is canonical and preserves backend errors so callers can distinguish an unavailable
 scope backend from an unmanaged resource.
@@ -283,6 +289,8 @@ and revision, the required configured threshold, bounded historical evaluation f
 completeness, and validated inventory links. Local list/policy-scope projections use the
 hub Kubernetes API; non-local list operations are unavailable for this release. Non-local
 exact reads use only the typed FMC/ACM inventory projection and existing managed-scope check.
+*(Superseded 2026-11-22, #2661 phase c for the managed-resource list lane — see the
+release-gate amendment above.)*
 Neither path returns raw policy source, arbitrary ConfigMap keys/data, full Kubernetes
 objects, secrets, tokens, private reasoning, or unbounded labels/annotations.
 
