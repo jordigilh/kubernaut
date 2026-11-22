@@ -43,7 +43,7 @@ const (
 
 // failureReasonKey is an unexported context key for the mutable holder
 // WithFailureReasonCapture installs. Unexported so only this package can
-// write to it (via logSecurityEvent); consumers only ever see it through
+// write to it (via emitSecurityEvent); consumers only ever see it through
 // the accessor function WithFailureReasonCapture returns.
 type failureReasonKey struct{}
 
@@ -176,20 +176,20 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request) (userInfo UserInfo, ok bool) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		m.logSecurityEvent(r, "missing_auth_header", "", http.StatusUnauthorized)
+		m.logAuthenticationFailure(r, "missing_auth_header")
 		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Missing Authorization header")
 		return UserInfo{}, false
 	}
 
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		m.logSecurityEvent(r, "invalid_auth_format", "", http.StatusUnauthorized)
+		m.logAuthenticationFailure(r, "invalid_auth_format")
 		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid Authorization header format")
 		return UserInfo{}, false
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	if token == "" {
-		m.logSecurityEvent(r, "empty_bearer_token", "", http.StatusUnauthorized)
+		m.logAuthenticationFailure(r, "empty_bearer_token")
 		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Empty Bearer token")
 		return UserInfo{}, false
 	}
@@ -197,7 +197,7 @@ func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request)
 	userInfo, err := m.authenticator.ValidateTokenFull(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, ErrTokenInvalid) {
-			m.logSecurityEvent(r, invalidTokenReason(err), "", http.StatusUnauthorized)
+			m.logAuthenticationFailure(r, invalidTokenReason(err))
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
 			return UserInfo{}, false
 		}
@@ -207,7 +207,7 @@ func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request)
 		)
 		// Issue #2664 (AU-2/AU-3): a TokenReview outage is a security-relevant,
 		// fail-closed decision and must be auditable, not only logged as an error.
-		m.logSecurityOutage(r, "authentication_service_unavailable", "", err)
+		m.logAuthenticationOutage(r, err)
 		// Issue #673 C-2: Generic error message; details logged server-side only
 		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authentication service unavailable")
 		return UserInfo{}, false
@@ -241,14 +241,14 @@ func (m *Middleware) authorizeRequest(w http.ResponseWriter, r *http.Request, us
 		)
 		// Issue #2664 (AU-2/AU-3): a SAR outage is a security-relevant,
 		// fail-closed decision and must be auditable, not only logged as an error.
-		m.logSecurityOutage(r, "authorization_service_unavailable", user, err)
+		m.logAuthorizationOutage(r, user, err)
 		// Issue #673 C-2: Generic error message; details logged server-side only
 		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authorization service unavailable")
 		return false
 	}
 
 	if !allowed {
-		m.logSecurityEvent(r, "authorization_denied", user, http.StatusForbidden)
+		m.logAuthorizationDenial(r, user)
 		m.writeError(w, http.StatusForbidden, "Forbidden", "Insufficient permissions")
 		return false
 	}
@@ -346,21 +346,43 @@ type securityEvent struct {
 	errorDetails *securityErrorDetails
 }
 
-// logSecurityEvent records an authentication or authorization failure that has
-// no dependency error attached (401/403). FedRAMP AU-2: every rejected request
-// produces a traceable security event.
-func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, statusCode int) {
+// logAuthenticationFailure records a request rejected before identity was
+// established (401). FedRAMP AU-2: every rejected request is traceable.
+func (m *Middleware) logAuthenticationFailure(r *http.Request, reason string) {
 	m.emitSecurityEvent(r, securityEvent{
 		reason:     reason,
-		user:       user,
-		statusCode: statusCode,
+		statusCode: http.StatusUnauthorized,
 		outcome:    "failure",
 	})
 }
 
-// logSecurityOutage records a fail-closed TokenReview/SAR dependency outage
-// (500) and attaches DD-ERROR-001 standardized error_details.
-func (m *Middleware) logSecurityOutage(r *http.Request, reason, user string, cause error) {
+// logAuthorizationDenial records an authenticated user denied by SAR (403).
+func (m *Middleware) logAuthorizationDenial(r *http.Request, user string) {
+	m.emitSecurityEvent(r, securityEvent{
+		reason:     "authorization_denied",
+		user:       user,
+		statusCode: http.StatusForbidden,
+		outcome:    "failure",
+	})
+}
+
+// logAuthenticationOutage records a fail-closed TokenReview dependency outage
+// (500) with DD-ERROR-001 error_details. No identity was established.
+func (m *Middleware) logAuthenticationOutage(r *http.Request, cause error) {
+	const reason = "authentication_service_unavailable"
+	details := newSecurityErrorDetails(reason, cause)
+	m.emitSecurityEvent(r, securityEvent{
+		reason:       reason,
+		statusCode:   http.StatusInternalServerError,
+		outcome:      "failure",
+		errorDetails: &details,
+	})
+}
+
+// logAuthorizationOutage records a fail-closed SAR dependency outage (500) with
+// DD-ERROR-001 error_details; the authenticated user is already known.
+func (m *Middleware) logAuthorizationOutage(r *http.Request, user string, cause error) {
+	const reason = "authorization_service_unavailable"
 	details := newSecurityErrorDetails(reason, cause)
 	m.emitSecurityEvent(r, securityEvent{
 		reason:       reason,
