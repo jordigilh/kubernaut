@@ -2488,8 +2488,8 @@ No 26/26 critical or 11/11 supplemental wiring completion is claimed.
 - RED: **Complete** — process-local coordinator contract added with Ginkgo coverage
 - GREEN: **Complete** — FMC startup no longer reads `POD_UID` or constructs a Kubernetes Lease
 - REFACTOR: **Complete** — singleton deployment wording, review evidence, and CI-attributed GVK/presence fixtures aligned; local build/lint/unit validation passed
-- ACM inventory: **Unavailable / no rows**
-- AF non-local Console list/policy scope: **Unavailable**
+- ACM inventory: **Unavailable / no rows** *(Superseded for the inventory-list lane 2026-11-22, #2661 phase c — ACM-sourced inventory is served through FMC; Live-tier qualification remains unclaimed)*
+- AF non-local Console list/policy scope: **Unavailable** *(Superseded for the managed-resource list lane 2026-11-22, #2661 phase c — non-local lists dispatch to FMC under the namespace-list SAR; policy-scope stays local-only)*
 - Historical review gate: **Non-clean / 0/3**; ephemeral session-based review captures are excluded from the repository evidence set and do not create a qualification claim.
 - The historical dirty-worktree review ceremony is superseded by the bounded fast path in this authority. No new three-review cycle is claimed.
 - Historical three-clean-review counter: **0/3**

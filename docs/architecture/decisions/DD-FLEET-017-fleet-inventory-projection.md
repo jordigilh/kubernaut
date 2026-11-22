@@ -33,7 +33,9 @@ OWASP ASVS V5 (validation), V8 (data protection). No certification claim.
 PR #2637 delivered the FMC proof lifecycle, the typed scope contract and a
 fail-closed AF gate: `pkg/fleet/inventory_reader.go` returns `nil` for
 `BackendACM`, `policyread.Service.ListInventory` rejects every non-local
-cluster, and `interim_contract_2592_red_test.go` pins that refusal. #2661 was
+cluster, and `interim_contract_2592_red_test.go` pins that refusal. *(All three
+clauses are superseded 2026-11-22, #2661 phase c — the gate is removed and the
+test re-scoped to pin dispatch; see §1.3.)* #2661 was
 written against the then-current peer-backend model, so it asks for an
 "ACM Search Console inventory projection" and its first task is "codify the
 ACM Search inventory contract DD".
