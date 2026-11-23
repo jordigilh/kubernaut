@@ -177,25 +177,16 @@ func (r *LocalInventoryReader) list(ctx context.Context, filters inventory.Filte
 		return inventory.StateOnly(inventory.StateUnavailable), err
 	}
 	resources = resources[start:]
-	now := r.now()
-	page := inventory.Page{
-		State:        inventory.StateSuccess,
-		ObservedAt:   now,
-		Freshness:    inventory.Freshness{State: inventory.FreshnessFresh, AsOf: now},
-		Completeness: inventory.CompletenessComplete,
-	}
-	if len(resources) == 0 {
-		page.State = inventory.StateEmpty
-		return page, nil
-	}
 	limit := filters.Limit
-	if len(resources) > limit {
-		page.Items = append(page.Items, resources[:limit]...)
-		page.NextCursor = page.Items[len(page.Items)-1].ID
-	} else {
-		page.Items = resources
+	hasMore := len(resources) > limit
+	if hasMore {
+		resources = resources[:limit]
 	}
-	return page, nil
+	// Refactor-in-cycle dedup (TP-2661): the page-assembly tail is the shared
+	// inventory.AssemblePage — the local lane is always fresh, so the
+	// freshness envelope is fixed here.
+	now := r.now()
+	return inventory.AssemblePage(resources, hasMore, now, inventory.Freshness{State: inventory.FreshnessFresh, AsOf: now}), nil
 }
 
 func (r *LocalInventoryReader) readKind(ctx context.Context, kind LocalResourceKind, filters inventory.Filters, resources *[]inventory.Resource, workingSet *retainedWorkingSet, namespaceLabels map[string]map[string]string) error {
