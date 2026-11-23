@@ -105,12 +105,14 @@ property of the harness, not a defect in the merged phases:
 One live run, one hub, one recorded Search build — no claim about other ACM
 2.17.x patch levels, no per-user remote visibility (#2600), no Console
 rendering evidence, no certification. E2E-FMC-INV-2661-002 is shipped as shared scenario `-017` in both FMC E2E lanes (CI-runnable) and
-was run focused on the Kuadrant lane (branch `work/2661-e2e-live-row`, helios08):
+was run focused on the Kuadrant lane — first at the initial spec revision, then re-run at the
+review-fixed revision that merges (`97d9a12d6`):
 
 ```
-Ran 4 of 20 Specs in 821.607 seconds
+Ran 4 of 20 Specs in 781.525 seconds
 SUCCESS! -- 4 Passed | 0 Failed | 0 Pending | 16 Skipped
 ```
 
-(log: `helios08:/root/kubernaut-2661-live/kuadrant-run2.log`; the 16 skipped are
-the suite's other scenarios excluded by `GINKGO_FOCUS`).
+(logs: `helios08:/root/kubernaut-2661-live/kuadrant-run2.log` first run,
+`kuadrant-run3.log` re-run at HEAD; the 16 skipped are the suite's other
+scenarios excluded by `GINKGO_FOCUS`).
