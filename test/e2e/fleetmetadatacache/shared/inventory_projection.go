@@ -17,7 +17,6 @@ limitations under the License.
 package shared
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/yaml"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
@@ -143,7 +143,7 @@ func InventoryProjection(h *Harness, v Variant) bool {
 			Expect(ok).To(BeTrue(), "config.yaml key must exist in fleetmetadatacache-config")
 
 			var parsed map[string]any
-			Expect(json.Unmarshal([]byte(raw), &parsed)).To(Succeed())
+			Expect(yaml.Unmarshal([]byte(raw), &parsed)).To(Succeed())
 			Expect(parsed).NotTo(HaveKey("sources"),
 				"the GitOps lane's FMC config must not select a source -- an absent sources block is the "+
 					"MCP-only shape whose inventory surface this spec proves (no ACM is deployed in this lane)")
