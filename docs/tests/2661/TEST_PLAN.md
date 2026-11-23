@@ -10,7 +10,16 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 **Author**: Kubernaut Team
 **Status**: 📝 Draft v4.7 (round-24 pre-implementation review: §10's preamble
 matches RED/GREEN c and §12 — the DD-FLEET-017 §8 amendment already shipped;
-RED/GREEN c verifies the identity, it does not re-amend). Draft v4.6 (round-23 pre-implementation review: ADR-068's separate
+RED/GREEN c verifies the identity, it does not re-amend). **Live rows proven
+(2026-11-22):** E2E-FMC-INV-2661-001 ran live on helios08 against the recorded
+ACM 2.17.4 build — 4/4 Its, evidence verbatim in
+[LIVE_EVIDENCE_2026-11-22.md](LIVE_EVIDENCE_2026-11-22.md); E2E-FMC-INV-2661-002
+is shipped as shared scenario `-017` in both FMC E2E lanes (CI-runnable) and
+was run focused on the Kuadrant lane at every revision that changed the spec:
+4/4 Its green, the record of reference being the run at the final revision
+`a43716cb4` (`SUCCESS! -- 4 Passed \| 0 Failed` in 786.5 s; earlier runs
+821.6 s and 781.5 s — verbatim in
+[LIVE_EVIDENCE_2026-11-22.md](LIVE_EVIDENCE_2026-11-22.md)). All Tier 1-3 rows are now ✅. Draft v4.6 (round-23 pre-implementation review: ADR-068's separate
 2026-11-03 qualification note — "ACM Console inventory remains disabled until …
 qualified" — joins the amendment set and §12(a)'s revert list; phase c
 discharged the condition, enforcement being FMC's proof-gated 503 plus the
@@ -168,8 +177,13 @@ with pinned server time). Known limitation: `IT-FMC-SRC-2661-004` proves the
 one-deadline-per-repair sharing semantics (D4.1a rule 7b) through the
 production context seam with a shortened staging lifetime — the repair path's
 own 55 s budget-setting is proven by `UT-FMC-SRC-2661-024` (§11b).
-**Not yet proven:** the AF dispatch/SAR ITs (`IT-AF-2661-001..003`) and every
-E2E claim. Increment 1 carries its own evidence and is merged (`#2681`).
+**Not yet proven:** the Live tier — E2E-FMC-INV-2661-001 (ACM lane on
+helios08, one live run against the recorded ACM 2.17.4 build with the
+least-privilege hub principal, evidence recorded verbatim) and
+E2E-FMC-INV-2661-002 (GitOps lane, CI-runnable). **Scope decision
+(2026-11-22):** the Live row is executed in a follow-up, not the phase-c PR;
+merging phase c leaves #2661 open on the Live row alone. Increment 1 carries
+its own evidence and is merged (`#2681`).
 **Issue**: [#2661](https://github.com/jordigilh/kubernaut/issues/2661)
 (parent [#2593](https://github.com/jordigilh/kubernaut/issues/2593),
 investigation [#2599](https://github.com/jordigilh/kubernaut/issues/2599))
@@ -404,8 +418,8 @@ live run.
 
 | ID | Scenario |
 |---|---|
-| E2E-FMC-INV-2661-001 | ACM lane on helios08: FMC collects from ACM Search with the least-privilege hub principal, AF lists/pages/reads one exact resource, `freshness=fresh` from proof, sanitized payload, no fallback. Assesses AC-4, AC-6, SI-10 and ASVS V5/V8 for this path. |
-| E2E-FMC-INV-2661-002 | GitOps lane: an MCP-sourced cluster produces the same inventory surface with no ACM present, proving the source abstraction and that `empty` is only emitted from a proven partition. |
+| E2E-FMC-INV-2661-001 | ACM lane on helios08: FMC collects from ACM Search with the least-privilege hub principal, AF lists/pages/reads one exact resource, `freshness=fresh` from proof, sanitized payload, no fallback. Assesses AC-4, AC-6, SI-10 and ASVS V5/V8 for this path. ✅ Spec: `test/e2e/fleetmetadatacache/live` (live-only package, no CI target). Proof: one live run 2026-11-22 against the recorded ACM 2.17.4 build (`acm-search-v2-api-rhel9@sha256:85c53e64…`, digest re-verified from the running pod) — 4/4 Its green; evidence verbatim in [LIVE_EVIDENCE_2026-11-22.md](LIVE_EVIDENCE_2026-11-22.md) (output, versions, principal, fixture). |
+| E2E-FMC-INV-2661-002 | GitOps lane: an MCP-sourced cluster produces the same inventory surface with no ACM present, proving the source abstraction and that `empty` is only emitted from a proven partition. ✅ Spec: `test/e2e/fleetmetadatacache/shared/inventory_projection.go` (`{prefix}-017`), registered verbatim in both the Kuadrant (`test/e2e/fleetmetadatacache/inventory_projection_test.go`) and EAIGW (`…/eaigw/inventory_projection_test.go`) lanes — CI-runnable via `make test-e2e-fleetmetadatacache-kuadrant` / `-eaigw`; asserts the deployed FMC config carries no `sources` key (no ACM present), success/fresh/sanitized list over the real Keycloak→gateway→kube-mcp-server pipeline, cursor paging, exact read, a zero-item namespace-filtered read as `empty`+`fresh` from the proven partition, and an unregistered cluster as 503 state-only `unavailable`. |
 
 ## 9. Key test-case detail
 
@@ -490,9 +504,9 @@ RED/GREEN c verifies the identity, it does not re-amend).
 | RED b4 — transport credentials | `NewACMHTTPSearch` production construction | UT-FMC-SRC-2661-023; IT-FMC-SRC-2661-003 | Fails without bearer, CA and rotation assertions |
 | GREEN b4 — transport credentials | `NewACMHTTPSearch` | same | Done only when request-level auth, trust and rotation pass without client recreation |
 | RED/GREEN c | IT-FMC-* and IT-AF-2661-001..004; AF dispatch + the non-local namespace-list SAR (`policyread.Service`'s authorize path, UT-AF-2661-004 first) + status mapping; the `fleet.fmc.endpoint` key (UT-AF-CFG-2661-001..003 first, wiring row 4a) and removal of both DD-AF-018 gate sites — `pkg/fleet/inventory_reader.go` (the `BackendACM → nil, nil` branch) and the `cmd/apifrontend/backend_deps.go` DD-AF-018 ACM-gate log site (`backend_deps.go:256-258`, log-only — the skip half of the gate was the inventory_reader branch) — plus re-expression of the adjacent startup logs and stale documentation (`cmd/apifrontend/backend_deps.go`): the "list remains unavailable" line that also logs `EffectiveEndpoint()` is replaced by list availability + `cfg.Fleet.FMC.Endpoint`, a new explicit inventory-unavailable line fires when `fleet.enabled` leaves the FMC reader nil (IT-AF-2661-004), the `buildPolicyReadDeps` doc comment ("remote inventory list reads remain unavailable … exact/get only") is rewritten to match the dispatch boundary, and the `pkg/apifrontend/policyread/service.go` doc comments that the shared `authorize()` change falsifies are updated (`ListInventory`'s "capability and local target-scope authorization" gains the non-local namespace-list SAR arm; `GetInventory`'s local-denial→not_found note gains the non-local `forbidden` arm); the same change amends DD-FLEET-017 §8 row 4a to this plan's wording (consumption in `pkg/fleet/inventory_reader.go`; `backend_deps.go` production caller owning the re-expressed logs), keeping the single-authority claim true — **already shipped**: the row carries this wording as of #2691/this branch's documentation commits, so RED/GREEN c only verifies it, not re-amends it; adds a dated DD-AF-018 amendment (inventory-lane gate removed by #2661 phase c; FMC is the sole Console inventory contact; the scope lane is unchanged) with the `docs/architecture/decisions/README.md` index row updated to match, and a dated note in ADR-068's 2026-11-18 amendment recording that phase c removed the inventory-lane gate and the inventory-lane peer branches (the "ACM Console inventory stays closed" bullet and the "four places" peer-model consequence; scope lane unchanged), plus a dated note in ADR-068's 2026-11-03 qualification block ("ACM Console inventory remains disabled until … qualified") recording that phase c discharged the condition — enforcement is FMC's proof-gated 503 plus the fail-closed `fleet.fmc.endpoint` wiring, and the same for DD-FLEET-015's 2026-11-18 amendment (its "closed until … qualified" reading of the DD-AF-018 gate; scope lane unchanged) and DD-FLEET-011's "keep the inventory gate closed until qualified" directive (discharged by this qualification; the target-read/scope content unchanged); the DD-FLEET-017 amendment is extended beyond row 4a with a dated note covering its §1.3 state rows (AF→FMC dispatch no longer blocked; ACM Console inventory no longer gated; the peer-model count reduced by the inventory-lane branches) and D6.2's qualification mechanism — qualification enforcement is FMC's server-side proof gate (state-only 503 for an unproven partition) plus the fail-closed `fleet.fmc.endpoint` wiring, superseding the reader-declared-capability wording; scope lane unchanged; and rewrites the now-false OpenAPI state descriptions in `api/apifrontend/openapi/apifrontend-v1.yaml` (the list route's "non-local list requests return a state-only unavailable response", `ConsoleClusterID`'s "non-local identities remain supported for exact reads only", the exact-read route's "remote exact reads additionally require the existing managed-scope checker" — the shared `authorize()` SAR changes non-local exact gets to `forbidden` before the reader, falsifying the local-vs-remote contrast — and the policy-scope route's "non-local policy-scope requests return a state-only `unavailable` response", which the same shared SAR changes to `403 forbidden` on denial while non-local policy-scope listing itself stays unsupported); the same rewrite adds a `403` response entry (`ConsoleStateEnvelope`, matching the list/policy-scope routes' 403 shape) to the exact-read route — a denied non-local exact get is now wire-real `403` on a route whose contract cannot express it — and corrects the exact-read route's 404 description ("absent or *local* target access denied") plus the list and policy-scope routes' 503 descriptions ("Required local source…" → "Required source…", matching the exact-read route's existing wording, since a non-local 503 now arises from the remote FMC source) — §4's "only if a documented state description changes" condition fires for exactly these surfaces | — | 120 min + the config slice |
-| REFACTOR | In-package deduplication only (AGENTS.md: no new types or components in REFACTOR): collapse the parallel per-state switches in `pkg/apifrontend/handler/console_policyread.go` — `projectionStatus` and `projectionMessage` — into one state→(status, message) table in that package, retaining the fail-safe default arm (503 / "Console projection unavailable") for unlisted states — a map without a default entry would zero-value `partial`/`stale`/future states and change handler behavior. The cross-package dedup of the two page-assembly tails (`pkg/apifrontend/policyread/local_inventory.go` `list`'s final page construction and `pkg/fleet/fmc/inventory_reader.go` `assemble`) is **dropped**: the two call sites live in different packages, so the shared helper would be a new exported symbol in a third package — a new component, which this phase forbids by its own rule; it would need its own plan and CHECKPOINT-DD approval if ever wanted. A merge of `projectionStatus` with `inventoryWireStatus` (`pkg/fleet/fmc/handler.go`) is explicitly out of scope: they live in different packages and their 2xx semantics differ (the AF switch has no success arm; FMC maps success/empty→200), so merging would change behavior | — | 45 min |
+| REFACTOR | Executed as the refactor step of each RED→GREEN cycle (user rule, 2026-11-22 — never a deferred trailing batch); this row is the budget/sequencing note naming the dedup targets: (a) the parallel per-state switches in `pkg/apifrontend/handler/console_policyread.go` — `projectionStatus` and `projectionMessage` — collapsed into one state→(status, message) table with the fail-safe default arm (503 / "Console projection unavailable"; a map without a default would zero-value `partial`/`stale`/future states) — the cycle owning that file; (b) the shared page-assembly tail `inventory.AssemblePage` in `pkg/fleet/inventory` (the package that owns `Page`), consuming the duplicated success/empty envelope + last-item-ID cursor construction of `pkg/apifrontend/policyread/local_inventory.go` `list` and `pkg/fleet/fmc/inventory_reader.go` `assemble` — the page-paths cycle. The v3.2 round's drop of (b) is superseded by the user rule. A merge of `projectionStatus` with `inventoryWireStatus` (`pkg/fleet/fmc/handler.go`) remains out of scope: different packages, differing 2xx semantics (the AF switch has no success arm; FMC maps success/empty→200) — merging would change behavior | — | 45 min |
 | Validate | affected UT/IT with `-race`, build, repo compile, full lint, local/FMC/scope regressions | — | 60–90 min |
-| Live | E2E-FMC-INV-2661-001/002, evidence captured | — | 90–120 min |
+| Live | E2E-FMC-INV-2661-001/002, evidence captured | E2E-FMC-INV-2661-001 run live on helios08 2026-11-22 at the merging revision (4/4, [LIVE_EVIDENCE_2026-11-22.md](LIVE_EVIDENCE_2026-11-22.md)); E2E-FMC-INV-2661-002 spec shipped in both FMC E2E lanes, CI-runnable and run focused on the Kuadrant lane at every spec-changing revision — record of reference: the final revision `a43716cb4`, 4/4 Its green (`SUCCESS! -- 4 Passed \| 0 Failed`, 786.5 s; earlier runs 821.6 s / 781.5 s) | Done: both rows have proving journeys; the ACM row's proof is the recorded single live run against the recorded build |
 
 Total ≈ 12–15 h plus CI. The lex index adds ~1.5–2.5 h of code and, critically,
 **re-qualification of the DD-FLEET-016 atomic swap** (~0.5–1 day of IT/live
@@ -569,10 +583,40 @@ review-fix refinements and incidental structure could diverge, and it would
 invalidate the SHAs this record cites. The verification replay provides the
 RED evidence the methodology requires without that risk.
 
+**c (config and dispatch slices) — breach recorded 2026-11-22, remediated same day.**
+The Tier 1c config slice (`FleetFMCConfig` + the `NewInventoryReader` rewrite)
+started before the plan review the user required, and its GREEN was left
+incomplete: the sibling spec `UT-FLEET-CFG-029` (`pkg/fleet/fleet_test.go:751-759`)
+was red at the end of GREEN, and no REFACTOR step was performed. RED itself
+was shown failing for the right reason (the contract did not exist:
+`FleetConfig has no field or method FMC`).
+
+Remediation, in order:
+- The plan-fix loop ran first (rounds 3–25, plan v2.5→v4.7, zero findings).
+- `UT-FLEET-CFG-029` was re-expressed per its §9b row (absent
+  `fleet.fmc.endpoint` → nil reader; the auto-derivation lane asserted
+  unchanged), and the full `pkg/fleet` suite went green with `-race`.
+- The cycle's REFACTOR was assessed: **N/A** — the gate removal collapsed
+  `NewInventoryReader` to flat, single-purpose construction, leaving no
+  in-package duplication or awkward structure to improve.
+- The two dedup targets named in §11's REFACTOR row were executed as the
+  refactor steps of the cycles owning those files: the
+  `projectionStatus`‖`projectionMessage` table (the `console_policyread.go`
+  cycle — it landed inside that cycle's commit rather than its own, a
+  deviation from the own-commit rule noted here) and the shared
+  `inventory.AssemblePage` page-assembly tail (the page-paths cycle — commit
+  `a1683459a` on this branch; first recorded as `7be71d1f4` on the phase-c
+  branch `work/2661-phase-c-list-dispatch`, re-committed onto this branch
+  with the same title when the Live-row branch was cut, so the SHA reachable
+  from this tree is `a1683459a`).
+
 **Standing rule for the remaining phases** (c, REFACTOR, Live): strict
 RED-first — write the failing spec, show it failing for the right reason,
 then implement. Implement-first is not an option; when RED-first is genuinely
 impossible, escalate for approval before writing any implementation code.
+Every cycle completes RED → GREEN (validated against the whole affected
+suite) → REFACTOR (its own commit, concrete improvement named; N/A only with
+a one-line reason) before the next cycle begins.
 
 ## 12. Rollback
 
