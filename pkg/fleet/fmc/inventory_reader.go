@@ -388,25 +388,13 @@ func (r *InventoryReader) readBatch(ctx context.Context, fence partitionFence, p
 	return result, nil
 }
 
-// assemble builds the wire page. `as_of` is the projection completion time,
-// matching the local reader's semantics (DD-FLEET-017 D3.2).
+// assemble builds the wire page through the shared inventory.AssemblePage
+// (TP-2661 refactor-in-cycle dedup): `as_of` is the projection completion
+// time and freshness is derived from remaining proof life, never from a query
+// time (DD-FLEET-017 D3.1/D3.2a).
 func (r *InventoryReader) assemble(items []inventory.Resource, hasMore bool, remainingProof time.Duration) inventory.Page {
 	now := r.now()
-	page := inventory.Page{
-		State:        inventory.StateSuccess,
-		ObservedAt:   now,
-		Completeness: inventory.CompletenessComplete,
-		Freshness:    inventory.Freshness{State: r.freshnessState(remainingProof), AsOf: now},
-	}
-	if len(items) == 0 {
-		page.State = inventory.StateEmpty
-		return page
-	}
-	page.Items = items
-	if hasMore {
-		page.NextCursor = items[len(items)-1].ID
-	}
-	return page
+	return inventory.AssemblePage(items, hasMore, now, inventory.Freshness{State: r.freshnessState(remainingProof), AsOf: now})
 }
 
 // freshnessState is derived from remaining proof life, never from a query time
