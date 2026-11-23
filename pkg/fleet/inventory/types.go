@@ -168,6 +168,32 @@ type Page struct {
 	NextCursor   string            `json:"next_cursor,omitempty"`
 }
 
+// AssemblePage builds the canonical success/empty page envelope shared by
+// every page-assembly tail (the local metadata reader and the FMC cache
+// reader). Zero items yield the `empty` state (never "nothing exists" without
+// a proven partition — the caller must only pass items from a complete
+// projection); a non-empty tail sets the cursor from the last item's ID when
+// more remain. Freshness is caller-supplied because the local lane is always
+// fresh while the FMC lane derives it from remaining proof life (DD-FLEET-017
+// D3.1/D3.2a).
+func AssemblePage(items []Resource, hasMore bool, observedAt time.Time, freshness Freshness) Page {
+	page := Page{
+		State:        StateSuccess,
+		ObservedAt:   observedAt,
+		Freshness:    freshness,
+		Completeness: CompletenessComplete,
+	}
+	if len(items) == 0 {
+		page.State = StateEmpty
+		return page
+	}
+	page.Items = items
+	if hasMore {
+		page.NextCursor = items[len(items)-1].ID
+	}
+	return page
+}
+
 // Filters is the only filter surface accepted by the canonical inventory
 // readers. ClusterID is required so a remote read cannot silently widen into
 // a cross-cluster query.
