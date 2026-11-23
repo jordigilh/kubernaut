@@ -18,21 +18,29 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/fleet/acm"
+	fmcclient "github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console inventory list", func() {
-	It("IT-AF-2584-REMOTE-LIST-001 [BR-SCOPE-001]: rejects a non-local inventory list without contacting a remote reader or falling back locally", func() {
+var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: Console inventory list (local projection; non-local FMC dispatch under the namespace-list SAR)", func() {
+	It("IT-AF-2584-REMOTE-LIST-001 [BR-SCOPE-001]: dispatches a non-local inventory list to the FMC client without falling back locally", func() {
+		// TP-2661 phase c re-scope: the boundary moved from refusal to
+		// remote-only dispatch (DD-FLEET-017 D2.1a). The stub serves the FMC
+		// page route shape — never-ACM is proven by the wire shape (a Search
+		// envelope would fail to decode), not by asserting zero dispatch.
 		var requests atomic.Int32
-		search := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer GinkgoRecover()
 			requests.Add(1)
-			http.Error(w, "unexpected remote inventory request", http.StatusInternalServerError)
+			Expect(r.URL.Path).To(Equal(fmcclient.InventoryPath))
+			w.Header().Set("Content-Type", "application/json")
+			Expect(json.NewEncoder(w).Encode(successfulFMCPage())).To(Succeed())
 		}))
-		DeferCleanup(search.Close)
+		DeferCleanup(fmcServer.Close)
 		local := &consoleInventoryStub{page: successfulPage()}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
-			LocalInventory: local, RemoteInventory: acm.NewClient(search.URL), Authorizer: &consoleAuthorizer{allow: true},
+			LocalInventory: local, RemoteInventory: fmcclient.NewHTTPClient(fmcServer.URL), Authorizer: &consoleAuthorizer{allow: true},
 		})
 		Expect(err).NotTo(HaveOccurred())
 		readHandler := handler.NewConsolePolicyReadHandler(svc, logr.Discard())
@@ -42,11 +50,11 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 
 		readHandler.ServeHTTP(recorder, req)
 
-		Expect(recorder.Code).To(Equal(http.StatusServiceUnavailable))
-		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"unavailable"`))
-		Expect(recorder.Body.String()).NotTo(ContainSubstring(`"items"`))
-		Expect(requests.Load()).To(BeZero())
-		Expect(local.listCalls).To(BeZero())
+		Expect(recorder.Code).To(Equal(http.StatusOK))
+		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"success"`))
+		Expect(recorder.Body.String()).To(ContainSubstring(`"cluster_id":"prod-east"`))
+		Expect(requests.Load()).To(Equal(int32(1)), "the dispatch reaches the FMC fixture exactly once")
+		Expect(local.listCalls).To(BeZero(), "a non-local request must not fall back to the local backend")
 	})
 	It("IT-AF-2593-DENY-001 [BR-SECURITY-016]: denies a remote inventory read before contacting ACM", func() {
 		var requests atomic.Int32
@@ -70,16 +78,27 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"forbidden"`))
 		Expect(requests.Load()).To(BeZero())
 	})
-	It("IT-AF-2584-REMOTE-LIST-002 [BR-SECURITY-016]: keeps a remote ACM list unavailable instead of exposing a partial Search page", func() {
-		var requests atomic.Int32
-		search := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			requests.Add(1)
-			_, err := io.WriteString(w, `{"data":{"searchResult":[{"count":2,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Namespace","name":"sensitive-namespace","label":"kubernaut.ai/managed=true"}]}]}}`)
+	It("IT-AF-2584-REMOTE-LIST-002 [BR-SECURITY-016]: maps a partial remote FMC page to a state-only failure instead of exposing partial rows", func() {
+		// TP-2661 phase c re-scope: two named cases. The success case proves
+		// dispatch reaches the FMC client; the no-partial-rows case serves the
+		// wire-realistic 503 state-only partial (mirroring FMC's own
+		// inventoryWireStatus server-side mapping — a 200 state-only partial
+		// would pass the client's Page.Validate and surface as partial, which
+		// is why the fixture must use the 503) and keeps the no-leak
+		// assertions.
+		var partialRequests atomic.Int32
+		partial := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer GinkgoRecover()
+			partialRequests.Add(1)
+			Expect(r.URL.Path).To(Equal(fmcclient.InventoryPath))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, err := io.WriteString(w, `{"state":"partial","observed_at":"2026-11-22T12:00:00Z","freshness":{"state":"fresh","as_of":"2026-11-22T12:00:00Z"},"completeness":"partial"}`)
 			Expect(err).NotTo(HaveOccurred())
 		}))
-		DeferCleanup(search.Close)
+		DeferCleanup(partial.Close)
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
-			RemoteInventory: acm.NewClient(search.URL), Authorizer: &consoleAuthorizer{allow: true},
+			RemoteInventory: fmcclient.NewHTTPClient(partial.URL), Authorizer: &consoleAuthorizer{allow: true},
 		})
 		Expect(err).NotTo(HaveOccurred())
 		readHandler := handler.NewConsolePolicyReadHandler(svc, logr.Discard())
@@ -93,7 +112,7 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(recorder.Body.String()).To(ContainSubstring(`"state":"unavailable"`))
 		Expect(recorder.Body.String()).NotTo(ContainSubstring("sensitive-namespace"))
 		Expect(recorder.Body.String()).NotTo(ContainSubstring(`"items"`))
-		Expect(requests.Load()).To(BeZero())
+		Expect(partialRequests.Load()).To(Equal(int32(1)), "the no-partial-rows case dispatches to the FMC fixture")
 	})
 	It("IT-AF-2593-PUBLIC-METADATA-001 [BR-API-001]: returns observed time and backend freshness metadata", func() {
 		readHandler := newConsoleReadHandler(&consoleAuthorizer{allow: true}, &consoleInventoryStub{page: successfulPage()})
@@ -254,10 +273,16 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 	})
 
 	It("IT-AF-2584-005 [FedRAMP SI-10, AC-4]: rejects filters and IDs that would widen the result", func() {
+		// A non-local cluster dispatches to the wired remote reader and never
+		// falls back to the local hub reader. TP-2661 phase c re-scope: the
+		// remote stub serves a prod-east-attributed success page (the old
+		// fixture's local-cluster items would have made the 503 survive for
+		// the wrong reason — cross-cluster item rejection, not dispatch
+		// refusal), so the response is 200 success.
 		local := &consoleInventoryStub{page: successfulPage()}
-		remote := &consoleInventoryStub{page: successfulPage()}
-		// Both backends are wired so the non-local probe can distinguish "the
-		// service refused the request" from "no remote reader was configured".
+		remote := &consoleInventoryStub{page: successfulFMCPage()}
+		// Both backends are wired so the non-local probe proves dispatch went
+		// to the remote reader specifically, not that no reader existed.
 		service, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
 			LocalInventory:  local,
 			RemoteInventory: remote,
@@ -267,15 +292,16 @@ var _ = Describe("BR-SCOPE-001 / BR-SECURITY-016: approved local-only Console in
 		Expect(err).NotTo(HaveOccurred())
 		readHandler := handler.NewConsolePolicyReadHandler(service, logrDiscard())
 
-		// A non-local cluster is refused: neither backend is consulted.
+		// A non-local cluster dispatches to the wired remote reader; the
+		// local hub reader is never consulted.
 		crossCluster := httptest.NewRequest(http.MethodGet, "/api/v1/console/inventory/managed-resources?cluster_id=prod-east", http.NoBody)
 		crossCluster = crossCluster.WithContext(auth.WithUserIdentity(crossCluster.Context(), &auth.UserIdentity{Username: "alice"}))
 		crossRecorder := httptest.NewRecorder()
 		readHandler.ServeHTTP(crossRecorder, crossCluster)
-		Expect(crossRecorder.Code).To(Equal(http.StatusServiceUnavailable))
-		Expect(crossRecorder.Body.String()).To(ContainSubstring(`"state":"unavailable"`))
+		Expect(crossRecorder.Code).To(Equal(http.StatusOK))
+		Expect(crossRecorder.Body.String()).To(ContainSubstring(`"state":"success"`))
 		Expect(local.listCalls).To(Equal(0), "a remote cluster must not fall back to the local hub reader")
-		Expect(remote.listCalls).To(Equal(0), "a non-local list must be refused before remote dispatch")
+		Expect(remote.listCalls).To(Equal(1), "a non-local list dispatches to the wired remote reader")
 
 		// A guessed opaque ID returns not_found without existence detail.
 		guessedID := "r-" + strings.Repeat("0", 64)
@@ -323,6 +349,30 @@ func successfulPage() inventory.Page {
 		Items: []inventory.Resource{{
 			ID:        inventory.CanonicalResourceID(scope.ResourceIdentity{ClusterID: "local", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"}),
 			ClusterID: "local",
+			Group:     "apps",
+			Version:   "v1",
+			Kind:      "Deployment",
+			Namespace: "payments",
+			Name:      "checkout",
+			Scope:     inventory.Scope{Included: true, Source: inventory.ScopeSourceResourceLabel, ResourceLabel: inventory.LabelTrue, NamespaceLabel: inventory.LabelAbsent},
+		}},
+	}
+}
+
+// successfulFMCPage is the prod-east-attributed FMC-shaped success page used
+// by the phase-c re-scoped remote-dispatch specs: a group-ful apps/v1 kind,
+// the requested cluster's attribution, a canonical ID regenerated for that
+// identity, and a contract-valid freshness envelope (TP-2661 §9b).
+func successfulFMCPage() inventory.Page {
+	observedAt := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	return inventory.Page{
+		State:        inventory.StateSuccess,
+		ObservedAt:   observedAt,
+		Freshness:    inventory.Freshness{State: inventory.FreshnessFresh, AsOf: observedAt},
+		Completeness: inventory.CompletenessComplete,
+		Items: []inventory.Resource{{
+			ID:        inventory.CanonicalResourceID(scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"}),
+			ClusterID: "prod-east",
 			Group:     "apps",
 			Version:   "v1",
 			Kind:      "Deployment",
