@@ -67,6 +67,23 @@ var _ = Describe("FMC auth security_event dedicated logger wiring [Issue #2694]"
 		ln, addr := listenOn()
 		serveErr := make(chan error, 1)
 		go func() { serveErr <- servers.api.ServeTLS(ln, "", "") }()
+		// Idempotent shutdown so DeferCleanup (registered before any
+		// assertion can abort the spec) and the happy path share one
+		// shutdown-and-collection path and the goroutine always exits.
+		var shutdownOnce sync.Once
+		shutdown := func() {
+			shutdownOnce.Do(func() {
+				Expect(servers.api.Close()).To(Succeed())
+				// The probe succeeded, so ServeTLS can only report the
+				// deliberate shutdown; anything else is the probe's real
+				// failure cause.
+				Eventually(serveErr).Should(Receive(SatisfyAny(
+					BeNil(),
+					MatchError(http.ErrServerClosed),
+				)), "ServeTLS must serve the probe and then shut down cleanly")
+			})
+		}
+		DeferCleanup(shutdown)
 
 		// No bearer token: rejected at the missing Authorization header,
 		// before any TokenReview/SAR round-trip, so the fake K8s client is
@@ -78,15 +95,7 @@ var _ = Describe("FMC auth security_event dedicated logger wiring [Issue #2694]"
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
-
-		// Shut the server down explicitly, then collect ServeTLS's result:
-		// the probe succeeded, so it can only report the deliberate
-		// shutdown; anything else is the probe's real failure cause.
-		Expect(servers.api.Close()).To(Succeed())
-		Expect(<-serveErr).To(SatisfyAny(
-			BeNil(),
-			MatchError(http.ErrServerClosed),
-		), "ServeTLS must serve the probe and then shut down cleanly")
+		shutdown()
 
 		var securityEvents int
 		for _, line := range strings.Split(strings.TrimSpace(hostBuf.String()), "\n") {
