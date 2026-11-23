@@ -47,7 +47,8 @@ limitations under the License.
 // V5/V8 (bearer handling and the sanitized metadata-only payload).
 //
 // Required environment (the suite fails closed when any is missing -- it is
-// only ever invoked deliberately, via make test-e2e-fmc-acm-live):
+// only ever invoked deliberately, with the go test command recorded in
+// docs/tests/2661/LIVE_EVIDENCE_2026-11-22.md):
 //
 //	LIVE_ACM_SEARCH_ENDPOINT  ACM Search GraphQL route (recorded build)
 //	LIVE_ACM_TOKEN_PATH       token file of the least-privilege hub principal
@@ -74,6 +75,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -242,6 +244,16 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 			Labels: map[string]string{"kubernaut.ai/managed": "true"},
 		}}
 		Expect(k8s.Create(context.Background(), ns)).To(Succeed())
+		// Registered immediately after creation, before any later setup step
+		// can fail: a setup failure must never leave the managed namespace
+		// on the live hub. The delete error is returned (NotFound ignored)
+		// so cleanup failures surface as suite failures.
+		DeferCleanup(func() error {
+			if err := k8s.Delete(context.Background(), ns); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+			return nil
+		})
 		// replicas 0: the fixture exists for Search to index; it runs no pods.
 		zero := int32(0)
 		deploy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
@@ -266,9 +278,6 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 			},
 		}}
 		Expect(k8s.Create(context.Background(), deploy)).To(Succeed())
-		DeferCleanup(func() {
-			_ = k8s.Delete(context.Background(), ns)
-		})
 
 		By("wiring the real Valkey and the production ACM collector composition")
 		var storeErr error

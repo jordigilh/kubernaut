@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"    //nolint:staticcheck // Ginkgo/Gomega DSL dot-import convention
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/yaml"
@@ -74,8 +75,11 @@ func InventoryProjection(h *Harness, v Variant) bool {
 				},
 			}
 			Expect(h.K8sClient.Create(h.Ctx, testNS)).To(Succeed())
-			DeferCleanup(func() {
-				_ = h.K8sClient.Delete(h.Ctx, testNS)
+			DeferCleanup(func() error {
+				if err := h.K8sClient.Delete(h.Ctx, testNS); err != nil && !apierrors.IsNotFound(err) {
+					return err
+				}
+				return nil
 			})
 
 			// A managed namespace that deliberately contains NO resources of
@@ -90,8 +94,11 @@ func InventoryProjection(h *Harness, v Variant) bool {
 				},
 			}
 			Expect(h.K8sClient.Create(h.Ctx, emptyNS)).To(Succeed())
-			DeferCleanup(func() {
-				_ = h.K8sClient.Delete(h.Ctx, emptyNS)
+			DeferCleanup(func() error {
+				if err := h.K8sClient.Delete(h.Ctx, emptyNS); err != nil && !apierrors.IsNotFound(err) {
+					return err
+				}
+				return nil
 			})
 
 			svcName = v.ResourcePrefix() + "-inv-svc"
@@ -163,6 +170,11 @@ func InventoryProjection(h *Harness, v Variant) bool {
 				})
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(page.State).To(Equal(inventory.StateSuccess))
+				// A success page can still be stale (proof ageing between
+				// syncs): keep polling until the page is fresh, exactly like
+				// the empty-result poll below, instead of failing the outer
+				// freshness assertion on the first success.
+				g.Expect(page.Freshness.State).To(Equal(inventory.FreshnessFresh))
 			}, SyncTimeout, Interval).Should(Succeed(),
 				"the MCP-sourced partition must serve the same inventory surface the ACM lane serves")
 
