@@ -875,10 +875,20 @@ func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptio
 	if fmcNamespace == "" {
 		fmcNamespace = namespace
 	}
+	fmcServiceURL := fmt.Sprintf("https://fleetmetadatacache-service.%s.svc.cluster.local:8080", fmcNamespace)
+	// The fixture's fleet block is replaced wholesale, never merged: a
+	// fleet.fmc.endpoint or any other key added to config.yaml is dropped here.
 	config["fleet"] = map[string]any{
-		"enabled":            true,
-		"backend":            string(fleet.BackendFMC),
-		"endpoint":           fmt.Sprintf("https://fleetmetadatacache-service.%s.svc.cluster.local:8080", fmcNamespace),
+		"enabled": true,
+		"backend": string(fleet.BackendFMC),
+		// fleet.endpoint is the scope adapter's key; fleet.fmc.endpoint is the
+		// Console inventory key (DD-FLEET-017 D2.1a). Both point at the FMC
+		// service here, but the reader is built only from the latter and never
+		// inherits the former.
+		"endpoint": fmcServiceURL,
+		"fmc": map[string]any{
+			"endpoint": fmcServiceURL,
+		},
 		"mcpGatewayEndpoint": fleetOptions.MCPGatewayEndpoint,
 		"mcpGatewayType":     fleetOptions.MCPGatewayType,
 		"namespace":          namespace,
@@ -1332,6 +1342,36 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: apifrontend-fleet-registry-reader
+subjects:
+- kind: ServiceAccount
+  name: apifrontend
+  namespace: %[1]s
+---
+# #2695: FMC authorizes every API request with a SAR for
+# get services/fleetmetadatacache-service (cmd/fleetmetadatacache/main.go,
+# MiddlewareConfig: Resource services, ResourceName fleetmetadatacache-service,
+# Verb get -- not KA's create). A named-service ClusterRole keeps the grant
+# least-privilege and namespace-agnostic, matching the fmc-e2e-scope-check-client
+# precedent, so an FMC/app namespace split cannot silently leave Console
+# inventory at 403.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apifrontend-fmc-sar-client
+rules:
+- apiGroups: [""]
+  resources: ["services"]
+  resourceNames: ["fleetmetadatacache-service"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apifrontend-fmc-sar-client
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: apifrontend-fmc-sar-client
 subjects:
 - kind: ServiceAccount
   name: apifrontend
