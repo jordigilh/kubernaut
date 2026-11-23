@@ -35,6 +35,7 @@ import (
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	dsmodels "github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -109,6 +110,9 @@ func newAuthMiddleware(infra *k8sInfra, interactiveCfg kaconfig.InteractiveConfi
 		Resource:     "services",
 		ResourceName: "kubernaut-agent",
 		Verb:         "create",
+		// Issue #2694 (BR-SECURITY-016, FedRAMP AU-2): security_event
+		// records bypass the host logger's zap sampling and level gate.
+		SecurityEventLogger: kubelog.NewSecurityEventLogger(logger, kubelog.Options{ServiceName: "kubernautagent"}),
 	}, logger)
 	return mw, cleanup
 }

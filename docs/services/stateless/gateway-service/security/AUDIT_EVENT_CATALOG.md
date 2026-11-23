@@ -41,9 +41,9 @@ All events carry `correlation_id` (the service request ID: Gateway's `RequestIDM
 
 **Controls:** FedRAMP AU-2, AU-3, AC-6; SOC2 CC7.2; OWASP ASVS V2/V3/V7.
 
-**Volume:** one `grant` line per authorization decision (SAR check). Gateway signal routes run a single auth middleware, so this is one line per authorized request, in addition to Gateway's existing per-request "Request completed" line. The middleware applies no sampling or level gate; the host logger's configured level and zap sampling still apply, so a dedicated unsampled security-event logger is tracked in issue #2694.
+**Volume:** one `grant` line per authorization decision (SAR check). Gateway signal routes run a single auth middleware, so this is one line per authorized request, in addition to Gateway's existing per-request "Request completed" line. Since #2694 these records are emitted through a dedicated security-event logger (`log.NewSecurityEventLogger`, BR-SECURITY-016, FedRAMP AU-2) derived from the host logger in the server constructor's `newAuthMiddleware`: zap's sampler is disabled and the level is fixed at Info, independent of the service's configured level and hot-reload, so neither a request burst nor a WARN/ERROR service configuration can drop a grant, deny or outage record. Unrelated service logging keeps its normal sampling and level gating.
 
-**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..013); `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..055, production `RegisterAdapter` chain).
+**Tests:** `pkg/shared/auth/middleware_security_event_test.go` (UT-AUTH-2664-001..013); `pkg/gateway/auth_security_event_wiring_test.go` (IT-AUTH-2664-050..055 plus IT-AUTH-2694-050 burst, production `RegisterAdapter` chain); `pkg/log/logger_security_event_test.go` (UT-LOG-2694-001..003) and `pkg/shared/auth/middleware_security_event_delivery_test.go` (UT-AUTH-2694-001..005) prove unsampled, non-level-gated delivery.
 
 ---
 
