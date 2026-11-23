@@ -349,7 +349,13 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 		// exactly this) points at a locally minted file; the FMC listener
 		// under test applies no inbound auth of its own (that leg is owned by
 		// the CI lanes' TokenReview/SAR middleware).
-		loopbackToken := filepath.Join(GinkgoT().TempDir(), "af-token")
+		// (Also: os.MkdirTemp, not GinkgoT().TempDir() -- the latter is
+		// cleaned up after the first It, and this file must live for the
+		// whole Ordered container.)
+		tokenDir, err := os.MkdirTemp("", "dd2661-live-af-")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = os.RemoveAll(tokenDir) })
+		loopbackToken := filepath.Join(tokenDir, "af-token")
 		Expect(os.WriteFile(loopbackToken, []byte("dd2661-live-loopback"), 0o600)).To(Succeed())
 		afReader, err := fleet.NewInventoryReader(fleet.FleetConfig{
 			Enabled:   true,
