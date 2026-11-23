@@ -53,26 +53,30 @@ var _ = Describe("RequestID Middleware", func() {
 			Expect(rr.Code).To(Equal(http.StatusOK))
 		})
 
-		It("should preserve existing X-Request-ID header", func() {
-			existingRequestID := "external-trace-123"
+		It("overrides a client-supplied X-Request-ID with the generated canonical ID", func() {
+			clientSuppliedID := "external-trace-123"
 			var capturedRequestID string
 			testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				capturedRequestID = middleware.GetRequestID(r.Context())
+				Expect(r.Header.Get("X-Request-ID")).To(Equal(capturedRequestID),
+					"downstream middleware must see the canonical ID, not the client value")
 				w.WriteHeader(http.StatusOK)
 			})
 
 			wrappedHandler := middleware.RequestIDMiddleware(logger)(testHandler)
 
 			req := httptest.NewRequest("GET", "/test", nil)
-			req.Header.Set("X-Request-ID", existingRequestID)
+			req.Header.Set("X-Request-ID", clientSuppliedID)
 			rr := httptest.NewRecorder()
 
 			wrappedHandler.ServeHTTP(rr, req)
 
-			// Note: Chi's RequestID middleware may have already processed this,
-			// but we verify a Request ID exists in context
 			Expect(capturedRequestID).ToNot(BeEmpty(),
 				"BR-GATEWAY-109: Request ID must be available in context")
+			Expect(capturedRequestID).ToNot(Equal(clientSuppliedID),
+				"a client-supplied trace ID must not become the audit correlation ID")
+			Expect(rr.Header().Get("X-Request-ID")).To(Equal(capturedRequestID),
+				"response header, context and request header must agree")
 			Expect(rr.Code).To(Equal(http.StatusOK))
 		})
 	})
@@ -160,4 +164,3 @@ var _ = Describe("RequestID Middleware", func() {
 		})
 	})
 })
-

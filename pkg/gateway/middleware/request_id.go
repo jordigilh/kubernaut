@@ -75,6 +75,12 @@ func RequestIDMiddleware(logger logr.Logger) func(http.Handler) http.Handler {
 			// Add request ID to response headers for client tracing
 			w.Header().Set("X-Request-ID", requestID)
 
+			// Keep the request header in sync with the generated ID: this is the
+			// canonical ID for the request (response header, RFC 7807 request_id,
+			// request-scoped logger), and downstream middleware such as the shared
+			// auth middleware uses it as the security-event correlation_id.
+			r.Header.Set("X-Request-ID", requestID)
+
 			// Create request-scoped logger with structured fields (logr syntax)
 			requestLogger := logger.WithValues(
 				"request_id", requestID,

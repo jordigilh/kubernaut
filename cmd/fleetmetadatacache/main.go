@@ -33,6 +33,7 @@ import (
 	"syscall"
 	"time"
 
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/prometheus/client_golang/prometheus"
@@ -521,7 +522,11 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Lo
 	// authMiddleware via the "/" delegation below.
 	topMux := http.NewServeMux()
 	topMux.HandleFunc(fmc.ReadyzPath, fmc.ReadyzHandler(deps.Ready, deps.cacheReader))
-	topMux.Handle("/", authMiddleware.Handler(apiMux))
+	// Issue #2664: initialize the request correlation ID before auth so
+	// security_event records carry a non-empty correlation_id even when the
+	// caller sends no X-Request-ID (the shared auth middleware falls back to
+	// chi's context value).
+	topMux.Handle("/", chimiddleware.RequestID(authMiddleware.Handler(apiMux)))
 
 	apiServer := &http.Server{
 		Addr:              cfg.Server.APIAddr,
