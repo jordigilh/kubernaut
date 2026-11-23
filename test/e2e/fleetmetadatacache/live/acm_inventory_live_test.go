@@ -172,15 +172,6 @@ func (r *liveRegistry) WithCurrent(_ context.Context, clusterID, registrationUID
 	return callback(r.cluster)
 }
 
-// unavailableScopeChecker keeps the FMC mux's scope-check route honest
-// without coupling this suite to a scope store: the inventory routes under
-// test never consult it.
-type unavailableScopeChecker struct{}
-
-func (unavailableScopeChecker) Check(_ context.Context, _ scope.ResourceIdentity) (scope.ScopeResult, error) {
-	return scope.ScopeResult{State: scope.ScopeUnavailable}, nil
-}
-
 // localInventoryProbe counts local fallback calls: the AC-4 half of the
 // proof. Every non-local Console read must leave it untouched.
 type localInventoryProbe struct {
@@ -333,10 +324,18 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 		}
 
 		By("serving the real FMC inventory routes on a loopback listener")
+		// The exact production scope client over the same proven cache
+		// (cmd/fleetmetadatacache/main.go:480): Console exact reads re-check
+		// managed scope through FMC's scope-check route, so the mux needs the
+		// real checker, and AF's policyread needs a ScopeChecker pointed at
+		// it -- exactly the two-key production shape (fleet.endpoint for
+		// scope, fleet.fmc.endpoint for inventory).
+		scopeClient, err := scopecache.NewClientWithStatusStore(store, reg, readiness)
+		Expect(err).NotTo(HaveOccurred())
 		inventoryReader, err := fmc.NewInventoryReader(store, reg, readiness, fmc.InventoryReaderConfig{})
 		Expect(err).NotTo(HaveOccurred())
 		mux := http.NewServeMux()
-		fmc.NewHandlerWithInventory(unavailableScopeChecker{}, reg, inventoryReader, logr.Discard()).RegisterRoutes(mux)
+		fmc.NewHandlerWithInventory(scopeClient, reg, inventoryReader, logr.Discard()).RegisterRoutes(mux)
 		fmcServer = httptest.NewServer(mux)
 		DeferCleanup(fmcServer.Close)
 
@@ -369,6 +368,12 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 			LocalInventory:  local,
 			RemoteInventory: afReader,
 			Authorizer:      allowAllAuthorizer{},
+			// The production AF scope adapter for fleet mode: the FMC HTTP
+			// client is a scope.ScopeChecker over the scope-check route. A
+			// remote exact read re-verifies managed scope through it
+			// (policyread.authorizeInventoryTarget) before returning the
+			// resource.
+			ScopeChecker: fmc.NewHTTPClient(fmcServer.URL),
 		})
 		Expect(err).NotTo(HaveOccurred())
 		console = afhandler.NewConsolePolicyReadHandler(svc, logr.Discard())
