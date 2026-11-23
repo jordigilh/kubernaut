@@ -224,6 +224,9 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 		console   http.Handler
 		local     *localInventoryProbe
 
+		// syncCluster re-runs the real collection cycle (see BeforeAll).
+		syncCluster func()
+
 		fixtureNS   string
 		fixtureName string
 	)
@@ -314,11 +317,20 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 			ResourceKinds: []string{"Namespace", "Deployment"},
 		}, logr.Discard(), fmc.NewMetrics(prometheus.NewRegistry()))
 
-		By("running one real collection cycle against live ACM Search (least-privilege principal)")
-		syncCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		Expect(syncer.SyncCluster(syncCtx, reg.cluster)).To(Succeed(),
-			"the fenced repair must complete a clean commit from the real Search walk")
+		// syncCluster runs one real collection cycle -- exactly what the
+		// production sync loop does every SyncInterval. The fixture is
+		// created seconds before the first cycle, and live Search indexes
+		// asynchronously (spike 2026-11-18: settle lag 0.4-6.5 s), so the
+		// first walk may legitimately not see it yet: re-collecting until it
+		// does is the production behavior, not outcome retry. The
+		// state/freshness/sanitization assertions always run on the page the
+		// final cycle served.
+		syncCluster = func() {
+			syncCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer cancel()
+			ExpectWithOffset(1, syncer.SyncCluster(syncCtx, reg.cluster)).To(Succeed(),
+				"the fenced repair must complete a clean commit from the real Search walk")
+		}
 
 		By("serving the real FMC inventory routes on a loopback listener")
 		inventoryReader, err := fmc.NewInventoryReader(store, reg, readiness, fmc.InventoryReaderConfig{})
@@ -374,13 +386,11 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 	}
 
 	It("Console lists the managed fixture with freshness=fresh from proof, sanitized, over the ACM-collected partition (BR-API-001, BR-SECURITY-017)", func() {
-		// Search indexes asynchronously (spike: settle lag up to ~6.5 s at 300
-		// creates); the fixture was created before the sync cycle ran, so a
-		// bounded retry on the fixture's appearance is sync-lag tolerance,
-		// not outcome retry: the state/freshness/sanitization assertions
-		// below run once, on the page that contains the fixture.
+		// Bounded re-collection (see syncCluster): the assertions below run
+		// once, on the page the final cycle served.
 		var page inventory.Page
 		Eventually(func(g Gomega) {
+			syncCluster()
 			recorder := consoleList(fmt.Sprintf("cluster_id=%s&namespace=%s&kind=Deployment", env.clusterID, fixtureNS))
 			g.Expect(recorder.Code).To(Equal(http.StatusOK))
 			g.Expect(json.Unmarshal(recorder.Body.Bytes(), &page)).To(Succeed())
@@ -410,6 +420,7 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 	})
 
 	It("Console pages the projection and reads one exact resource by its opaque ID (BR-API-001)", func() {
+		syncCluster() // each read journey runs against a freshly proven partition
 		whole := consoleList(fmt.Sprintf("cluster_id=%s&limit=1", env.clusterID))
 		Expect(whole.Code).To(Equal(http.StatusOK))
 		var first inventory.Page
@@ -457,6 +468,7 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 	})
 
 	It("serves only the sanitized metadata-only projection on the wire (ASVS V8, BR-SECURITY-017)", func() {
+		syncCluster()
 		recorder := consoleList(fmt.Sprintf("cluster_id=%s&namespace=%s&kind=Deployment", env.clusterID, fixtureNS))
 		Expect(recorder.Code).To(Equal(http.StatusOK))
 		body := recorder.Body.String()
