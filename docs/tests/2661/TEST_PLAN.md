@@ -602,8 +602,11 @@ Remediation, in order:
   `projectionStatus`‖`projectionMessage` table (the `console_policyread.go`
   cycle — it landed inside that cycle's commit rather than its own, a
   deviation from the own-commit rule noted here) and the shared
-  `inventory.AssemblePage` page-assembly tail (the page-paths cycle — own
-  commit `7be71d1f4`).
+  `inventory.AssemblePage` page-assembly tail (the page-paths cycle — commit
+  `a1683459a` on this branch; first recorded as `7be71d1f4` on the phase-c
+  branch `work/2661-phase-c-list-dispatch`, re-committed onto this branch
+  with the same title when the Live-row branch was cut, so the SHA reachable
+  from this tree is `a1683459a`).
 
 **Standing rule for the remaining phases** (c, REFACTOR, Live): strict
 RED-first — write the failing spec, show it failing for the right reason,

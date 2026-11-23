@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck // Ginkgo DSL dot-import convention
 	. "github.com/onsi/gomega"    //nolint:staticcheck // Ginkgo/Gomega DSL dot-import convention
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -130,6 +131,28 @@ func InventoryProjection(h *Harness, v Variant) bool {
 				},
 			}
 			Expect(h.K8sClient.Create(h.Ctx, svcB)).To(Succeed())
+			// A group-ful kind (apps/v1) in the same managed namespace:
+			// core-only kinds cannot discriminate a combined `apiversion`
+			// value from separate group/version wire fields (AGENTS.md
+			// Review Requirements), so the CI lane needs one group-ful
+			// fixture of its own — replicas 0, never scheduled, inclusion
+			// from the namespace label like the Services.
+			zero := int32(0)
+			deploy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+				Name:      v.ResourcePrefix() + "-inv-deploy",
+				Namespace: testNS.Name,
+			}, Spec: appsv1.DeploymentSpec{
+				Replicas: &zero,
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": v.ResourcePrefix() + "-inv"}},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": v.ResourcePrefix() + "-inv"}},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Name:  "placeholder",
+						Image: "registry.k8s.io/pause:3.10",
+					}}},
+				},
+			}}
+			Expect(h.K8sClient.Create(h.Ctx, deploy)).To(Succeed())
 			svcIdent = inventory.Resource{
 				ClusterID: "loopback-cluster",
 				Version:   "v1",
@@ -195,6 +218,29 @@ func InventoryProjection(h *Harness, v Variant) bool {
 			Expect(item.Scope.Source).To(Equal(inventory.ScopeSourceNamespaceLabel))
 			Expect(item.ID).To(Equal(inventory.CanonicalResourceID(item.Identity())),
 				"the opaque ID must be the canonical encoding of the wire identity")
+
+			By("reading the group-ful fixture with its separate group/version wire fields")
+			var deployPage inventory.Page
+			Eventually(func(g Gomega) {
+				var err error
+				deployPage, err = client.ListManagedResources(h.Ctx, inventory.Filters{
+					ClusterID: "loopback-cluster",
+					Namespace: testNS.Name,
+					Kind:      "Deployment",
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(deployPage.State).To(Equal(inventory.StateSuccess))
+				g.Expect(deployPage.Freshness.State).To(Equal(inventory.FreshnessFresh))
+			}, SyncTimeout, Interval).Should(Succeed())
+			Expect(deployPage.Items).To(HaveLen(1))
+			deploy := deployPage.Items[0]
+			Expect(deploy.Group).To(Equal("apps"),
+				"the group-ful kind proves the separate group/version wire shape end to end (AGENTS.md fixture fidelity)")
+			Expect(deploy.Version).To(Equal("v1"))
+			Expect(deploy.Kind).To(Equal("Deployment"))
+			Expect(deploy.Namespace).To(Equal(testNS.Name))
+			Expect(deploy.Scope.Included).To(BeTrue())
+			Expect(deploy.Scope.Source).To(Equal(inventory.ScopeSourceNamespaceLabel))
 
 			// BR-SECURITY-017: the raw wire body is metadata-only -- no
 			// labels, annotations, object data, spec, status or token material

@@ -16,10 +16,11 @@ limitations under the License.
 
 // Package live holds the helios08-only ACM lane of the FMC inventory
 // projection -- E2E-FMC-INV-2661-001 in docs/tests/2661/TEST_PLAN.md §8
-// Tier 3. It is deliberately NOT part of any CI suite: the kuadrant
-// (Makefile test-e2e-fleetmetadatacache-kuadrant) and EAIGW
-// (test-e2e-fleetmetadatacache-eaigw) targets are non-recursive over this
-// nested package, and no other target references it. Its proof is ONE live
+// Tier 3. It is deliberately NOT part of any CI suite: the kuadrant target
+// (Makefile test-e2e-fleetmetadatacache-kuadrant) omits the `/...` suffix
+// over ./test/e2e/fleetmetadatacache, and the EAIGW target recurses only
+// under ./test/e2e/fleetmetadatacache/eaigw/... -- neither reaches this
+// sibling package, and no other target references it. Its proof is ONE live
 // run against the recorded ACM 2.17.4 build
 // (acm-search-v2-api-rhel9@sha256:85c53e64f719b91a91c1eaed06111e0c9eefe27d7f62e4114568bfe5b141a3ac)
 // on helios08 (kubernaut492-sno-b) with the least-privilege hub principal;
@@ -61,6 +62,7 @@ package live
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -289,10 +291,8 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 		var readyErr error
 		readiness, readyErr = scopecache.NewFMCReadinessSnapshot(scopecache.LeasePolicyProcessWideRequired)
 		Expect(readyErr).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			_ = store.Close()
-			_ = writer.Close()
-			_ = readable.Close()
+		DeferCleanup(func() error {
+			return errors.Join(store.Close(), writer.Close(), readable.Close())
 		})
 
 		// The exact production composition of buildACMSource + buildFMCSyncer
@@ -362,7 +362,7 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 		// whole Ordered container.)
 		tokenDir, err := os.MkdirTemp("", "dd2661-live-af-")
 		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() { _ = os.RemoveAll(tokenDir) })
+		DeferCleanup(func() error { return os.RemoveAll(tokenDir) })
 		loopbackToken := filepath.Join(tokenDir, "af-token")
 		Expect(os.WriteFile(loopbackToken, []byte("dd2661-live-loopback"), 0o600)).To(Succeed())
 		afReader, err := fleet.NewInventoryReader(fleet.FleetConfig{
