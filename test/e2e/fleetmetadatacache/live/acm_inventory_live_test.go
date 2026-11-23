@@ -258,9 +258,17 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 		}, Spec: appsv1.DeploymentSpec{
 			Replicas: &zero,
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": fixtureName}},
-			Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{"app": fixtureName},
-			}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": fixtureName},
+				},
+				// A container is structurally required; with replicas 0 it is
+				// never scheduled, so the placeholder image is never pulled.
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{
+					Name:  "placeholder",
+					Image: "registry.k8s.io/pause:3.10",
+				}}},
+			},
 		}}
 		Expect(k8s.Create(context.Background(), deploy)).To(Succeed())
 		DeferCleanup(func() {
