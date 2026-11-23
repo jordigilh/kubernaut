@@ -22,7 +22,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
-	"github.com/jordigilh/kubernaut/pkg/fleet/acm"
+	fmcclient "github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,61 +84,94 @@ var _ = Describe("BR-AI-085 / BR-AI-088: policy scope projection", func() {
 		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
 		Expect(result).To(Equal(inventory.Resource{}))
 	})
-	It("IT-AF-2584-REMOTE-LIST-003 [BR-SCOPE-001]: rejects remote inventory listing before invoking ACM Search", func() {
+	It("IT-AF-2584-REMOTE-LIST-003 [BR-SCOPE-001]: dispatches remote inventory listing to the FMC client, never ACM Search", func() {
+		// TP-2661 phase c re-scope: the wired reader is the FMC client — the
+		// stub receives the request on the FMC inventory route — and the
+		// never-ACM half is proven by the wire shape (a Search envelope would
+		// fail to decode here), not by asserting zero dispatch. The audit
+		// assertion is re-expressed to the dispatched outcome.
 		var requests atomic.Int32
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer GinkgoRecover()
 			requests.Add(1)
-			_, err := io.WriteString(w, `{"data":{"searchResult":[{"count":2,"items":[{"cluster":"prod-east","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"payments","name":"checkout","label.kubernaut.ai/managed":"true"}]}]}}`)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(r.URL.Path).To(Equal(fmcclient.InventoryPath), "the dispatch must target the FMC inventory route, not ACM Search")
+			Expect(r.URL.Query().Get("cluster_id")).To(Equal("prod-east"))
+			w.Header().Set("Content-Type", "application/json")
+			Expect(json.NewEncoder(w).Encode(inventory.Page{
+				State:        inventory.StateSuccess,
+				ObservedAt:   time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC),
+				Freshness:    inventory.Freshness{State: inventory.FreshnessFresh, AsOf: time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)},
+				Completeness: inventory.CompletenessComplete,
+				Items: []inventory.Resource{{
+					ID: inventory.CanonicalResourceID(scope.ResourceIdentity{
+						ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment",
+						Namespace: "payments", Name: "checkout",
+					}),
+					ClusterID: "prod-east",
+					Group:     "apps", Version: "v1", Kind: "Deployment",
+					Namespace: "payments", Name: "checkout", Scope: inventory.Scope{Included: true},
+				}},
+			})).To(Succeed())
 		}))
 		DeferCleanup(server.Close)
 		local := &inventoryStub{page: inventory.Page{State: inventory.StateSuccess, Completeness: inventory.CompletenessComplete}}
 		auditor := &policyReadAuditRecorder{}
-		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{LocalInventory: local, RemoteInventory: acm.NewClient(server.URL), Authorizer: allowAuthorizer{}, Auditor: auditor})
+		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
+			LocalInventory:  local,
+			RemoteInventory: fmcclient.NewHTTPClient(server.URL),
+			Authorizer:      allowAuthorizer{},
+			Auditor:         auditor,
+		})
 		Expect(err).NotTo(HaveOccurred())
 		page, err := svc.ListInventory(context.Background(), user("alice", false), inventory.Filters{ClusterID: "prod-east"})
-		Expect(err).To(HaveOccurred())
-		Expect(policyread.StateOf(err)).To(Equal(inventory.StateUnavailable))
-		Expect(page.Items).To(BeEmpty())
-		Expect(page.NextCursor).To(BeEmpty())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(page.State).To(Equal(inventory.StateSuccess))
+		Expect(page.Items).To(HaveLen(1))
+		Expect(page.Items[0].ClusterID).To(Equal("prod-east"))
 		Expect(local.listCalls).To(BeZero())
-		Expect(requests.Load()).To(BeZero())
+		Expect(requests.Load()).To(Equal(int32(1)), "the dispatch reaches the FMC fixture exactly once")
 		Expect(auditor.events).To(HaveLen(1))
 		Expect(auditor.events[0].Type).To(Equal(audit.EventConsoleManagedResourceListRead))
 		Expect(auditor.events[0].UserID).To(Equal("alice"))
 		Expect(auditor.events[0].ClusterID).To(Equal("prod-east"))
-		Expect(auditor.events[0].Detail["result_state"]).To(Equal("unavailable"))
+		Expect(auditor.events[0].Detail["result_state"]).To(Equal("success"))
 		Expect(auditor.events[0].Detail).NotTo(HaveKey("name"))
 	})
-	It("IT-AF-2584-008: scopes ACM exact reads to the requested cluster and checks managed scope", func() {
-		var requestBody []byte
+	It("IT-AF-2584-008: scopes FMC exact reads to the requested cluster and checks managed scope", func() {
+		// TP-2661 phase c re-scope: the wired reader is the FMC client. The
+		// cluster-scoping assertion moved from the ACM GraphQL request body to
+		// the stub's received path/query; the managed-scope check half is kept
+		// unchanged. The old expectation is replaced, not weakened: AF
+		// contacting ACM Search for inventory is a fail criterion of TP-2661
+		// (objective 4, R4).
+		resourceID := inventory.CanonicalResourceID(scope.ResourceIdentity{
+			ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment",
+			Namespace: "payments", Name: "checkout",
+		})
+		var requestPath, requestQuery string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var err error
-			requestBody, err = io.ReadAll(r.Body)
-			Expect(err).NotTo(HaveOccurred())
-			if strings.Contains(string(requestBody), `"property":"kind","values":["Namespace"]`) {
-				response := `{"data":{"searchResult":[{"count":0,"items":[]}]}}`
-				if strings.Contains(string(requestBody), `"property":"name","values":["payments"]`) {
-					response = `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","apiversion":"v1","kind":"Namespace","name":"payments"}]}]}}`
-				}
-				_, err = io.WriteString(w, response)
-				Expect(err).NotTo(HaveOccurred())
-				return
-			}
-			_, err = io.WriteString(w, `{"data":{"searchResult":[{"count":1,"items":[{"cluster":"prod-east","_uid":"prod-east/12345","apigroup":"apps","apiversion":"v1","kind":"Deployment","namespace":"payments","name":"checkout","label":"kubernaut.ai/managed=true"}]}]}}`)
-			Expect(err).NotTo(HaveOccurred())
+			defer GinkgoRecover()
+			requestPath = r.URL.Path
+			requestQuery = r.URL.Query().Get("cluster_id")
+			w.Header().Set("Content-Type", "application/json")
+			Expect(json.NewEncoder(w).Encode(inventory.Resource{
+				ID: resourceID, ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment",
+				Namespace: "payments", Name: "checkout",
+				Scope:      inventory.Scope{Included: true, Source: inventory.ScopeSourceResourceLabel, ResourceLabel: inventory.LabelTrue},
+				ObservedAt: time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC),
+			})).To(Succeed())
 		}))
 		DeferCleanup(server.Close)
 		checker := &recordingScopeChecker{}
 		svc, err := policyread.NewService(policyread.Config{}, policyread.Dependencies{
-			RemoteInventory: acm.NewClient(server.URL), Authorizer: allowAuthorizer{}, ScopeChecker: checker,
+			RemoteInventory: fmcclient.NewHTTPClient(server.URL), Authorizer: allowAuthorizer{}, ScopeChecker: checker,
 		})
 		Expect(err).NotTo(HaveOccurred())
-		resourceID := inventory.CanonicalResourceID(scope.ResourceIdentity{ClusterID: "prod-east", Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "payments", Name: "checkout"})
 		resource, err := svc.GetInventory(context.Background(), user("alice", false), inventory.Filters{ClusterID: "prod-east"}, resourceID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resource.ClusterID).To(Equal("prod-east"))
-		Expect(string(requestBody)).To(ContainSubstring(`"property":"cluster","values":["prod-east"]`))
+		Expect(requestPath).To(Equal(fmcclient.InventoryPath+"/"+resourceID), "the exact read targets the FMC inventory route with the opaque ID")
+		Expect(requestQuery).To(Equal("prod-east"), "the FMC request is scoped to the requested cluster")
 		Expect(checker.identity).To(Equal(resource.Identity()))
 	})
 

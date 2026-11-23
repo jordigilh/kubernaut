@@ -111,7 +111,9 @@ coverage and a production-path integration test. No implementation may be declar
 while any of those ITs is absent or failing — with one recorded exception: R7's ACM lane
 is **NOT QUALIFIED** (§8.2/§14) and its fixture-level IT label was retired, so R7 is
 satisfied by `IT-AF-2584-008` and `IT-FLEET-2584-001` only. The ACM Console inventory gate
-remains closed, so no implementation relies on that lane.
+remains closed, so no implementation relies on that lane. *(Superseded for the
+inventory-list lane 2026-11-22, #2661 phase c — see TP-2661 §9b for the re-scoped
+2584 specs.)*
 
 ---
 
@@ -149,7 +151,7 @@ remains closed, so no implementation relies on that lane.
 | Policy metadata | AF reads operator-generated runtime ConfigMaps per operation; threshold source is `runtime-config`; AF owns no policy reference config | Maintain a second AF `policyRead` source, mount policy ConfigMaps into AF, parse arbitrary Rego, or infer a default | Runtime metadata is validated, policy bytes are hashed only, and missing/invalid sources fail closed |
 | Authorization | Named read capabilities plus user/target SARs; optional coarse `kubernaut.ai/console` gate remains additive | Coarse console gate only | **Approved**; coarse-only is rejected as insufficiently granular and optional by current config |
 | Service accounts | Console REST accepts verified interactive users only; A2A/MCP service accounts remain unchanged | Permit service accounts on the console route | **Approved**; any exception requires a separate machine-read contract and tests |
-| Fleet inventory source | Local Kubernetes clients for `local`; non-local list operations unavailable in this release; existing typed FMC/ACM exact/get and `ScopeChecker` behavior remains unchanged | AF Console path reads remote Kubernetes/MCP directly or enables an unqualified remote list | **Approved**; AF must not create a second remote-cluster access path or delegate browser tokens |
+| Fleet inventory source | Local Kubernetes clients for `local`; non-local list operations unavailable in this release; existing typed FMC/ACM exact/get and `ScopeChecker` behavior remains unchanged. **Superseded for the inventory-list lane 2026-11-22, #2661 phase c** — non-local lists now dispatch to FMC (`fleet.fmc.endpoint`), gated by the non-local namespace-list SAR | AF Console path reads remote Kubernetes/MCP directly or enables an unqualified remote list | **Approved**; AF must not create a second remote-cluster access path or delegate browser tokens |
 
 The runtime policy decision is approved: the operator derives the resolved policy
 ConfigMap name/key from the Kubernaut resource and publishes those fields in the
@@ -360,10 +362,10 @@ that exists to prove it; **NOT QUALIFIED** rows name no owning spec and say so i
 | `IT-AF-2584-002` | The authenticated inventory read serializes the documented wire shape (state, completeness, item identity) | **PASS** — handler serialization spec. There is no envtest provenance join in this release; provenance is proven by `UT-AF-2584-003`/`UT-AF-2584-004` and link/scope by `IT-AF-2584-007` |
 | `IT-AF-2584-003` | A real policy read joins ConfigMap metadata with bounded AIAnalysis/SignalProcessing history while keeping current/history fields separate | **PASS** — typed source and projection tests. **#2651:** SignalProcessing history is no longer fetched (identity unmatchable since #2592); AIAnalysis join unchanged |
 | `IT-AF-2584-004` | Capability denial returns a state-only 403 with no records, provenance or read attempt; exact-target denial returns a state-only 404 with no existence detail | **PASS** — `IT-AF-2584-004` (capability denied → 403, reader not called) and `UT-AF-2584-010` (exact-target denial → 404). The 403/404 split is deliberate: a target denial must not disclose existence |
-| `IT-AF-2584-005` | Duplicated or invalid filters are rejected; a non-local cluster is refused without a local fallback; a guessed opaque ID returns not_found without existence detail | **PASS** — `IT-AF-2584-005` (400 duplicated filter, 503 non-local refusal with the local reader not consulted, 404 guessed ID) and `UT-AF-2584-005` (canonical filter and opaque-ID validation). Cross-namespace *authorization* is not exercised end-to-end: namespace narrowing is applied by the local reader |
+| `IT-AF-2584-005` | Duplicated or invalid filters are rejected; a non-local cluster is refused without a local fallback; a guessed opaque ID returns not_found without existence detail | **PASS** — `IT-AF-2584-005` (400 duplicated filter, 503 non-local refusal with the local reader not consulted, 404 guessed ID) and `UT-AF-2584-005` (canonical filter and opaque-ID validation). Cross-namespace *authorization* is not exercised end-to-end: namespace narrowing is applied by the local reader. *(Superseded 2026-11-22, #2661 phase c: the non-local refusal probe is re-scoped per TP-2661 §9b — a non-local list now dispatches to the wired remote reader (200 success, remote.listCalls ≥ 1) with no local fallback; the filter and guessed-ID halves are unchanged.)* |
 | `IT-AF-2584-006` | Runtime policy metadata failure returns a state-only failure response | **PASS** — proven: runtime metadata unavailable and ConfigMap permission denial (`IT-AF-2584-006`, whose forbidden-error case asserts both), missing or out-of-range runtime threshold (`UT-AF-2584-001`), missing policy reference field (`UT-AF-2584-002`), a referenced ConfigMap that is absent although the reference field is valid (`IT-AF-2584-006` absent-source spec), a runtime policy read that hits its context deadline (`IT-AF-2584-006` deadline spec), whole-source history failure (`UT-AF-2584-HISTORY-002`), and a history join that fails mid-stream after visiting records (`IT-AF-2584-006` incomplete-join spec). The four page-returning specs in that list each assert a state-only page with no rows and no cursor. Live deployment qualification remains separate. **#2651:** the SignalProcessing portion is superseded — SP history is not fetched (see #2592) |
 | `IT-AF-2584-007` | Cursor page 1 and page 2 are deterministic; generated links preserve exact cluster/resource scope | **PASS** — bounded inventory/link tests |
-| `IT-AF-2584-008` | Explicit remote exact reads use the FMC/ACM fleet control-plane projection and existing `ScopeChecker`; remote failure never falls back to local Kubernetes data, while remote lists remain unavailable | **PASS** — focused remote AF 2/2 and FMC/ACM adapter suites. Scoping note: this row describes #2584-era behaviour. The target architecture makes FMC the single federation-facing contact and the backend to the control planes (AF → FMC → cache; FMC → control plane → cache), so the AF-side ACM adapter branch named here is scheduled for removal by #2661 / the ADR-068 amendment (pending #2661 — not yet on main). DD-FLEET-017 D6 (pending #2661 — not yet on main) also replaces the blanket non-local rejection with capability-declared dispatch: stage (a) non-local enablement for the FMC/GitOps lane, stage (b) ACM-sourced qualification on top, with (a) shippable before (b) and (b) never before (a). Nothing in this row asserts the target model. |
+| `IT-AF-2584-008` | Explicit remote exact reads use the FMC/ACM fleet control-plane projection and existing `ScopeChecker`; remote failure never falls back to local Kubernetes data, while remote lists remain unavailable | **PASS** — focused remote AF 2/2 and FMC/ACM adapter suites. Scoping note: this row describes #2584-era behaviour. The target architecture makes FMC the single federation-facing contact and the backend to the control planes (AF → FMC → cache; FMC → control plane → cache), so the AF-side ACM adapter branch named here is scheduled for removal by #2661 / the ADR-068 amendment (pending #2661 — not yet on main). DD-FLEET-017 D6 (pending #2661 — not yet on main) also replaces the blanket non-local rejection with capability-declared dispatch: stage (a) non-local enablement for the FMC/GitOps lane, stage (b) ACM-sourced qualification on top, with (a) shippable before (b) and (b) never before (a). Nothing in this row asserts the target model. *(Landed 2026-11-22, #2661 phase c: FMC is the sole Console inventory contact — the wired reader is re-scoped to the FMC exact-read wire shape per TP-2661 §9b, and remote lists dispatch under the namespace-list SAR.)* |
 | `IT-AF-2584-009` | Existing A2A/MCP routes stay mounted and the Console routes are additive after route/config wiring | **PASS** — `IT-AF-2584-009`: `/mcp` and `/a2a/invoke` reach their own handlers (distinct response headers); a 418 marker proves `/mcp` and both Console reads sit behind the configured authentication middleware; and, on the production router with the real TokenReview auth middleware, one service-account token reaches the real MCP bridge and A2A handler with the verified `system:serviceaccount:` actor at the per-tool authorization seam and on `auth.success`, `tool.executed` and `a2a.task_started`. The A2A task then reaches a terminal `completed` state with the same actor on `a2a.task_completed` and `triage.completed` and no `a2a.task_failed`, while the same token gets a state-only 403 on the Console policy-scope route without an inventory read |
 | `IT-AF-2584-010` | Every authenticated read outcome carries correct actor type/ID, action, outcome/state, request ID, and correlation through the typed DataStorage audit union | **PASS** — `IT-AF-2584-010` (handler read through the DataStorage adapter) plus `IT-AF-2584-012`, `IT-AF-2584-AUDIT-001`, and `IT-AF-2584-AUDIT-002` |
 | `IT-AF-2584-011` | The Console read success pages and the problem envelope validate against the committed schema, and undocumented fields are rejected in both | **PASS** — `IT-AF-2584-011` validates the served inventory page, policy-scope page, and problem+json envelope against the committed schema; rejects an undocumented field in both `ManagedResourcePage` and `ProblemDetail`; and asserts the concrete problem members. `ProblemDetail` declares `required: [type, title, status]`, `additionalProperties: false`, and the `request_id` extension member (RFC 9457 §3.2); the 401, 429, 501 and 503 emitters are each validated against it. It does not assert unversioned-path rejection, and the live-server 401/429 paths are covered at the emitter, not the router, level. |
@@ -430,7 +432,8 @@ Existing allowed reads remain available to the same user.
 
 The non-local refusal and guessed-opaque-ID probes belong to `IT-AF-2584-005` (§8.2);
 cross-namespace authorization is not exercised end-to-end, because namespace narrowing is
-applied by the local reader.
+applied by the local reader. *(Superseded 2026-11-22, #2661 phase c: the non-local
+probe now proves remote dispatch with no local fallback — see TP-2661 §9b.)*
 
 ### IT-AF-2584-006: Fail-closed source states
 
@@ -500,7 +503,7 @@ contract exists.
 | Authorization contract | Design/security | Approved in DD-AF-018 | Named capabilities plus local target SARs and existing FMC/ACM managed-scope checks for remote targets | Implement the approved split; do not delegate user tokens to remote Kubernetes |
 | Operator PR #604 / follow-up #616 | Cross-repo code | #604 merged; #616 open | #604's AF `policyRead` output is obsolete before first deployment | Merge #616 before deploying AF policy reads |
 | SignalProcessing history RBAC | Cross-repo security | AF reader complete; operator RBAC follow-up pending | Required for complete history projection in deployment | Add only AF ServiceAccount `get/list` on `signalprocessings`; no write verbs. **#2651:** superseded — AF no longer reads SP history (identity unmatchable since #2592), so this RBAC is no longer required by AF; IMPLEMENTATION_PLAN.md's SP-history references remain as superseded historical record |
-| FMC/ACM inventory projection | Cross-repo architecture/implementation | AF adapters complete; live control-plane deployment pending | Required for remote Console exact/get and scope-check qualification; list remains unavailable | Preserve the shared sanitized contract and adapter ITs; no direct remote Kubernetes/MCP reader |
+| FMC/ACM inventory projection | Cross-repo architecture/implementation | AF adapters complete; live control-plane deployment pending. **2026-11-22, #2661 phase c:** remote list is enabled through FMC (`fleet.fmc.endpoint`) | Required for remote Console exact/get and scope-check qualification; list remains unavailable (superseded — see left) | Preserve the shared sanitized contract and adapter ITs; no direct remote Kubernetes/MCP reader |
 | Console #164 | Cross-repo consumer | Open/blocked | Blocks browser/deployed acceptance | Run AF focused suites first |
 
 ### 11.2 Execution Order
@@ -690,7 +693,10 @@ and verifies remote inventory list, exact read, and policy-scope list return
 `unavailable` with no records. `UT-AF-2584-FMC-READER` verifies that FMC wiring
 remains enabled. The ACM shared scope checker is unaffected by the inventory
 gate. Live least-privilege visibility, pagination, and production AF journey evidence
-are required before enabling ACM inventory. Complete local and qualified remote pages
+are required before enabling ACM inventory. *(Superseded for the inventory-list
+lane 2026-11-22, #2661 phase c — the DD-AF-018 inventory-lane gate is removed
+and both named tests are re-scoped per TP-2661 §9b; the absent-key fail-closed
+half of `IT-AF-2584-ACM-FAIL-CLOSED` remains valid.)* Complete local and qualified remote pages
 may expose per-read observation/freshness metadata, but no backend synchronization
 watermark or cross-request snapshot is claimed.
 
@@ -723,7 +729,8 @@ cases `IT-AF-2593-REGISTRY-003` exercise both supported registry adapters.
 cluster-scoped defaults, and unavailable registries. These are targeted
 business/control checks, not a complete requirements-coverage assessment or
 proof of a production HTTP journey. The ACM Console inventory gate remains
-in place, and no new audit event is introduced by this checker change.
+in place, and no new audit event is introduced by this checker change. *(Superseded
+for the inventory-list lane 2026-11-22, #2661 phase c.)*
 
 #### Bounded inventory prototype (2026-11-03)
 
@@ -834,7 +841,8 @@ Namespace access, subject to independent user authorization and other gates.
 
 This is an approved contract decision, not evidence of implementation or a test
 pass. The historical bounded prototype and its results above remain as recorded;
-the production ACM inventory gate remains closed pending qualification.
+the production ACM inventory gate remains closed pending qualification. *(Superseded
+for the inventory-list lane 2026-11-22, #2661 phase c.)*
 
 | Future scenario | Required outcome |
 |---|---|
@@ -868,7 +876,10 @@ pre-write response check are the enforceable safeguards.
 
 Console policy/inventory list operations are local-only for this release; ACM/FMC list
 operations remain unavailable. Existing exact/get behavior is unchanged except for the
-common response safety guard. These bounds do not introduce public count/total/reload/
+common response safety guard. *(Superseded for the inventory-list lane 2026-11-22,
+#2661 phase c: non-local managed-resource lists dispatch to FMC
+(`fleet.fmc.endpoint`), gated by the non-local namespace-list SAR. Policy-scope
+listing stays local-only.)* These bounds do not introduce public count/total/reload/
 snapshot semantics; complete and empty pages expose per-read `observed_at`/`observedAt`
 and bounded `freshness` metadata. The Console makes no cross-request snapshot or source
 synchronization claim.
@@ -877,7 +888,10 @@ The containment tests listed in §8 prove metadata-client enforcement, positive 
 page hint, Gateway-aligned default kinds, page traversal, continuation failure,
 cancellation, projection discard, retained-byte exhaustion, shared List/Get concurrency
 cancellation, pre-write response rejection, and production-router local dispatch. They do not
-qualify ACM/FMC list visibility or completeness; that gate remains closed.
+qualify ACM/FMC list visibility or completeness; that gate remains closed. *(Superseded
+for the inventory-list lane 2026-11-22, #2661 phase c — the containment tests
+themselves remain valid for the local lane; the remote list lane is qualified by
+TP-2661.)*
 
 ### 16.5 Prior-art disposition (the seven `_2584_*` drafts, issued with PR #2665)
 

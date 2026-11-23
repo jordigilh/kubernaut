@@ -99,6 +99,12 @@ remain unavailable with no row or fallback.
 > the configured hub Search identity, completeness and a production journey are
 > qualified. This DD's scope contract, enum migration and owned WATCH work are
 > unchanged, and the scope lane is not rerouted here.
+>
+> **Amendment (2026-11-22, #2661 phase c):** the "closed until … qualified"
+> reading above is discharged — the DD-AF-018 inventory-lane gate is removed
+> (FMC is the sole Console inventory contact; enforcement is FMC's proof-gated
+> 503 plus the fail-closed `fleet.fmc.endpoint` wiring; see DD-AF-018's
+> 2026-11-22 amendment). The scope lane is unchanged.
 
 No CRD/operator, HA, RBAC, dependency, Console list/policy-scope, audit-event or
 producer-parser changes. Preserve DD-FLEET-011/012/013/014 and Redis ambiguous-write

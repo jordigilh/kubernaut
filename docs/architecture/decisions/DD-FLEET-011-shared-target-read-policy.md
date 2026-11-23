@@ -88,6 +88,10 @@ caller. A separate operator-published policy or FMC-side filter is not assumed:
 either would be an additional policy layer requiring a separate decision.
 The exact cache and backend implementation remain subject to architecture and
 plan approval; keep the inventory gate closed until qualified.
+*(Amended 2026-11-22, #2661 phase c: the directive above is discharged — the
+inventory-lane gate is removed, FMC being the sole Console inventory contact;
+see DD-AF-018's 2026-11-22 amendment. This DD's target-read and scope content
+is unchanged.)*
 
 An ACM 2.17.4 SNO spike removed one temporary principal's `local-cluster` view
 binding after a known object was visible. Search still returned it immediately

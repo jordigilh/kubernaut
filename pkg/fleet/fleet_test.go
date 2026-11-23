@@ -748,13 +748,29 @@ var _ = Describe("FleetConfig facade default (DD-FLEET-017 increment 1d)", func(
 			"#1556: ACM Search requires bearer-token auth; the facade default must not weaken that")
 	})
 
-	It("UT-FLEET-CFG-029 [CM-6]: absent backend builds the FMC inventory reader", func() {
+	It("UT-FLEET-CFG-029 [CM-6]: absent fleet.fmc.endpoint fails the Console inventory lane closed to no reader", func() {
 		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")
 
+		// TP-2661 phase c re-scope: the reader is built only from
+		// fleet.fmc.endpoint; the EffectiveEndpoint() auto-derivation is
+		// unchanged and still serves the scope adapter (UT-FLEET-CFG-024/025
+		// pin that lane). The old expectation is replaced, not weakened:
+		// auto-derivation on the inventory path would inherit an endpoint the
+		// caller never vetted for inventory (DD-FLEET-017 D2.1a).
 		reader, err := fleet.NewInventoryReader(fleet.FleetConfig{Enabled: true})
 
 		Expect(err).ToNot(HaveOccurred())
+		Expect(reader).To(BeNil(),
+			"without fleet.fmc.endpoint the Console inventory lane must fail closed to no reader")
+		Expect(fleet.FleetConfig{Enabled: true}.EffectiveEndpoint()).To(Equal(
+			"https://fleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080"),
+			"the auto-derivation itself is unchanged and still serves the scope adapter")
+
+		reader, err = fleet.NewInventoryReader(fleet.FleetConfig{Enabled: true, FMC: fleet.FleetFMCConfig{
+			Endpoint: "https://fleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080",
+		}})
+		Expect(err).ToNot(HaveOccurred())
 		Expect(reader).ToNot(BeNil(),
-			"the facade default must construct the Console inventory lane, not leave it nil")
+			"the facade default constructs the Console inventory lane from the explicit key")
 	})
 })

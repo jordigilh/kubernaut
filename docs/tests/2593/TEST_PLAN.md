@@ -808,7 +808,10 @@ Valkey recovery cannot serve stale positive authorization or false-complete inve
 
 This plan does **not** qualify ACM inventory. Direct ACM Gateway/RO scope remains a
 separate regression path, and non-local API Frontend Console list/policy-scope reads
-remain unavailable under DD-AF-018/#2584/#2600.
+remain unavailable under DD-AF-018/#2584/#2600. *(Superseded for the
+managed-resource list lane 2026-11-22, #2661 phase c — see DD-AF-018's 2026-11-22
+release-gate amendment: non-local lists dispatch to FMC under the namespace-list
+SAR; policy-scope listing stays local-only.)*
 
 ### 1.2 Objectives
 
@@ -947,8 +950,13 @@ artificial duplicate UT/IT case when the behavior is inherently deployment-only.
 ### 4.2 Features not tested or not authorized in this slice
 
 - ACM Search inventory visibility, traversal, live source qualification, or Console
-  inventory/display. It remains `unavailable` with no rows.
+  inventory/display. It remains `unavailable` with no rows. *(Superseded for the
+  inventory-list lane 2026-11-22, #2661 phase c — ACM-sourced inventory is served
+  through FMC; the Live-tier qualification of TP-2661 remains unclaimed.)*
 - AF non-local Console list/policy-scope route implementation or registration.
+  *(Superseded for the managed-resource list lane 2026-11-22, #2661 phase c — the
+  non-local list dispatch is implemented and registered; policy-scope stays
+  local-only.)*
 - Direct remote Kubernetes/MCP discovery for Console display.
 - Policy editing, approval mutation, workflow execution, or new audit event types.
 - Public v2 FMC routes or media, public API migration inventory, migration rollout or
@@ -972,7 +980,7 @@ artificial duplicate UT/IT case when the behavior is inherently deployment-only.
 | Invalid labels | Invalid resource/namespace label is typed invalid/unavailable; it is not absent and cannot inherit namespace scope | Pending ADR-053 amendment |
 | Cluster-scoped target | No namespace inheritance; authorized by its own observed label at level 1 (#2670 restored FR-SCOPE-004 Option A; `ScopeUnsupported` only for the `ClusterScope` pseudo-kind) | Superseded 2026-11-19 by #2670 |
 | Inventory vocabulary | Existing `pkg/fleet/inventory.Page` states plus `CompletenessComplete/Partial` | #2584/#2600 conditional; not implemented here |
-| AF boundary | Local list/policy scope; existing exact/get; non-local Console list/policy scope unavailable | Approved by DD-AF-018 unless separately amended |
+| AF boundary | Local list/policy scope; existing exact/get; non-local Console list/policy scope unavailable | Approved by DD-AF-018 unless separately amended. *(Amended 2026-11-22, #2661 phase c: non-local managed-resource lists dispatch to FMC under the namespace-list SAR; policy-scope stays local-only — see DD-AF-018's release-gate amendment)* |
 | Public FMC scope API | `GET /api/v1/scope/check`; ordinary `application/json`; enum-only `state` and `provenance`; no `managed`, public v2 route or media token | Explicit amended implementation approval, DD-FLEET-015, 2026-11-16 |
 
 ---
@@ -1005,7 +1013,10 @@ PASS for this source-only amendment requires all of the following:
    compatibility shim or public v2 route/media is asserted (DD-FLEET-015).
 5. Internal typed scope, MCP completeness, status/TTL/fence, writer-coordinator/readiness/repair,
    registry incarnation/revision, GVK, invalid-label, direct ACM and DD-AF-018 boundaries
-   are proven through the applicable source and wiring tests.
+   are proven through the applicable source and wiring tests. *(The DD-AF-018
+   boundary is read as amended 2026-11-22, #2661 phase c — non-local
+   managed-resource lists dispatch to FMC under the namespace-list SAR;
+   see DD-AF-018's release-gate amendment and TP-2661 §9b.)*
 6. The approved BR/ADR/API-owner package and source/wiring evidence are present, with the
    historical review disposition recorded in this authority. Per-pass review is required
    process evidence but its ephemeral captures are not committed. Conditional E2E, external
@@ -1135,7 +1146,10 @@ non-verified result returns a state-only unavailable response with no resource; 
 not map to `NotFound`, `managed:false`, an allow, or a local-reader fallback. Only a
 verified managed result proceeds, and only a verified unmanaged result may map to the
 existing not-found behavior. Non-local list/policy-scope remains unavailable/no rows under
-DD-AF-018. The test must traverse `Service.GetInventory` and the configured scope checker,
+DD-AF-018. *(Superseded for the managed-resource list lane 2026-11-22, #2661
+phase c — see DD-AF-018's 2026-11-22 release-gate amendment and TP-2661 §9b:
+non-local lists dispatch to FMC under the namespace-list SAR; policy-scope
+listing stays local-only.)* The test must traverse `Service.GetInventory` and the configured scope checker,
 not call the helper in isolation.
 
 **External gate registration and ownership.** `IT-AF-CACHE-006`,
@@ -1149,7 +1163,9 @@ owner), exact approved plan path and revision, exact test file and source revisi
 command, artifact path, authorization reference, UTC start/end, exit status, redaction
 status, expected/actual result, and current plan/test-plan hashes. Missing registration,
 identity, reviewer independence, or wire artifact keeps the gate unavailable and preserves
-AF non-local unavailable/no rows and FMC inventory no rows.
+AF non-local unavailable/no rows and FMC inventory no rows. *(Superseded for the
+managed-resource list lane 2026-11-22, #2661 phase c — see DD-AF-018's 2026-11-22
+release-gate amendment: non-local lists dispatch to FMC under the namespace-list SAR.)*
 
 ### 5.4.2 R10 plan-executability amendments
 
@@ -2157,7 +2173,10 @@ source revision, UTC start/end, command, exit status, redaction status, expected
 result, and links the captured wire JSON and stdout/stderr. `IT-AF-CACHE-006` must prove
 that non-local AF inventory remains state-only unavailable/no rows unless the approved
 remote projection is explicitly qualified; it must never use direct MCP/Kubernetes
-discovery or a local fallback. `IT-FMC-INVENTORY-012` must prove the authenticated FMC
+discovery or a local fallback. *(Superseded for the managed-resource list lane
+2026-11-22, #2661 phase c — the remote projection is qualified and dispatched
+through FMC; the no-direct-MCP/Kubernetes and no-local-fallback halves remain
+authoritative.)* `IT-FMC-INVENTORY-012` must prove the authenticated FMC
 inventory response matrix: complete `success`/`empty` only, state-only `503` unavailable,
 `400` invalid, `401/403` unauthorized and `422` unsupported, with no rows/count/cursor on
 failure. `IT-AF-PAGE-2584-012` must prove `Page.Validate`, complete/empty invariants,
@@ -2278,7 +2297,7 @@ qualification evidence during this source-only phase.
 | AIAnalysis GVK handoff and remote-history contract | AI/SignalProcessing owner | Missing | AI history/remote exact scope may infer the wrong kind | Update `analyzing.go` and policy/history readers; add explicit AI GVK IT; reject remote `InferGVK` |
 | Public FMC v1 contract | FMC/API owner | Enum-only replacement approved under DD-FLEET-015 | Route/media/schema drift or invented fields block GREEN | `/api/v1/scope/check`, ordinary `application/json`, exactly `state` and `provenance`; no boolean compatibility |
 | Typed scope seam wiring | Scope/Fleet/ACM owners | Missing | Boolean implementations can collapse unavailable or backend identity states | Add and pass `IT-SCOPE-TYPED-018`–`IT-SCOPE-TYPED-021` |
-| #2584/#2600 Page contract and AF boundary | AF owner | External/conditional | No FMC inventory rows or AF remote list/policy scope | Keep unavailable/no rows; attach separate approved evidence |
+| #2584/#2600 Page contract and AF boundary | AF owner | External/conditional | No FMC inventory rows or AF remote list/policy scope | Keep unavailable/no rows; attach separate approved evidence. *(Superseded for the managed-resource list lane 2026-11-22, #2661 phase c — FMC inventory rows and non-local list dispatch are live under the namespace-list SAR; policy-scope stays local-only)* |
 | Kind authentication E2E | Security/operator owner | Pending authorization | BR-SECURITY-016/017 E2E assessment is incomplete | Authorize and run `E2E-FMC-AUTH-018`, or attach approved risk acceptance |
 | Historical clean-review counter | #2593 coordinator | 0/3 historical | No new pre-RED review cycle; per-pass review remains required | Preserve the counter and record immutable RED/GREEN/REFACTOR captures |
 
@@ -2469,8 +2488,8 @@ No 26/26 critical or 11/11 supplemental wiring completion is claimed.
 - RED: **Complete** — process-local coordinator contract added with Ginkgo coverage
 - GREEN: **Complete** — FMC startup no longer reads `POD_UID` or constructs a Kubernetes Lease
 - REFACTOR: **Complete** — singleton deployment wording, review evidence, and CI-attributed GVK/presence fixtures aligned; local build/lint/unit validation passed
-- ACM inventory: **Unavailable / no rows**
-- AF non-local Console list/policy scope: **Unavailable**
+- ACM inventory: **Unavailable / no rows** *(Superseded for the inventory-list lane 2026-11-22, #2661 phase c — ACM-sourced inventory is served through FMC; Live-tier qualification remains unclaimed)*
+- AF non-local Console list/policy scope: **Unavailable** *(Superseded for the managed-resource list lane 2026-11-22, #2661 phase c — non-local lists dispatch to FMC under the namespace-list SAR; policy-scope stays local-only)*
 - Historical review gate: **Non-clean / 0/3**; ephemeral session-based review captures are excluded from the repository evidence set and do not create a qualification claim.
 - The historical dirty-worktree review ceremony is superseded by the bounded fast path in this authority. No new three-review cycle is claimed.
 - Historical three-clean-review counter: **0/3**

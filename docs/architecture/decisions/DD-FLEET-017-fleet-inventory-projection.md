@@ -3,8 +3,10 @@
 **Status**: 📝 Draft v2 — **re-scoped 2026-11-18** after corpus triage.
 Supersedes the ACM-direct draft (`AF → ACM Search`), which targeted an
 architecture decision already replaced on 2026-11-11. **D1–D6 approved
-2026-11-18.** Nothing is implemented; implementation waits on the amendment's
-approval.
+2026-11-18.** Increment 2 (FMC inventory API/page reader, ACM Search source
+adapter, source selection) and phase c (`fleet.fmc.endpoint`, AF non-local
+list dispatch, the DD-AF-018 inventory-lane gate removal) have since landed —
+see §1.3 for the per-piece state.
 **Prerequisite**: the ADR-068 / DD-FLEET amendment removing the peer-adapter
 model — **approved 2026-11-18** (ADR-068 "One federation-facing contact
 (peer → facade)", with cross-references in DD-FLEET-011, DD-FLEET-015 and
@@ -31,7 +33,9 @@ OWASP ASVS V5 (validation), V8 (data protection). No certification claim.
 PR #2637 delivered the FMC proof lifecycle, the typed scope contract and a
 fail-closed AF gate: `pkg/fleet/inventory_reader.go` returns `nil` for
 `BackendACM`, `policyread.Service.ListInventory` rejects every non-local
-cluster, and `interim_contract_2592_red_test.go` pins that refusal. #2661 was
+cluster, and `interim_contract_2592_red_test.go` pins that refusal. *(All three
+clauses are superseded 2026-11-22, #2661 phase c — the gate is removed and the
+test re-scoped to pin dispatch; see §1.3.)* #2661 was
 written against the then-current peer-backend model, so it asks for an
 "ACM Search Console inventory projection" and its first task is "codify the
 ACM Search inventory contract DD".
@@ -71,11 +75,11 @@ those are not fleet-control-plane queries.
 | Piece | State |
 |---|---|
 | FMC as the single federation-facing contact for federated inventory | **Decided** (2026-11-11); ADR-068/DD-FLEET amendment **approved 2026-11-18** |
-| FMC inventory API (`/api/v1/inventory/managed-resources`) | **Client only**; FMC serves only `/api/v1/scope/check` and `/api/v1/clusters` (`pkg/fleet/fmc/handler.go:74-75`) |
-| FMC ACM Search source adapter | **Not implemented** — no ACM code in `pkg/fleet/fmc` or `cmd/fleetmetadatacache` |
-| AF→FMC dispatch | Code exists (`fmc.HTTPClient` returns `inventory.Page`), blocked by the non-local rejection (`pkg/apifrontend/policyread/service.go:77`) |
-| ACM Console inventory | **Gated**: `unavailable`, no rows |
-| Code model | Still the **peer model**, in four places: `pkg/fleet/config.go:33-42` (`BackendFMC` / `BackendACM`), `fleet.NewInventoryReader`, `fleet.NewScopeChecker`, and AF's two `fleet.backend` branches in `cmd/apifrontend/backend_deps.go` |
+| FMC inventory API (`/api/v1/inventory/managed-resources`) | **Served by FMC** since increment 2 (`pkg/fleet/fmc/handler.go:91-93` registers the list/exact routes); AF is a client only and never serves or proxies it |
+| FMC ACM Search source adapter | **Implemented** (increment 2, #2691): `pkg/fleet/fmc/acm_source.go` + `acm_search.go`, source selection from `cfg.SourceKind()` in `cmd/fleetmetadatacache/main.go` |
+| AF→FMC dispatch | **Implemented** (#2661 phase c, 2026-11-22): the non-local rejection is removed; non-local lists dispatch to FMC, gated by the non-local namespace-list SAR |
+| ACM Console inventory | **Ungated (inventory lane)**: #2661 phase c removed the DD-AF-018 inventory-lane gate; FMC is the sole Console inventory contact, `fleet.fmc.endpoint` fails closed when absent |
+| Code model | The **peer model** shrank with #2661 phase c: `fleet.NewInventoryReader`'s ACM branch and one of AF's two `fleet.backend` branches are gone; the scope lane's peer surface (`fleet.NewScopeChecker`, AF's scope-checker branch) is unchanged |
 
 ## 2. Scope
 
@@ -118,6 +122,12 @@ In scope:
    config surface lingers. Consequence for the operator: no `fleet.tokenPath`
    rendering and no GW/RO/AF/EM token mount at all; FMC's own credential is
    `sources.acm.tokenPath`, in a different ConfigMap and mount.
+
+    *(1e is partially consumed 2026-11-22, #2661 phase c: the
+    `NewInventoryReader` ACM branch and one of AF's two `fleet.backend`
+    branches — the inventory lane — are already deleted; see §1.3's Code
+    model row. 1e's remaining scope is the scope-lane peer surface, the
+    `TokenPath` seam above, and the backend key itself.)*
 
    The ordering constraint is **data, not compatibility**: until increment 2
    supplies ACM observations, deleting the ACM scope branch would make every ACM
@@ -591,7 +601,10 @@ punts the whole feature to post-1.6.
    Order matters: (a) can ship without (b); (b) never ships without (a).
 2. Qualification is declared by the reader (an optional capability the FMC
    client implements), not by a configuration flag and not by "whatever URL
-   answers".
+   answers". *(Amended 2026-11-22, #2661 phase c: qualification enforcement is
+   FMC's server-side proof gate — a state-only 503 for an unproven partition —
+   plus the fail-closed `fleet.fmc.endpoint` wiring, superseding the
+   reader-declared-capability mechanism. The scope lane is unchanged.)*
 3. Rollback is an atomic reviewed revert: the rejection and the gate return; no
    compatibility mode, no data migration.
 
@@ -669,7 +682,7 @@ source.
 | 2 | Cache-backed page/cursor | same route | FMC page reader over index + proof gate | IT-FMC-INV-2661-002 |
 | 3 | ACM Search source adapter | FMC sync cycle | new adapter under `pkg/fleet/fmc` | IT-FMC-SRC-2661-001 |
 | 4 | Source selection (per deployment) | FMC sync cycle | `cmd/fleetmetadatacache/main.go` selects the collector from `cfg.SourceKind()` (MCP / ACM) | IT-FMC-SRC-2661-002 |
-| 4a | AF→FMC endpoint config | `fleet.fmc.endpoint` | `pkg/fleet/config.go` defines the key; `cmd/apifrontend/backend_deps.go` builds the AF inventory reader from it (replacing `cfg.Fleet.EffectiveEndpoint()` on the inventory path) | IT-AF-2661-001 |
+| 4a | AF→FMC endpoint config | `fleet.fmc.endpoint` | `pkg/fleet/config.go` defines the key; `pkg/fleet/inventory_reader.go` consumes it (replacing `EffectiveEndpoint()` inside `NewInventoryReader`); `cmd/apifrontend/backend_deps.go` remains the production caller via `fleet.NewInventoryReader` and owns the re-expressed startup logs | IT-AF-2661-001 |
 | 5 | AF→FMC dispatch + qualification | `GET /api/v1/console/inventory/managed-resources` | `policyread.Service.ListInventory` / `readerFor` | IT-AF-2661-001 |
 | 6 | AF partial/unavailable mapping | both inventory routes | handler `projectionStatus` | IT-AF-2661-002 |
 | 7 | Namespace-list SAR + typed audit | both non-local reads | `policyread` authorizer / `emitRead` | IT-AF-2661-003 |

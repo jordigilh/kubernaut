@@ -8,7 +8,143 @@ one FMC source adapter; removal of the ACM Console inventory release gate
 **Version**: 2.0 (supersedes TP-2661-v1.0, AF→ACM direct)
 **Created**: 2026-11-18
 **Author**: Kubernaut Team
-**Status**: 📝 Draft v2.5 (round-2 pre-implementation review: §9b extended with
+**Status**: 📝 Draft v4.7 (round-24 pre-implementation review: §10's preamble
+matches RED/GREEN c and §12 — the DD-FLEET-017 §8 amendment already shipped;
+RED/GREEN c verifies the identity, it does not re-amend). Draft v4.6 (round-23 pre-implementation review: ADR-068's separate
+2026-11-03 qualification note — "ACM Console inventory remains disabled until …
+qualified" — joins the amendment set and §12(a)'s revert list; phase c
+discharged the condition, enforcement being FMC's proof-gated 503 plus the
+fail-closed `fleet.fmc.endpoint` wiring). Draft v4.5 (round-22 pre-implementation review: the DD-FLEET-017
+amendment extends beyond row 4a — its §1.3 state rows (dispatch no longer
+blocked, inventory no longer gated, peer-model count reduced) and D6.2's
+qualification mechanism are falsified by phase c and get a dated note
+recording that enforcement is FMC's proof-gated 503 plus the fail-closed
+`fleet.fmc.endpoint` wiring; DD-FLEET-011's "keep the inventory gate closed
+until qualified" directive joins the amendment set; the REMOTE-LIST-003
+rationale no longer calls the group-ful service-lane fixture "core-only";
+§4's OpenAPI clause covers response-contract entries, matching RED/GREEN c).
+Draft v4.4 (round-21 pre-implementation review: §12(a)'s OpenAPI
+revert clause enumerates the structural additions (the exact-read 403 entry,
+the 404 correction, the 503 rewordings), not just "state descriptions";
+DD-FLEET-015's 2026-11-18 amendment ("closed until … qualified") joins the
+amendment set and revert list; the backend_deps.go DD-AF-018 site is named
+as the log-only gate site it is, not a "skip site"). Draft v4.3 (round-20 pre-implementation review: ADR-068's
+in-force 2026-11-18 amendment — the "ACM Console inventory stays closed" bullet
+and the "four places" peer-model consequence — is falsified by the gate removal
+and joins the RED/GREEN c amendment set and §12(a)'s revert list). Draft v4.2
+(round-19 pre-implementation review: the OpenAPI work
+extends beyond description rewrites where the contract itself is falsified —
+the exact-read route gains its previously undocumented wire-real `403`
+response entry and a corrected 404 description ("absent or *local* target
+access denied"), and the list/policy-scope routes' 503 descriptions drop
+"local" ("Required source…", matching the exact-read route) since a non-local
+503 now arises from the remote FMC source). Draft v4.1 (round-18 pre-implementation review: the
+`pkg/apifrontend/policyread/service.go` doc comments that the shared
+`authorize()` change falsifies — `ListInventory`'s "capability and local
+target-scope authorization" and `GetInventory`'s local-denial→not_found note —
+join the RED/GREEN c re-expression list and §12(a)'s restore list). Draft v4.0
+(round-17 pre-implementation review: the OpenAPI
+rewrite set gains its fourth surface — the policy-scope route's "non-local
+policy-scope requests return a state-only `unavailable` response" is
+falsified by the same shared `authorize()` SAR, which changes a denied
+non-local `ListPolicyScope` to `403 forbidden` while the listing itself stays
+unsupported). Draft v3.9 (round-16 pre-implementation review: the
+REMOTE-LIST-002 partial-case rationale corrected — the 503 is wire-realistic
+because FMC's `inventoryWireStatus` maps partial→503 server-side; a 200
+state-only partial passes `Page.Validate` and would surface as `partial`,
+which is why the fixture must use the 503). Draft v3.8 (round-15 pre-implementation review: the OpenAPI
+rewrite set gains the exact-read route description — the shared `authorize()`
+SAR falsifies its local-vs-remote contrast; the REMOTE-LIST-002 partial case
+names its wire-realistic mechanism (stub serves 503 state-only `partial`
+mirroring `inventoryWireStatus`; a 200 partial is rejected by the FMC client's
+own `Page.Validate`) and its terminal Console state; the DD-FLEET-017 row-4a
+amendment is marked already-shipped (#2691) — RED/GREEN c verifies it, and
+§12(a) restores it by a separate documentation edit outside the atomic code
+unit; the Tier 1c `fleet.backend: fmc` wording corrected to
+`fleetmetadatacache`). Draft v3.7 (round-14 pre-implementation review: RED/GREEN c now
+amends DD-AF-018 with a dated inventory-lane-gate-removal note and updates the
+decisions README index row, and rewrites the now-false OpenAPI state
+descriptions (`apifrontend-v1.yaml` list route and `ConsoleClusterID`) — §4's
+"only if a documented state description changes" condition fires for exactly
+these; §12(a) reverts all three documentation surfaces with the code unit).
+Draft v3.6 (round-13 pre-implementation review: §7 carries the
+remaining three §9b re-scope IDs — `IT-AF-2584-008`, the `IT-AF-2584-005`
+probe, `IT-AF-ROUTE-010`/`IT-AF-PRES-007`; the REMOTE-LIST-002 row names both
+of its re-expressed cases (success dispatch and a `partial` state-only page →
+503, keeping the no-leak assertions in spirit); the 005 probe row requires
+the canonical ID regenerated for the prod-east identity; a stale
+`service.go:234` citation corrected to `:235`). Draft v3.5 (round-12 pre-implementation review: the
+`UT-AF-2592-REMOTE-FAIL-CLOSED-001` row now requires a fully contract-valid
+served page — ≥1 item, cluster attribution, `scope.included=true`, canonical
+ID — the current fixture is a zero-item success page that `validateSuccess`
+rejects; `UT-AF-2661-004` gains the non-local `ListPolicyScope` denial arm so
+every arm of the shared `authorize()` branch has a proving scenario; §12(a)
+reverts the DD-FLEET-017 §8 row-4a wording; §7 now carries the §9b re-scoped
+spec IDs). Draft v3.4 (round-11 pre-implementation review: DD-FLEET-017 §8 row
+4a re-synced to the plan's wording and its amendment added to RED/GREEN c; the
+REMOTE-LIST-001/-003 rows name their terminal states and -003's audit
+assertion is re-expressed to `result_state=success` rather than deleted; every
+re-scoped FMC-wire fixture row requires `scope.included=true` on served items;
+the GREEN slice's CA-reloader error attribution uses the configured backend
+name). Draft v3.3 (round-10 pre-implementation review: the
+freshness-envelope requirement extends to all three REMOTE-LIST rows; §9b adds
+the `IT-AF-2584-008` re-scope — it pins the AF→ACM direct exact-read lane this
+plan's fail criteria forbid, and only stays green because it wires the ACM
+client by hand; `UT-AF-CFG-2661-001` now proves endpoint *selection* at the UT
+tier, driving one read onto a request-capture FMC fixture with the scope
+adapter's endpoint receiving nothing; a malformed-`fleet.fmc.endpoint`
+validation scenario is recorded as deferred in §13 rather than expanding the
+Tier 1c slice). Draft v3.2 (round-9 pre-implementation review: §7 now covers the
+eleven previously unmapped §8 IDs (UT-FMC-SRC-2661-014/019/020/024/025/026,
+IT-FMC-SRC-2661-005/006/007, both E2E rows); the REFACTOR cross-package
+page-assembly dedup is dropped — a helper shared by two packages would be a
+new component, forbidden by the phase's own rule — leaving only the in-package
+`projectionStatus`/`projectionMessage` collapse; IT-AF-2661-004's
+misspelled-key arm names its mechanism (the production loader's
+`yaml.Unmarshal`, not struct literals); UT-AF-2661-004's exact-get rationale
+states the real pre-phase-c baseline (dispatch already happens today); the
+ROUTE-010 row no longer claims non-inheritance proof for a same-URL fixture).
+Draft v3.1 (round-8 pre-implementation review: the
+`IT-AF-2584-ACM-FAIL-CLOSED` row names which config drives the nil-reader read
+assertions — only the absent-key one — closing a wrong-reason-pass path; the
+stale `buildPolicyReadDeps` doc comment joins the RED/GREEN c re-expression and
+§12's restore list; the fleet-mode deployment-config renderer gap is carved out
+to #2695 and recorded in §13, keeping this plan inside its original
+requirements). Draft v3.0 (round-7 pre-implementation review: the
+`UT-AF-2592-REMOTE-FAIL-CLOSED-001` re-scope names its terminal state and
+requires a contract-valid freshness envelope on the re-scoped stub page
+(`Page.Validate` would otherwise keep the old `unavailable` alive for the
+wrong reason); wiring row 4a locates the `fleet.fmc.endpoint` consumption in
+`pkg/fleet/inventory_reader.go` (backend_deps.go is the unchanged production
+caller and owns the logs); `UT-AF-2661-004` also proves the SAR denial on a
+non-local exact get — `authorize()` is shared, so the branch changes that path
+from `unavailable` to `forbidden`). Draft v2.9 (round-6 pre-implementation review: §12(a) deletes
+IT-AF-2661-001/003 (and -002 if its forbidden case rides the SAR branch) with
+the code unit — they are red against reverted code; the IT-AF-2584-005 probe
+re-scope names its terminal state (a prod-east-attributed success page → 200,
+not an unchanged 503 surviving via cross-cluster item mismatch) and the three
+REMOTE-LIST rows pin cluster attribution on served items; §7 now covers
+UT-FMC-INV-2661-011..015 and IT-FMC-INV-2661-001/001W). Draft v2.8 (round-5 pre-implementation review: `IT-AF-2661-004`
+added to BR-SAFETY-001 in §7; §12(a) now removes the `authorize()` non-local
+SAR branch — it is shared by list, exact-get and policy-scope reads — and
+names the re-expressed startup logs and the deletion of the new phase-c specs
+with the code unit). Draft v2.7 (round-4 pre-implementation review: `UT-AF-2661-004`
+added for the non-local namespace-list SAR (the `authorize()` change is now
+named in RED/GREEN c — the AC-6 control had IT-only proof); `IT-AF-2661-004`
+added for fail-closed inventory startup observability, including the
+misspelled-`fleet.fmc`-key shape, and the nil-reader startup log required; the
+three REMOTE-LIST §9b rows now require the re-scoped fixture to serve the FMC
+page route shape with a group-ful kind; §12(a) reverts the §9b re-scoped specs
+with the code; `UT-AF-CFG-2661-002/003` added to BR-SAFETY-001 in §7). Draft
+v2.6 (round-3 pre-implementation review: §12 rollback (a)
+rewritten as a full revert of the phase-c change set — the two DD-AF-018 sites
+alone would silently break fmc-backend inventory; the IT-AF-ROUTE-010/007 row
+now keeps both endpoint keys in the fixture; the stale backend_deps "list
+remains unavailable" log added to RED/GREEN c; `IT-FMC-INV-2661-001W` documented
+in §8 Tier 2 (it exists, `cmd/fleetmetadatacache/main_wiring_test.go:638`);
+`IT-FMC-INV-2661-002` added to BR-SAFETY-001; §9b preamble count fixed, its
+default-arm requirement added to REFACTOR, and the `UT-FLEET-CFG-029` re-scope
+row added). Draft v2.5 (round-2 pre-implementation review: §9b extended with
 the four missed re-scopes — `IT-AF-2584-REMOTE-LIST-002`, the cross-cluster
 probe inside `IT-AF-2584-005`, `UT-AF-2584-FMC-READER` and the
 `IT-AF-ROUTE-010 / IT-AF-PRES-007` table; DD-FLEET-017 §8 amended with wiring
@@ -123,8 +259,9 @@ selection), `pkg/fleet/scopecache` (proof-gated reads) as consumed,
 `pkg/apifrontend/policyread` + `handler` (dispatch, qualification, SAR, audit),
 `pkg/fleet/config.go` (the new `fleet.fmc.endpoint` key, phase c) and
 `cmd/apifrontend/backend_deps.go` (its wiring into the AF inventory reader),
-`api/apifrontend/openapi/apifrontend-v1.yaml` only if a documented state
-description changes.
+`api/apifrontend/openapi/apifrontend-v1.yaml` only where a documented state
+description or response-contract entry is falsified (the surfaces enumerated
+in RED/GREEN c).
 
 Not tested here: GW/RO/AF scope rerouting and `NewScopeChecker`'s ACM branch,
 Rancher or further sources, per-user visibility/token delegation (#2600),
@@ -174,13 +311,13 @@ live run.
 
 | BR | Contract | Scenarios |
 |---|---|---|
-| BR-SCOPE-001 | Managed-only inventory with ADR-053 precedence | UT-FMC-SRC-2661-011/012 |
-| BR-SCOPE-002 | Exact GVK, canonical identity, no inference | UT-FMC-SRC-2661-013/018, UT-FMC-INV-2661-008 |
-| BR-API-001 | Typed, sanitized page, states and freshness | UT-FMC-INV-2661-001..010, IT-AF-2661-001/002 |
-| BR-SECURITY-016 | Least privilege, user gate, no privileged widening (AC-6, AU-3 on the SAR audit journey) | UT-FMC-INV-2661-010, UT-FMC-SRC-2661-023, IT-AF-2661-003, IT-FMC-SRC-2661-003 |
+| BR-SCOPE-001 | Managed-only inventory with ADR-053 precedence | UT-FMC-SRC-2661-011/012/014, UT-FMC-INV-2661-011, UT-AF-2592-REMOTE-FAIL-CLOSED-001, IT-AF-2584-REMOTE-LIST-001/003, IT-AF-ROUTE-010 / IT-AF-PRES-007 |
+| BR-SCOPE-002 | Exact GVK, canonical identity, no inference | UT-FMC-SRC-2661-013/018, UT-FMC-INV-2661-008, IT-AF-2584-008 |
+| BR-API-001 | Typed, sanitized page, states and freshness | UT-FMC-INV-2661-001..015, IT-AF-2661-001/002, IT-FMC-INV-2661-001/001W, E2E-FMC-INV-2661-001 |
+| BR-SECURITY-016 | Least privilege, user gate, no privileged widening (AC-6, AU-3 on the SAR audit journey) | UT-FMC-INV-2661-010, UT-FMC-SRC-2661-023/025/026, UT-AF-2661-004, IT-AF-2661-003, IT-FMC-SRC-2661-003, E2E-FMC-INV-2661-001, IT-AF-2584-REMOTE-LIST-002, IT-AF-2584-ACM-FAIL-CLOSED, UT-AF-2584-FMC-READER, IT-AF-2584-008 |
 | BR-SECURITY-017 | Metadata-only egress | UT-FMC-INV-2661-010, IT-FMC-INV-2661-001 |
-| BR-INTEGRATION-065 | Source abstraction and dispatch | UT-FMC-SRC-2661-001..010, UT-AF-CFG-2661-001..003, IT-FMC-SRC-2661-001/002, IT-AF-2661-001 |
-| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004, UT-FMC-SRC-2661-004..009/015..017/021/022, IT-AF-2661-002, IT-FMC-SRC-2661-004 |
+| BR-INTEGRATION-065 | Source abstraction and dispatch | UT-FMC-SRC-2661-001..010/024..026, UT-AF-CFG-2661-001..003, IT-FMC-SRC-2661-001/002/006, IT-AF-2661-001, E2E-FMC-INV-2661-002 |
+| BR-SAFETY-001 | Fail-closed proof, no fallback | UT-FMC-INV-2661-003/004/014/015, UT-FMC-SRC-2661-004..009/015..017/019..022/024..026, UT-AF-CFG-2661-002/003, IT-AF-2661-002, IT-AF-2661-004, IT-FMC-INV-2661-002, IT-FMC-SRC-2661-004/005/007, UT-FLEET-CFG-029, IT-AF-2584-005 (cross-cluster probe) |
 
 ## 8. Test scenarios
 
@@ -235,19 +372,21 @@ live run.
 | UT-FMC-SRC-2661-025 | **Transport hardening (review round 1)**: one Search reply is byte-bounded before decoding, so the 50-item logical guard is never the only defense against a hostile or broken endpoint; chunk failures are classified transport/tool/malformed and mapped onto the matching observation failure — an HTTP or GraphQL answer is never reported as a network outage, and a TLS failure as a tool failure | ✅ |
 | UT-FMC-SRC-2661-026 | **Transport reply integrity (#2691 review)**: redirect answers are refused outright (the bearer can never be routed to a different target); the reply is exactly one JSON value under the byte bound (trailing data is malformed); the searchResult count is explicitly provided and nonnegative — a missing, null or negative count is a tool failure, never a proven empty collection, while an explicit zero with empty items remains the well-formed empty answer; the endpoint is parsed once and the route joined to its path (no query or fragment) | ✅ |
 
-### Tier 1c — AF fleet endpoint config (`pkg/fleet/config.go`, phase c)
+### Tier 1c — AF fleet endpoint config + non-local SAR (`pkg/fleet/config.go`, `pkg/apifrontend/policyread`, phase c)
 
 | ID | Scenario | Critical |
 |---|---|---|
 | UT-AF-CFG-2661-001 | The new `fleet.fmc.endpoint` key parses and selects the FMC inventory endpoint; the AF inventory reader is built from it, never from `fleet.endpoint` (`cfg.Fleet.EffectiveEndpoint()` stays the scope adapter's endpoint, D2.1a) | ✅ |
-| UT-AF-CFG-2661-002 | `fleet.fmc.endpoint` absent under `fleet.backend: fmc` → the inventory path fails closed `unavailable`; it never inherits the scope adapter's endpoint or the ACM Search URL | ✅ |
+| UT-AF-CFG-2661-002 | `fleet.fmc.endpoint` absent under `fleet.backend: fleetmetadatacache` → the inventory path fails closed `unavailable`; it never inherits the scope adapter's endpoint or the ACM Search URL | ✅ |
 | UT-AF-CFG-2661-003 | `fleet.backend: acm` with `fleet.fmc.endpoint` present → the FMC reader is still built from the new key (DD-AF-018 gate removed, both sites); with it absent → `unavailable`, never a direct ACM Search client | ✅ |
+| UT-AF-2661-004 | Non-local namespace-list SAR (the `policyread.Service` authorize path's new non-local branch): a stub authorizer denying `list/core/v1/namespaces` → non-local list is `forbidden`, the remote reader's `listCalls == 0`, exactly one typed audit event with `result_state=forbidden`; granting it proceeds to dispatch. `authorize()` is shared by list, exact-get and policy-scope reads, so the same denial is asserted on a non-local exact get (`forbidden`, reader `getCalls == 0`, one typed audit event) and on a non-local `ListPolicyScope` (`forbidden`, reader untouched, one typed audit event — the branch changes that path from `unavailable` to `forbidden` before the surviving non-local policy-scope rejection) — every arm of the shared branch needs its own proving scenario | ✅ |
 
 ### Tier 2 — Integration
 
 | ID | Scenario | Critical |
 |---|---|---|
 | IT-FMC-INV-2661-001 | Production mux serves list and exact read; response is the shared sanitized schema; unknown route/method behaviour unchanged | ✅ |
+| IT-FMC-INV-2661-001W | Production assembly (`buildFMCServers`, `cmd/fleetmetadatacache/main_wiring_test.go`): the authenticated production mux serves the inventory routes — 503 state-only for an unproven partition, the exact route registered, an unknown route stays 404. Proves wiring row 1a (implemented with increment 2) | ✅ |
 | IT-FMC-INV-2661-002 | End-to-end over real cache semantics: proven partition → `success`/`empty`; broken/staged/incomplete partition → `partial`/`unavailable`, with no staging key ever served | ✅ |
 | IT-FMC-SRC-2661-001 | From `buildFMCSyncer`→sync, an ACM-configured deployment makes Search calls and reaches `BeginRepair`→`Repair`→`CommitRepair`; a direct Valkey write, or a missing Search call, fails the spec | ✅ |
 | IT-FMC-SRC-2661-002 | Build two production syncers — one from an absent-`sources` config, one from `sources.acm` — and assert MCP-only versus ACM-only call surfaces; an invalid `sources` block fails at load/validate, the steps that precede syncer construction in the startup order | ✅ |
@@ -259,6 +398,7 @@ live run.
 | IT-AF-2661-001 | AF list dispatch reaches the endpoint from `fleet.fmc.endpoint` (asserted by the request the fixture receives, including with `fleet.backend: acm`) and returns the FMC page — the inventory path never inherits the scope adapter's endpoint | ✅ |
 | IT-AF-2661-002 | AF maps `partial`/`unavailable` → `503` state-only, `forbidden` → `403`, `not_found` → `404`; no rows or cursors leak | ✅ |
 | IT-AF-2661-003 [AC-6, AU-3] | Namespace-list SAR denial → `403` state-only with zero requests to FMC; one typed audit event per read with `result_state`, no records | ✅ |
+| IT-AF-2661-004 | Startup observability of the fail-closed inventory state (GA dimension 12, no silent failures): with `fleet.enabled` and the FMC reader nil — `fleet.fmc.endpoint` absent, or misspelled under AF's non-strict decode (e.g. `fmc.endpointURL`, loaded through the production config loader's `yaml.Unmarshal` into `config.Config`, mirroring `pkg/apifrontend/config/config.go` — the wiring-test convention of struct literals cannot express a misspelled YAML key) — AF logs an explicit inventory-unavailable line at startup; the reader stays nil and reads fail closed. The non-nil branch logs list availability and `cfg.Fleet.FMC.Endpoint` (replacing the stale "list remains unavailable" line) | ✅ |
 
 ### Tier 3 — Live / E2E
 
@@ -299,25 +439,28 @@ composition root differs.
 
 ## 9b. Tests retired or re-scoped by this plan
 
-Two existing specs assert behaviour this plan intentionally changes. They are
+The existing specs below assert behaviour this plan intentionally changes. They are
 **task items, not regressions**:
 
 | Test | Today | Required change |
 |---|---|---|
-| `UT-AF-2592-REMOTE-FAIL-CLOSED-001` (`pkg/apifrontend/policyread/interim_contract_2592_red_test.go`) | Pins "non-local read rejected, no remote reader called" | Re-scope to the new boundary: non-local dispatch reaches FMC when the endpoint is configured and never falls back to local. The old expectation is replaced, not weakened. |
-| `IT-AF-2584-REMOTE-LIST-003` (`pkg/apifrontend/policyread/service_2584_test.go`) | Asserts remote list rejection with zero requests to a wired ACM client | Re-scope: dispatch now reaches `RemoteInventory`; the "never contacts ACM Search" half is preserved by asserting the wired reader is the FMC client (fixture receives the request), not by asserting zero dispatch. |
-| `IT-AF-2584-REMOTE-LIST-001` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Handler-level pin of "non-local list rejected, no remote reader contacted" | Re-scope to the dispatch boundary: non-local list reaches FMC when configured; no local fallback. |
-| `IT-AF-2584-REMOTE-LIST-002` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Handler-level pin of "a remote ACM list stays unavailable instead of exposing a partial Search page" — allow authorizer, wired ACM client, zero requests asserted | Re-scope with `-001`: non-local list now dispatches to the wired remote reader (the fixture receives the request). The no-partial-rows half is preserved by asserting the state-only envelope on the reader's own error/partial mapping; the never-ACM half by making the wired fixture the FMC client, not by asserting zero dispatch. |
-| cross-cluster probe inside `IT-AF-2584-005` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Asserts `remote.listCalls == 0` — "a non-local list must be refused before remote dispatch" — with both backends wired and an allow authorizer | Re-express the probe: a non-local list now reaches the wired remote stub (`remote.listCalls ≥ 1`) and still never falls back to local (`local.listCalls == 0` kept verbatim). The guessed-opaque-ID half of the spec is unchanged. |
-| `IT-AF-2584-ACM-FAIL-CLOSED` (`cmd/apifrontend/policyread_wiring_2584_test.go`) | Asserts `deps.RemoteInventory` is nil for `Backend: fleet.BackendACM` | Re-scope: with `fleet.fmc.endpoint` configured the FMC reader is wired under `backend: acm` (DD-AF-018 gate removed); with it absent, `RemoteInventory` stays nil and reads fail closed `unavailable`. |
+| `UT-AF-2592-REMOTE-FAIL-CLOSED-001` (`pkg/apifrontend/policyread/interim_contract_2592_red_test.go`) | Pins "non-local read rejected, no remote reader called" | Re-scope to the new boundary with the terminal state named: non-local dispatch reaches the remote stub (`remote.listCalls ≥ 1`) and never falls back to local (`local.listCalls == 0` kept verbatim); the response is `success` with the stub's served page. The re-scoped stub page must be fully contract-valid: a freshness envelope (`Freshness{State: fresh, AsOf: …}`), **at least one item** (`validateSuccess` rejects a zero-item success page — the current fixture is exactly that), and each item carrying the requested cluster's ID, `scope.included=true` and a canonical ID matching its identity — `Page.Validate` and `readInventoryPage` enforce all three, and any failure would keep the old `unavailable` outcome alive for the wrong reason (validation, not the boundary). The old expectation is replaced, not weakened. |
+| `IT-AF-2584-REMOTE-LIST-003` (`pkg/apifrontend/policyread/service_2584_test.go`) | Asserts remote list rejection with zero requests to a wired ACM client; one audit event with `result_state=unavailable` | Re-scope: dispatch now reaches `RemoteInventory`; the "never contacts ACM Search" half is preserved by asserting the wired reader is the FMC client (fixture receives the request), not by asserting zero dispatch. Terminal state named: the response is a 200-equivalent `success` page with the served items. The audit assertion is re-expressed, not deleted: exactly one event, same attribution fields (user, cluster), `result_state=success` — the AC-6/AU-3 proof moves to the dispatched outcome. The re-scoped stub serves the FMC page route shape — verified against `fmc.NewHTTPClient`'s request (GET `/api/v1/inventory/managed-resources`, page JSON), with at least one group-ful kind (apps/v1) among the served items, every served item carrying the requested cluster's ID and `scope.included=true` (`readInventoryPage` rejects an excluded item by failing the whole page, and `Page.Validate` in `readInventoryPage` (`pkg/apifrontend/policyread/service.go:235`) rejects a page without a contract-valid freshness envelope — either would keep the state assertions passing for the wrong reason). The current GraphQL fixture (group-ful, but a Search envelope rather than the FMC page JSON) would make the state assertions pass for the wrong reason (decode failure, not mapping). |
+| `IT-AF-2584-REMOTE-LIST-001` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Handler-level pin of "non-local list rejected, no remote reader contacted" (503 + `state:unavailable`) | Re-scope to the dispatch boundary with the terminal state named: non-local list reaches FMC when configured — 200 with the served `success` page — and never falls back to local (`local.listCalls == 0` kept verbatim). The re-scoped stub serves the FMC page route shape (verified against `fmc.NewHTTPClient`'s request, at least one group-ful apps/v1 kind, every served item carrying the requested cluster's ID and `scope.included=true`, contract-valid freshness envelope on every served page) — not the current GraphQL core-only fixture. |
+| `IT-AF-2584-REMOTE-LIST-002` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Handler-level pin of "a remote ACM list stays unavailable instead of exposing a partial Search page" — allow authorizer, wired ACM client, zero requests asserted | Re-scope with `-001`: non-local list now dispatches to the wired remote reader (the fixture receives the request). Both halves are re-expressed with named cases: the success case (FMC stub serves a contract-valid success page → 200 with the served items) and the no-partial-rows case (a second request where the FMC stub serves HTTP 503 with a state-only `partial` body, mirroring FMC's own `inventoryWireStatus` server-side mapping — partial→503 — which is the wire-realistic way to reach the handler's error arm; a 200 with a well-formed state-only partial body **passes** `Page.Validate` and would surface at the Console as `partial`, not `unavailable`, which is exactly why the fixture must use the 503) → the Console response is 503 state-only `unavailable`, no items, no cursors — the current no-leak assertions, `sensitive-namespace` and `"items"`, are kept in spirit on this case. The never-ACM half is preserved by making the wired fixture the FMC client — serving the FMC page route shape (verified against `fmc.NewHTTPClient`'s request, at least one group-ful apps/v1 kind, every served item carrying the requested cluster's ID and `scope.included=true`, contract-valid freshness envelope on every served page), not the current GraphQL core-only fixture. |
+| cross-cluster probe inside `IT-AF-2584-005` (`pkg/apifrontend/handler/console_policyread_2584_test.go`) | Asserts `remote.listCalls == 0` — "a non-local list must be refused before remote dispatch" — with both backends wired and an allow authorizer | Re-express the probe with its terminal state named: the remote stub serves a **prod-east-attributed** success page (the current `successfulPage()` items are all `ClusterID: "local"`, and `validateResource` rejects cross-cluster items — keeping them would make the 503 survive for the wrong reason, via item mismatch instead of dispatch refusal), with each item's **canonical ID regenerated for the prod-east identity** (a re-attributed item whose ID still encodes the local identity is wire-invalid; the current fixture builds IDs via `CanonicalResourceID` of the local identity), so the response becomes 200 `success` with `remote.listCalls ≥ 1`; `local.listCalls == 0` is kept verbatim. The guessed-opaque-ID half of the spec is unchanged. |
+| `IT-AF-2584-ACM-FAIL-CLOSED` (`cmd/apifrontend/policyread_wiring_2584_test.go`) | Asserts `deps.RemoteInventory` is nil for `Backend: fleet.BackendACM`, then drives `ListInventory`/`ListPolicyScope`/`GetInventory` → `unavailable` off the same config | Re-scope: with `fleet.fmc.endpoint` configured the FMC reader is wired under `backend: acm` (DD-AF-018 gate removed) — that half asserts only `deps.RemoteInventory` non-nil. With it absent, `RemoteInventory` stays nil and reads fail closed `unavailable` — the nil-reader/read assertions are driven **only** by the absent-key config (with `fleet.endpoint` still set, proving non-inheritance); adding the key to that config would make the read assertions pass for the wrong reason (transport failure against an unreachable wired endpoint, and the surviving policy-scope rejection). |
 | `UT-AF-2584-FMC-READER` (`cmd/apifrontend/policyread_wiring_2584_test.go`) | Asserts the FMC Console reader is wired from `fleet.endpoint` (`Backend: fleet.BackendFMC`, `Endpoint` set → `RemoteInventory` non-nil) | Re-scope to the new key: the reader is wired when `fleet.fmc.endpoint` is set (keeping `fleet.endpoint` present proves non-inheritance), and stays nil when only `fleet.endpoint` is set. The old expectation is replaced, not weakened: the inventory path no longer reads the scope adapter's endpoint (D2.1a, `UT-AF-CFG-2661-001`). |
-| `IT-AF-ROUTE-010 / IT-AF-PRES-007` DescribeTable (`cmd/apifrontend/policyread_wiring_2584_test.go`) | Drives `deps.RemoteInventory` through exact reads with `Backend: fleet.BackendFMC, Endpoint: server.URL`; the "verified managed" entry expects success through the wired reader | Re-scope the fixture config to set `fleet.fmc.endpoint = server.URL` (with or without `fleet.endpoint`) so the table keeps proving the retain-enum authority through production wiring. No assertion weakens — only the config key that selects the reader changes. |
+| `IT-AF-ROUTE-010 / IT-AF-PRES-007` DescribeTable (`cmd/apifrontend/policyread_wiring_2584_test.go`) | Drives `deps.RemoteInventory` through exact reads with `Backend: fleet.BackendFMC, Endpoint: server.URL`; the "verified managed" entry expects success through the wired reader | Re-scope the fixture config: keep `fleet.endpoint = server.URL` (the scope adapter's key, which the table's scope-check entries still read through `EffectiveEndpoint()`) **and** set `fleet.fmc.endpoint = server.URL` — this keeps the table's scope-check and exact-read lanes green through production wiring. Key non-inheritance itself is proven by `UT-AF-CFG-2661-001/002` (distinct/absent `fleet.fmc.endpoint`), not here: both keys carry the same fixture URL, which cannot discriminate selection. No assertion weakens — only the config key that selects the reader changes. |
 | `UT-FLEET-2584-ACM-EMPTY-001` (`pkg/fleet/acm/inventory_2584_red_test.go`) | **Already narrowed by its author (2026-11-18)**: asserts only "an applied zero-item Search is an empty observation, not unavailable"; no `Page.Validate()`/completeness claim, no AF read boundary | No re-scope needed. This plan adds the adapter-side shape assertion in `UT-FMC-SRC-2661-019` (applied zero-item observation, never a failure envelope) and keeps the state decision in `UT-FMC-INV-2661-002/003` (page assembly). |
+| `IT-AF-2584-008` (`pkg/apifrontend/policyread/service_2584_test.go`) | Pins the AF→ACM direct exact-read lane as correct behavior: wires `acm.NewClient` as `RemoteInventory`, asserts a GraphQL request body scoped by cluster, and a successful non-local `GetInventory` | Re-scope the remote fixture to the FMC exact-read wire shape: `fmc.NewHTTPClient` against a stub serving `GET /api/v1/inventory/managed-resources/{id}?cluster_id=…` with the resource JSON (group-ful apps/v1 kind, prod-east attribution, canonical ID matching the identity, `scope.included=true` — an excluded item maps to `not_found`, which would silently reproduce a failure outcome). The cluster-scoping assertion moves from the GraphQL request body to the stub's received path/query; the managed-scope check half is kept unchanged. The old expectation is replaced, not weakened: AF contacting ACM Search for inventory is a fail criterion of this plan (objective 4, R4), and the spec only stays green today because it wires the ACM client by hand — a green spec contradicting the boundary. |
+| `UT-FLEET-CFG-029` (`pkg/fleet/fleet_test.go`) | Asserts the facade default builds the FMC inventory reader from the auto-derived `EffectiveEndpoint()` with an absent backend | Re-express: the reader is built only from `fleet.fmc.endpoint`; with it absent the inventory path fails closed to a nil reader (unavailable). The derivation itself is unchanged and still serves the scope adapter — `UT-FLEET-CFG-024/025` keep pinning that lane. The old expectation is replaced, not weakened: auto-derivation on the inventory path would inherit an endpoint the caller never vetted for inventory (D2.1a). |
 
 ## 10. Wiring Manifest
 
-Identical to DD-FLEET-017 §8 (single authority; that table is amended in the
-same change so rows 1a/4a and the row 2/4 wording match here).
+Identical to DD-FLEET-017 §8 (single authority; rows 1a/4a and the row 2/4
+wording already shipped with #2691's and this branch's documentation commits —
+RED/GREEN c verifies the identity, it does not re-amend).
 
 | # | Component | Production entry point | Wiring location | IT ID |
 |---|---|---|---|---|
@@ -326,7 +469,7 @@ same change so rows 1a/4a and the row 2/4 wording match here).
 | 2 | Cache-backed page/cursor | same route | FMC page reader over index + proof gate | IT-FMC-INV-2661-002 |
 | 3 | ACM Search source adapter | FMC sync cycle | new adapter under `pkg/fleet/fmc` | IT-FMC-SRC-2661-001 |
 | 4 | Source selection (per deployment) | FMC sync cycle | `cmd/fleetmetadatacache/main.go` selects the collector from `cfg.SourceKind()` (MCP / ACM) | IT-FMC-SRC-2661-002 |
-| 4a | AF→FMC endpoint config | `fleet.fmc.endpoint` | `pkg/fleet/config.go` defines the key; `cmd/apifrontend/backend_deps.go` builds the AF inventory reader from it (replacing `cfg.Fleet.EffectiveEndpoint()` on the inventory path) | IT-AF-2661-001 |
+| 4a | AF→FMC endpoint config | `fleet.fmc.endpoint` | `pkg/fleet/config.go` defines the key; `pkg/fleet/inventory_reader.go` consumes it (replacing `EffectiveEndpoint()` inside `NewInventoryReader`); `cmd/apifrontend/backend_deps.go` remains the production caller via `fleet.NewInventoryReader` and owns the re-expressed startup logs | IT-AF-2661-001 |
 | 5 | AF→FMC dispatch + qualification | `GET /api/v1/console/inventory/managed-resources` | `policyread.Service.ListInventory` / `readerFor` | IT-AF-2661-001 |
 | 6 | AF partial/unavailable mapping | both inventory routes | handler `projectionStatus` | IT-AF-2661-002 |
 | 7 | Namespace-list SAR + typed audit | both non-local reads | `policyread` authorizer / `emitRead` | IT-AF-2661-003 |
@@ -346,8 +489,8 @@ same change so rows 1a/4a and the row 2/4 wording match here).
 | GREEN b3 — fenced publication | same repair path | same | Done only when Search observations reach BeginRepair→Repair→CommitRepair, with the shared deadline set once per repair and no direct Valkey write |
 | RED b4 — transport credentials | `NewACMHTTPSearch` production construction | UT-FMC-SRC-2661-023; IT-FMC-SRC-2661-003 | Fails without bearer, CA and rotation assertions |
 | GREEN b4 — transport credentials | `NewACMHTTPSearch` | same | Done only when request-level auth, trust and rotation pass without client recreation |
-| RED/GREEN c | IT-FMC-* and IT-AF-2661-001..003; AF dispatch + SAR + status mapping; the `fleet.fmc.endpoint` key (UT-AF-CFG-2661-001..003 first, wiring row 4a) and removal of both DD-AF-018 gate sites — `pkg/fleet/inventory_reader.go` (the `BackendACM → nil, nil` branch) and the `cmd/apifrontend/backend_deps.go` log-and-skip site | — | 120 min + the config slice |
-| REFACTOR | In-package deduplication only (AGENTS.md: no new types or components in REFACTOR): collapse the shared tail of the two page-assembly paths — `pkg/apifrontend/policyread/local_inventory.go` `list`'s final page construction and `pkg/fleet/fmc/inventory_reader.go` `assemble` — into one helper inside the package that already owns the common `Page` type (`pkg/fleet/inventory`), if and only if it needs no new exported type; and collapse the parallel per-state switches in `pkg/apifrontend/handler/console_policyread.go` — `projectionStatus` and `projectionMessage` — into one state→(status, message) table in that package. A merge of `projectionStatus` with `inventoryWireStatus` (`pkg/fleet/fmc/handler.go`) is explicitly out of scope: they live in different packages and their 2xx semantics differ (the AF switch has no success arm; FMC maps success/empty→200), so merging would change behavior | — | 45 min |
+| RED/GREEN c | IT-FMC-* and IT-AF-2661-001..004; AF dispatch + the non-local namespace-list SAR (`policyread.Service`'s authorize path, UT-AF-2661-004 first) + status mapping; the `fleet.fmc.endpoint` key (UT-AF-CFG-2661-001..003 first, wiring row 4a) and removal of both DD-AF-018 gate sites — `pkg/fleet/inventory_reader.go` (the `BackendACM → nil, nil` branch) and the `cmd/apifrontend/backend_deps.go` DD-AF-018 ACM-gate log site (`backend_deps.go:256-258`, log-only — the skip half of the gate was the inventory_reader branch) — plus re-expression of the adjacent startup logs and stale documentation (`cmd/apifrontend/backend_deps.go`): the "list remains unavailable" line that also logs `EffectiveEndpoint()` is replaced by list availability + `cfg.Fleet.FMC.Endpoint`, a new explicit inventory-unavailable line fires when `fleet.enabled` leaves the FMC reader nil (IT-AF-2661-004), the `buildPolicyReadDeps` doc comment ("remote inventory list reads remain unavailable … exact/get only") is rewritten to match the dispatch boundary, and the `pkg/apifrontend/policyread/service.go` doc comments that the shared `authorize()` change falsifies are updated (`ListInventory`'s "capability and local target-scope authorization" gains the non-local namespace-list SAR arm; `GetInventory`'s local-denial→not_found note gains the non-local `forbidden` arm); the same change amends DD-FLEET-017 §8 row 4a to this plan's wording (consumption in `pkg/fleet/inventory_reader.go`; `backend_deps.go` production caller owning the re-expressed logs), keeping the single-authority claim true — **already shipped**: the row carries this wording as of #2691/this branch's documentation commits, so RED/GREEN c only verifies it, not re-amends it; adds a dated DD-AF-018 amendment (inventory-lane gate removed by #2661 phase c; FMC is the sole Console inventory contact; the scope lane is unchanged) with the `docs/architecture/decisions/README.md` index row updated to match, and a dated note in ADR-068's 2026-11-18 amendment recording that phase c removed the inventory-lane gate and the inventory-lane peer branches (the "ACM Console inventory stays closed" bullet and the "four places" peer-model consequence; scope lane unchanged), plus a dated note in ADR-068's 2026-11-03 qualification block ("ACM Console inventory remains disabled until … qualified") recording that phase c discharged the condition — enforcement is FMC's proof-gated 503 plus the fail-closed `fleet.fmc.endpoint` wiring, and the same for DD-FLEET-015's 2026-11-18 amendment (its "closed until … qualified" reading of the DD-AF-018 gate; scope lane unchanged) and DD-FLEET-011's "keep the inventory gate closed until qualified" directive (discharged by this qualification; the target-read/scope content unchanged); the DD-FLEET-017 amendment is extended beyond row 4a with a dated note covering its §1.3 state rows (AF→FMC dispatch no longer blocked; ACM Console inventory no longer gated; the peer-model count reduced by the inventory-lane branches) and D6.2's qualification mechanism — qualification enforcement is FMC's server-side proof gate (state-only 503 for an unproven partition) plus the fail-closed `fleet.fmc.endpoint` wiring, superseding the reader-declared-capability wording; scope lane unchanged; and rewrites the now-false OpenAPI state descriptions in `api/apifrontend/openapi/apifrontend-v1.yaml` (the list route's "non-local list requests return a state-only unavailable response", `ConsoleClusterID`'s "non-local identities remain supported for exact reads only", the exact-read route's "remote exact reads additionally require the existing managed-scope checker" — the shared `authorize()` SAR changes non-local exact gets to `forbidden` before the reader, falsifying the local-vs-remote contrast — and the policy-scope route's "non-local policy-scope requests return a state-only `unavailable` response", which the same shared SAR changes to `403 forbidden` on denial while non-local policy-scope listing itself stays unsupported); the same rewrite adds a `403` response entry (`ConsoleStateEnvelope`, matching the list/policy-scope routes' 403 shape) to the exact-read route — a denied non-local exact get is now wire-real `403` on a route whose contract cannot express it — and corrects the exact-read route's 404 description ("absent or *local* target access denied") plus the list and policy-scope routes' 503 descriptions ("Required local source…" → "Required source…", matching the exact-read route's existing wording, since a non-local 503 now arises from the remote FMC source) — §4's "only if a documented state description changes" condition fires for exactly these surfaces | — | 120 min + the config slice |
+| REFACTOR | In-package deduplication only (AGENTS.md: no new types or components in REFACTOR): collapse the parallel per-state switches in `pkg/apifrontend/handler/console_policyread.go` — `projectionStatus` and `projectionMessage` — into one state→(status, message) table in that package, retaining the fail-safe default arm (503 / "Console projection unavailable") for unlisted states — a map without a default entry would zero-value `partial`/`stale`/future states and change handler behavior. The cross-package dedup of the two page-assembly tails (`pkg/apifrontend/policyread/local_inventory.go` `list`'s final page construction and `pkg/fleet/fmc/inventory_reader.go` `assemble`) is **dropped**: the two call sites live in different packages, so the shared helper would be a new exported symbol in a third package — a new component, which this phase forbids by its own rule; it would need its own plan and CHECKPOINT-DD approval if ever wanted. A merge of `projectionStatus` with `inventoryWireStatus` (`pkg/fleet/fmc/handler.go`) is explicitly out of scope: they live in different packages and their 2xx semantics differ (the AF switch has no success arm; FMC maps success/empty→200), so merging would change behavior | — | 45 min |
 | Validate | affected UT/IT with `-race`, build, repo compile, full lint, local/FMC/scope regressions | — | 60–90 min |
 | Live | E2E-FMC-INV-2661-001/002, evidence captured | — | 90–120 min |
 
@@ -433,12 +576,43 @@ impossible, escalate for approval before writing any implementation code.
 
 ## 12. Rollback
 
-Two independent, atomic reverts: (a) re-gate AF dispatch (restore the
-`pkg/fleet/inventory_reader.go` `BackendACM → nil, nil` branch and the
-`cmd/apifrontend/backend_deps.go` skip site — the rejection returns, FMC keeps
-serving internally); (b) disable the ACM source adapter so the
-partition falls back to its previous proven state or `unavailable`. No
-compatibility mode, no data migration.
+Two independent, atomic reverts: (a) revert the phase-c change set as one
+unit — restore the `pkg/fleet/inventory_reader.go` `BackendACM → nil, nil`
+branch, the `cmd/apifrontend/backend_deps.go` DD-AF-018 ACM-gate log site
+(`backend_deps.go:256-258`, log-only), the
+`policyread.Service.ListInventory` non-local rejection, and the
+`EffectiveEndpoint()`-based reader construction (the `fleet.fmc.endpoint` key
+reverts with it), so pre-phase-c behavior — including the fmc-backend reader
+built from the scope adapter's endpoint or its auto-derivation — returns
+exactly. Restoring only the two DD-AF-018 sites is not a rollback: it would
+leave `fleet.fmc.endpoint` mandatory for fmc-backend inventory, silently
+unavailable to deployments that never set it. The revert also removes the
+`policyread.Service` `authorize()` non-local namespace-list SAR branch
+(UT-AF-2661-004/IT-AF-2661-003) — `authorize()` is shared by list, exact-get
+and policy-scope reads, so leaving the branch would keep a denial surface on
+non-local exact gets that did not exist pre-phase-c — and restores the re-expressed `backend_deps.go` startup log lines and the
+rewritten `buildPolicyReadDeps` doc comment to their pre-phase-c form.
+The §9b re-scoped/re-expressed specs revert to their pre-phase-c form in the
+same unit, the new phase-c specs (UT-AF-CFG-2661-001..003,
+UT-AF-2661-004, IT-AF-2661-001, IT-AF-2661-003, IT-AF-2661-004, and
+IT-AF-2661-002 if its forbidden case is driven through the non-local SAR
+branch) are deleted with the code unit, the DD-AF-018 amendment (+ its
+`decisions/README.md` index row, the ADR-068 amendment notes (2026-11-18 amendment and 2026-11-03 qualification block) and the
+DD-FLEET-015/DD-FLEET-011 amendment notes), the OpenAPI changes in
+`api/apifrontend/openapi/apifrontend-v1.yaml` — the four rewritten
+route/parameter descriptions, the new exact-read 403 response entry, the
+corrected 404 description, and the list/policy-scope 503 description
+changes — and the re-expressed
+`pkg/apifrontend/policyread/service.go` doc comments revert to
+their pre-phase-c forms, the DD-FLEET-017 amendment's state-table/D6.2 note
+likewise reverts, and the DD-FLEET-017 §8 row-4a wording is restored by a separate
+documentation edit outside the atomic code unit — its phase-c wording already
+shipped with #2691's documentation commits, so a git revert of the phase-c
+change set cannot reach it; its pre-phase-c form is the #2691-era wording
+naming `backend_deps.go` as the builder — an executor
+who reverts only the code sites leaves a red suite; (b) disable the ACM source
+adapter so the partition falls back to its previous proven state or
+`unavailable`. No compatibility mode, no data migration.
 
 ## 13. Evidence boundary (not claimed)
 
@@ -449,4 +623,16 @@ result before the run. The peer model in current code and ADR-068 is not
 migration-tested by this plan; the amendment is a prerequisite, not a test item.
 CA rotation (`ReloadCA` on the live client) is proven as a capability of the
 production constructor with no production watcher wired yet; it is not claimed
-as operational rotation behavior.
+as operational rotation behavior. Rendering `fleet.fmc.endpoint` in fleet-mode
+AF deployment configs (E2E infrastructure and charts) is deferred to
+[#2695](https://github.com/jordigilh/kubernaut/issues/2695) — deployment
+plumbing, not this plan's contract. Validation of a present-but-malformed
+`fleet.fmc.endpoint` (no scheme, plain `http`, host-less) is likewise deferred:
+`NewInventoryReader` checks only for an empty value, so a reachable plain-`http`
+endpoint is **not** rejected and can serve successful (unencrypted) inventory
+reads — only an unreachable or absent endpoint fails closed per-request
+(`unavailable`). Adding `Validate()`-level rejection with CM-6/SI-10 parity to
+`sources.acm.endpoint` would expand the phase-c config slice beyond its
+approved Tier 1c shape — it needs its own decision if wanted, and until then
+the SC-8 posture of a plain-`http` value is an accepted, documented risk of
+that deferral.
