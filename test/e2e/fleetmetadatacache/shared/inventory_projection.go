@@ -108,6 +108,21 @@ func InventoryProjection(h *Harness, v Variant) bool {
 				},
 			}
 			Expect(h.K8sClient.Create(h.Ctx, svc)).To(Succeed())
+			// A second Service in the same managed namespace: the paging It
+			// reads the whole loopback-cluster partition with limit 1 and
+			// must observe a cursor and a distinct second page -- under
+			// GINKGO_FOCUS this suite's own fixtures are the only managed
+			// items, so the partition needs at least two by construction.
+			svcB := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      v.ResourcePrefix() + "-inv-svc-b",
+					Namespace: testNS.Name,
+				},
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{{Port: 80}},
+				},
+			}
+			Expect(h.K8sClient.Create(h.Ctx, svcB)).To(Succeed())
 			svcIdent = inventory.Resource{
 				ClusterID: "loopback-cluster",
 				Version:   "v1",
@@ -144,6 +159,7 @@ func InventoryProjection(h *Harness, v Variant) bool {
 					ClusterID: "loopback-cluster",
 					Namespace: testNS.Name,
 					Kind:      "Service",
+					Name:      svcName,
 				})
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(page.State).To(Equal(inventory.StateSuccess))
