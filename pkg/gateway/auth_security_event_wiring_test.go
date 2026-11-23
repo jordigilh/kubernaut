@@ -84,6 +84,12 @@ func (s *wiringLogSink) WithValues(_ ...interface{}) logr.LogSink { return s }
 
 func (s *wiringLogSink) WithName(_ string) logr.LogSink { return s }
 
+func (e wiringLogEntry) record() auth.SecurityEventRecord {
+	record, err := auth.ParseSecurityEventRecord(e.fields)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	return record
+}
+
 func (s *wiringLogSink) securityEvents() []wiringLogEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -206,15 +212,15 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		events := logs.securityEvents()
 		Expect(events).To(HaveLen(1))
 		event := events[0]
-		Expect(event.fields["reason"]).To(Equal("missing_auth_header"))
-		Expect(event.fields["event_type"]).To(Equal("authentication"))
-		Expect(event.fields["event_action"]).To(Equal("authenticate"))
-		Expect(event.fields["event_outcome"]).To(Equal("failure"))
-		Expect(event.fields["actor_type"]).To(Equal("external"))
-		Expect(event.fields["path"]).To(Equal(probeAdapter{}.GetRoute()))
-		Expect(event.fields["resource_name"]).To(Equal("gateway-service"))
+		Expect(event.record().Reason).To(Equal("missing_auth_header"))
+		Expect(event.record().EventType).To(Equal("authentication"))
+		Expect(event.record().EventAction).To(Equal("authenticate"))
+		Expect(event.record().EventOutcome).To(Equal("failure"))
+		Expect(event.record().ActorType).To(Equal("external"))
+		Expect(event.record().Path).To(Equal(probeAdapter{}.GetRoute()))
+		Expect(event.record().ResourceName).To(Equal("gateway-service"))
 
-		parsed, err := uuid.Parse(event.fields["event_id"].(string))
+		parsed, err := uuid.Parse(event.record().EventID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(parsed.Version()).To(Equal(uuid.Version(4)))
 	})
@@ -229,11 +235,11 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		events := logs.securityEvents()
 		Expect(events).NotTo(BeEmpty())
 		last = events[len(events)-1]
-		Expect(last.fields["reason"]).To(Equal("authorization_denied"))
-		Expect(last.fields["event_type"]).To(Equal("authorization"))
-		Expect(last.fields["event_action"]).To(Equal("deny"))
-		Expect(last.fields["actor_type"]).To(Equal("user"))
-		Expect(last.fields["actor_id"]).To(Equal(testUser))
+		Expect(last.record().Reason).To(Equal("authorization_denied"))
+		Expect(last.record().EventType).To(Equal("authorization"))
+		Expect(last.record().EventAction).To(Equal("deny"))
+		Expect(last.record().ActorType).To(Equal("user"))
+		Expect(last.record().ActorID).To(Equal(testUser))
 	})
 
 	It("IT-AUTH-2664-052: an authorized request through the production route emits the grant event before dispatch", func() {
@@ -245,11 +251,11 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		events := logs.securityEvents()
 		Expect(events).NotTo(BeEmpty())
 		last = events[len(events)-1]
-		Expect(last.fields["reason"]).To(Equal("authorization_granted"))
-		Expect(last.fields["event_action"]).To(Equal("grant"))
-		Expect(last.fields["event_outcome"]).To(Equal("success"))
-		Expect(last.fields["actor_id"]).To(Equal(testUser))
-		Expect(last.fields["status_code"]).To(Equal(200),
+		Expect(last.record().Reason).To(Equal("authorization_granted"))
+		Expect(last.record().EventAction).To(Equal("grant"))
+		Expect(last.record().EventOutcome).To(Equal("success"))
+		Expect(last.record().ActorID).To(Equal(testUser))
+		Expect(last.record().StatusCode).To(Equal(200),
 			"status_code records the authorization decision, not the probe's 400")
 	})
 
@@ -263,11 +269,11 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		events := logs.securityEvents()
 		Expect(events).NotTo(BeEmpty())
 		last = events[len(events)-1]
-		Expect(last.fields["reason"]).To(Equal("authentication_service_unavailable"))
-		Expect(last.fields["event_type"]).To(Equal("authentication"))
-		Expect(last.fields["event_action"]).To(Equal("authenticate"))
-		Expect(last.fields["event_outcome"]).To(Equal("failure"))
-		Expect(last.fields["actor_type"]).To(Equal("external"))
+		Expect(last.record().Reason).To(Equal("authentication_service_unavailable"))
+		Expect(last.record().EventType).To(Equal("authentication"))
+		Expect(last.record().EventAction).To(Equal("authenticate"))
+		Expect(last.record().EventOutcome).To(Equal("failure"))
+		Expect(last.record().ActorType).To(Equal("external"))
 	})
 
 	It("IT-AUTH-2664-054: a SAR outage through the production route emits authorization_service_unavailable", func() {
@@ -280,12 +286,12 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		events := logs.securityEvents()
 		Expect(events).NotTo(BeEmpty())
 		last = events[len(events)-1]
-		Expect(last.fields["reason"]).To(Equal("authorization_service_unavailable"))
-		Expect(last.fields["event_type"]).To(Equal("authorization"))
-		Expect(last.fields["event_action"]).To(Equal("authorize"))
-		Expect(last.fields["event_outcome"]).To(Equal("failure"))
-		Expect(last.fields["actor_type"]).To(Equal("user"))
-		Expect(last.fields["actor_id"]).To(Equal(testUser))
+		Expect(last.record().Reason).To(Equal("authorization_service_unavailable"))
+		Expect(last.record().EventType).To(Equal("authorization"))
+		Expect(last.record().EventAction).To(Equal("authorize"))
+		Expect(last.record().EventOutcome).To(Equal("failure"))
+		Expect(last.record().ActorType).To(Equal("user"))
+		Expect(last.record().ActorID).To(Equal(testUser))
 	})
 
 	It("IT-AUTH-2664-055: the security-event correlation_id matches the request ID returned to the client", func() {
@@ -295,7 +301,7 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 
 		last := logs.securityEvents()
 		Expect(last).NotTo(BeEmpty())
-		Expect(last[len(last)-1].fields["correlation_id"]).To(Equal(requestID),
+		Expect(last[len(last)-1].record().CorrelationID).To(Equal(requestID),
 			"clients and access logs must be able to find security events by the request ID they were given")
 	})
 })

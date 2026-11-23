@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -343,7 +344,7 @@ type securityEvent struct {
 	outcome      string
 	eventType    string
 	action       string
-	errorDetails *securityErrorDetails
+	errorDetails *SecurityErrorDetails
 }
 
 // logAuthenticationFailure records a request rejected before identity was
@@ -426,34 +427,34 @@ func (m *Middleware) logSecurityGrant(r *http.Request, user string) {
 	})
 }
 
-// securityEventRecord is the typed form of the security_event log record.
+// SecurityEventRecord is the typed form of the security_event log record.
 // Its fields mirror the subset of pkg/audit.AuditEvent (ADR-034, DD-AUDIT-002)
 // that this middleware emits on the log channel: event identity, action,
 // outcome, actor and resource context. Keeping one struct means field names
 // and types are refactorable and cannot drift between call sites.
-type securityEventRecord struct {
-	EventID       string
-	EventType     string
-	EventAction   string
-	EventOutcome  string
-	Reason        string
-	CorrelationID string
-	ActorType     string
-	ActorID       string
-	User          string
-	StatusCode    int
-	Method        string
-	Path          string
-	RemoteAddr    string
-	Resource      string
-	ResourceName  string
-	Verb          string
-	ErrorDetails  *securityErrorDetails
+type SecurityEventRecord struct {
+	EventID       string                `json:"event_id"`
+	EventType     string                `json:"event_type"`
+	EventAction   string                `json:"event_action"`
+	EventOutcome  string                `json:"event_outcome"`
+	Reason        string                `json:"reason"`
+	CorrelationID string                `json:"correlation_id"`
+	ActorType     string                `json:"actor_type"`
+	ActorID       string                `json:"actor_id"`
+	User          string                `json:"user"`
+	StatusCode    int                   `json:"status_code"`
+	Method        string                `json:"method"`
+	Path          string                `json:"path"`
+	RemoteAddr    string                `json:"remote_addr"`
+	Resource      string                `json:"resource"`
+	ResourceName  string                `json:"resource_name"`
+	Verb          string                `json:"verb"`
+	ErrorDetails  *SecurityErrorDetails `json:"error_details,omitempty"`
 }
 
 // logFields expands the record into logr key/value pairs. This is the single
 // place the wire field names are written.
-func (r securityEventRecord) logFields() []interface{} {
+func (r SecurityEventRecord) logFields() []interface{} {
 	fields := []interface{}{
 		"event_id", r.EventID,
 		"event_type", r.EventType,
@@ -493,7 +494,7 @@ func (m *Middleware) emitSecurityEvent(r *http.Request, evt securityEvent) {
 	if eventType == "" {
 		eventType, action = securityEventClassification(evt.reason)
 	}
-	record := securityEventRecord{
+	record := SecurityEventRecord{
 		EventID:       uuid.NewString(),
 		EventType:     eventType,
 		EventAction:   action,
@@ -513,6 +514,21 @@ func (m *Middleware) emitSecurityEvent(r *http.Request, evt securityEvent) {
 		ErrorDetails:  evt.errorDetails,
 	}
 	m.logger.Info("security_event", record.logFields()...)
+}
+
+// ParseSecurityEventRecord decodes a captured security_event log payload
+// (flat logr key/value fields) into the typed record, so tests and downstream
+// consumers assert against the schema instead of string keys.
+func ParseSecurityEventRecord(fields map[string]interface{}) (SecurityEventRecord, error) {
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return SecurityEventRecord{}, fmt.Errorf("marshal security event fields: %w", err)
+	}
+	var record SecurityEventRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return SecurityEventRecord{}, fmt.Errorf("unmarshal security event fields: %w", err)
+	}
+	return record, nil
 }
 
 // securityActorType classifies who made the decision for ADR-034 actor_type,
@@ -580,9 +596,9 @@ func requestCorrelationID(r *http.Request) string {
 	return chimiddleware.GetReqID(r.Context())
 }
 
-// securityErrorDetails is the DD-ERROR-001 standardized error payload attached
+// SecurityErrorDetails is the DD-ERROR-001 standardized error payload attached
 // to fail-closed outage events (DD-AUDIT-003: every error event carries it).
-type securityErrorDetails struct {
+type SecurityErrorDetails struct {
 	Message       string `json:"message"`
 	Code          string `json:"code"`
 	Component     string `json:"component"`
@@ -592,12 +608,12 @@ type securityErrorDetails struct {
 // securityErrorDetails maps a TokenReview/SAR dependency failure to the
 // DD-ERROR-001 contract. Both dependencies are Kubernetes API reads, so the
 // failure is transient and retryable.
-func newSecurityErrorDetails(reason string, cause error) securityErrorDetails {
+func newSecurityErrorDetails(reason string, cause error) SecurityErrorDetails {
 	code := "ERR_AUTH_SERVICE_UNAVAILABLE"
 	if reason == "authorization_service_unavailable" {
 		code = "ERR_AUTHZ_SERVICE_UNAVAILABLE"
 	}
-	return securityErrorDetails{
+	return SecurityErrorDetails{
 		Message:       cause.Error(),
 		Code:          code,
 		Component:     "auth-middleware",

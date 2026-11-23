@@ -108,6 +108,13 @@ func (c *captureLog) lastSecurityEvent() capturedEvent {
 	return events[len(events)-1]
 }
 
+// record decodes the captured key/value payload into the typed schema.
+func (e capturedEvent) record() auth.SecurityEventRecord {
+	record, err := auth.ParseSecurityEventRecord(e.fields)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	return record
+}
+
 var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", func() {
 	const (
 		testUser          = "system:serviceaccount:kubernaut-system:caller"
@@ -159,10 +166,10 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 		for _, key := range []string{"event_id", "event_type", "event_action", "event_outcome", "actor_type", "actor_id"} {
 			Expect(event.fields).To(HaveKey(key), "ADR-034 field %q must be present (FedRAMP AU-3)", key)
 		}
-		Expect(event.fields["event_outcome"]).To(BeElementOf("success", "failure", "pending"),
+		Expect(event.record().EventOutcome).To(BeElementOf("success", "failure", "pending"),
 			"event_outcome must match the ADR-034 enum")
 
-		parsed, err := uuid.Parse(event.fields["event_id"].(string))
+		parsed, err := uuid.Parse(event.record().EventID)
 		Expect(err).NotTo(HaveOccurred(), "event_id must be a UUID (ADR-034)")
 		Expect(parsed.Version()).To(Equal(uuid.Version(4)), "event_id must be a UUIDv4")
 	}
@@ -174,13 +181,13 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(nextCalled).To(BeFalse())
 
 			event := logs.lastSecurityEvent()
-			Expect(event.fields["reason"]).To(Equal("missing_auth_header"))
-			Expect(event.fields["event_type"]).To(Equal("authentication"))
-			Expect(event.fields["event_action"]).To(Equal("authenticate"))
-			Expect(event.fields["event_outcome"]).To(Equal("failure"))
-			Expect(event.fields["actor_type"]).To(Equal("external"))
-			Expect(event.fields["actor_id"]).To(BeEmpty())
-			Expect(event.fields["status_code"]).To(Equal(401))
+			Expect(event.record().Reason).To(Equal("missing_auth_header"))
+			Expect(event.record().EventType).To(Equal("authentication"))
+			Expect(event.record().EventAction).To(Equal("authenticate"))
+			Expect(event.record().EventOutcome).To(Equal("failure"))
+			Expect(event.record().ActorType).To(Equal("external"))
+			Expect(event.record().ActorID).To(BeEmpty())
+			Expect(event.record().StatusCode).To(Equal(401))
 			assertADR034Fields(event)
 		})
 
@@ -191,10 +198,10 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(doRequest(mw, "Bearer "+testToken)).To(Equal(http.StatusUnauthorized))
 
 			event := logs.lastSecurityEvent()
-			Expect(event.fields["reason"]).To(Equal("invalid_token"))
-			Expect(event.fields["event_type"]).To(Equal("authentication"))
-			Expect(event.fields["event_action"]).To(Equal("authenticate"))
-			Expect(event.fields["actor_type"]).To(Equal("external"))
+			Expect(event.record().Reason).To(Equal("invalid_token"))
+			Expect(event.record().EventType).To(Equal("authentication"))
+			Expect(event.record().EventAction).To(Equal("authenticate"))
+			Expect(event.record().ActorType).To(Equal("external"))
 			assertADR034Fields(event)
 		})
 	})
@@ -208,13 +215,13 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(nextCalled).To(BeFalse())
 
 			event := logs.lastSecurityEvent()
-			Expect(event.fields["reason"]).To(Equal("authorization_denied"))
-			Expect(event.fields["event_type"]).To(Equal("authorization"))
-			Expect(event.fields["event_action"]).To(Equal("deny"))
-			Expect(event.fields["event_outcome"]).To(Equal("failure"))
-			Expect(event.fields["actor_type"]).To(Equal("user"))
-			Expect(event.fields["actor_id"]).To(Equal(testUser))
-			Expect(event.fields["user"]).To(Equal(testUser))
+			Expect(event.record().Reason).To(Equal("authorization_denied"))
+			Expect(event.record().EventType).To(Equal("authorization"))
+			Expect(event.record().EventAction).To(Equal("deny"))
+			Expect(event.record().EventOutcome).To(Equal("failure"))
+			Expect(event.record().ActorType).To(Equal("user"))
+			Expect(event.record().ActorID).To(Equal(testUser))
+			Expect(event.record().User).To(Equal(testUser))
 			assertADR034Fields(event)
 		})
 
@@ -226,7 +233,7 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 
 			events := logs.securityEvents()
 			Expect(events).To(HaveLen(1), "a denial must produce exactly one security decision event")
-			Expect(events[0].fields["event_action"]).To(Equal("deny"))
+			Expect(events[0].record().EventAction).To(Equal("deny"))
 		})
 	})
 
@@ -239,18 +246,18 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(nextCalled).To(BeFalse())
 
 			event := logs.lastSecurityEvent()
-			Expect(event.fields["reason"]).To(Equal("authentication_service_unavailable"))
-			Expect(event.fields["event_type"]).To(Equal("authentication"))
-			Expect(event.fields["event_action"]).To(Equal("authenticate"),
+			Expect(event.record().Reason).To(Equal("authentication_service_unavailable"))
+			Expect(event.record().EventType).To(Equal("authentication"))
+			Expect(event.record().EventAction).To(Equal("authenticate"),
 				"a 500 outage is not a denial decision, so it must not carry action=deny")
-			Expect(event.fields["event_action"]).NotTo(Equal("deny"))
-			Expect(event.fields["event_outcome"]).To(Equal("failure"))
-			Expect(event.fields["actor_type"]).To(Equal("external"))
-			Expect(event.fields["status_code"]).To(Equal(500))
-			Expect(event.fields["error_details"]).To(HaveField("Code", "ERR_AUTH_SERVICE_UNAVAILABLE"),
+			Expect(event.record().EventAction).NotTo(Equal("deny"))
+			Expect(event.record().EventOutcome).To(Equal("failure"))
+			Expect(event.record().ActorType).To(Equal("external"))
+			Expect(event.record().StatusCode).To(Equal(500))
+			Expect(event.record().ErrorDetails).To(HaveField("Code", "ERR_AUTH_SERVICE_UNAVAILABLE"),
 				"DD-ERROR-001: outage events carry standardized error_details")
-			Expect(event.fields["error_details"]).To(HaveField("Component", "auth-middleware"))
-			Expect(event.fields["error_details"]).To(HaveField("RetryPossible", true))
+			Expect(event.record().ErrorDetails).To(HaveField("Component", "auth-middleware"))
+			Expect(event.record().ErrorDetails).To(HaveField("RetryPossible", true))
 			assertADR034Fields(event)
 		})
 
@@ -262,14 +269,14 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(nextCalled).To(BeFalse())
 
 			event := logs.lastSecurityEvent()
-			Expect(event.fields["reason"]).To(Equal("authorization_service_unavailable"))
-			Expect(event.fields["event_type"]).To(Equal("authorization"))
-			Expect(event.fields["event_action"]).To(Equal("authorize"))
-			Expect(event.fields["event_action"]).NotTo(Equal("deny"))
-			Expect(event.fields["event_outcome"]).To(Equal("failure"))
-			Expect(event.fields["actor_type"]).To(Equal("user"))
-			Expect(event.fields["actor_id"]).To(Equal(testUser))
-			Expect(event.fields["error_details"]).To(HaveField("Code", "ERR_AUTHZ_SERVICE_UNAVAILABLE"))
+			Expect(event.record().Reason).To(Equal("authorization_service_unavailable"))
+			Expect(event.record().EventType).To(Equal("authorization"))
+			Expect(event.record().EventAction).To(Equal("authorize"))
+			Expect(event.record().EventAction).NotTo(Equal("deny"))
+			Expect(event.record().EventOutcome).To(Equal("failure"))
+			Expect(event.record().ActorType).To(Equal("user"))
+			Expect(event.record().ActorID).To(Equal(testUser))
+			Expect(event.record().ErrorDetails).To(HaveField("Code", "ERR_AUTHZ_SERVICE_UNAVAILABLE"))
 			assertADR034Fields(event)
 		})
 	})
@@ -284,15 +291,15 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			Expect(events).To(HaveLen(1))
 
 			event := events[0]
-			Expect(event.fields["reason"]).To(Equal("authorization_granted"))
-			Expect(event.fields["event_type"]).To(Equal("authorization"))
-			Expect(event.fields["event_action"]).To(Equal("grant"))
-			Expect(event.fields["event_outcome"]).To(Equal("success"))
-			Expect(event.fields["actor_type"]).To(Equal("user"))
-			Expect(event.fields["actor_id"]).To(Equal(testUser))
-			Expect(event.fields["resource"]).To(Equal("services"))
-			Expect(event.fields["resource_name"]).To(Equal("data-storage-service"))
-			Expect(event.fields["verb"]).To(Equal("create"))
+			Expect(event.record().Reason).To(Equal("authorization_granted"))
+			Expect(event.record().EventType).To(Equal("authorization"))
+			Expect(event.record().EventAction).To(Equal("grant"))
+			Expect(event.record().EventOutcome).To(Equal("success"))
+			Expect(event.record().ActorType).To(Equal("user"))
+			Expect(event.record().ActorID).To(Equal(testUser))
+			Expect(event.record().Resource).To(Equal("services"))
+			Expect(event.record().ResourceName).To(Equal("data-storage-service"))
+			Expect(event.record().Verb).To(Equal("create"))
 			assertADR034Fields(event)
 		})
 	})
@@ -306,7 +313,7 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 
 			events := logs.securityEvents()
 			Expect(events).To(HaveLen(2))
-			Expect(events[0].fields["event_id"]).NotTo(Equal(events[1].fields["event_id"]),
+			Expect(events[0].record().EventID).NotTo(Equal(events[1].record().EventID),
 				"each security decision is a distinct audit record (AU-3)")
 		})
 
@@ -380,9 +387,9 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 				doRequest(mw, tc.header)
 
 				event := logs.lastSecurityEvent()
-				Expect(event.fields["reason"]).To(Equal(tc.wantReason))
-				Expect(event.fields["event_type"]).To(Equal(tc.wantType))
-				Expect(event.fields["event_action"]).To(Equal(tc.wantAction),
+				Expect(event.record().Reason).To(Equal(tc.wantReason))
+				Expect(event.record().EventType).To(Equal(tc.wantType))
+				Expect(event.record().EventAction).To(Equal(tc.wantAction),
 					"reason %q must classify consistently", tc.wantReason)
 			}
 		})
@@ -405,13 +412,13 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 
 			events := logs.securityEvents()
 			Expect(events).To(HaveLen(1))
-			Expect(events[0].fields["correlation_id"]).To(Equal(testCorrelationID),
+			Expect(events[0].record().CorrelationID).To(Equal(testCorrelationID),
 				"auth events must be queryable by the request correlation ID (ADR-034 AU-3)")
 
 			doRequestWithCorrelation(mw, "", testCorrelationID)
 			events = logs.securityEvents()
 			Expect(events).To(HaveLen(2))
-			Expect(events[1].fields["correlation_id"]).To(Equal(testCorrelationID),
+			Expect(events[1].record().CorrelationID).To(Equal(testCorrelationID),
 				"grant and denial for the same request share one correlation_id")
 		})
 
@@ -439,7 +446,7 @@ var _ = Describe("Auth middleware security_event ADR-034 fields [Issue #2664]", 
 			events := logs.securityEvents()
 			Expect(events).To(HaveLen(1))
 			Expect(contextRequestID).NotTo(BeEmpty())
-			Expect(events[0].fields["correlation_id"]).To(Equal(contextRequestID),
+			Expect(events[0].record().CorrelationID).To(Equal(contextRequestID),
 				"FMC/KA rely on chi RequestID being registered before auth")
 		})
 	})
