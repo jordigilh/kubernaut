@@ -244,17 +244,24 @@ func InventoryProjection(h *Harness, v Variant) bool {
 
 			// BR-SECURITY-017: the raw wire body is metadata-only -- no
 			// labels, annotations, object data, spec, status or token material
-			// beyond the typed sanitized schema.
+			// beyond the typed sanitized schema. Polled for the same
+			// proof-window reason as the reads above; the leak assertions run
+			// on the final iteration's body.
 			req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet,
 				h.FMCAPIBaseURL+fmc.InventoryPath+"?cluster_id=loopback-cluster&namespace="+testNS.Name+"&kind=Service",
 				http.NoBody)
 			Expect(err).NotTo(HaveOccurred())
-			resp, err := h.FMCHTTPClient.Do(req)
-			Expect(err).NotTo(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-			body, err := io.ReadAll(resp.Body)
-			Expect(err).NotTo(HaveOccurred())
+			var body []byte
+			Eventually(func(g Gomega) {
+				resp, doErr := h.FMCHTTPClient.Do(req)
+				g.Expect(doErr).NotTo(HaveOccurred())
+				read, readErr := io.ReadAll(resp.Body)
+				closeErr := resp.Body.Close()
+				g.Expect(readErr).NotTo(HaveOccurred())
+				g.Expect(closeErr).NotTo(HaveOccurred())
+				g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+				body = read
+			}, SyncTimeout, Interval).Should(Succeed())
 			for _, leaked := range []string{"labels", "annotations", "\"data\"", "spec", "status", "token", "secret"} {
 				Expect(string(body)).NotTo(ContainSubstring(leaked),
 					"the sanitized inventory projection must not carry %q on the wire", leaked)
@@ -268,32 +275,47 @@ func InventoryProjection(h *Harness, v Variant) bool {
 			// cluster) with limit 1 so the cursor path is genuinely exercised:
 			// the first page carries exactly one item and a next_cursor, and
 			// the second page starts after it with no overlap.
-			first, err := client.ListManagedResources(h.Ctx, inventory.Filters{
-				ClusterID: "loopback-cluster",
-				Limit:     1,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(first.State).To(Equal(inventory.StateSuccess))
-			Expect(first.Items).To(HaveLen(1))
-			Expect(first.NextCursor).NotTo(BeEmpty(), "a limited read with more items must carry a cursor")
+			//
+			// The paging and exact reads are polled, not single-shot: in a
+			// full parallel CI suite the proof window legitimately turns over
+			// between reads (stale -> unavailable until the next 10 s sync
+			// commits, the UT-FMC-INV-2661-003 model) -- the same churn the
+			// list It above already tolerates. The assertions are unchanged
+			// and all execute on the final iteration's pages.
+			var first, second inventory.Page
+			Eventually(func(g Gomega) {
+				var err error
+				first, err = client.ListManagedResources(h.Ctx, inventory.Filters{
+					ClusterID: "loopback-cluster",
+					Limit:     1,
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(first.State).To(Equal(inventory.StateSuccess))
+				g.Expect(first.Items).To(HaveLen(1))
+				g.Expect(first.NextCursor).NotTo(BeEmpty(), "a limited read with more items must carry a cursor")
 
-			second, err := client.ListManagedResources(h.Ctx, inventory.Filters{
-				ClusterID: "loopback-cluster",
-				Limit:     1,
-				Cursor:    first.NextCursor,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(second.State).To(Equal(inventory.StateSuccess))
-			Expect(second.Items).To(HaveLen(1))
-			Expect(second.Items[0].ID).NotTo(Equal(first.Items[0].ID),
-				"the cursor must resume after the last served item, never repeat it")
+				second, err = client.ListManagedResources(h.Ctx, inventory.Filters{
+					ClusterID: "loopback-cluster",
+					Limit:     1,
+					Cursor:    first.NextCursor,
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(second.State).To(Equal(inventory.StateSuccess))
+				g.Expect(second.Items).To(HaveLen(1))
+				g.Expect(second.Items[0].ID).NotTo(Equal(first.Items[0].ID),
+					"the cursor must resume after the last served item, never repeat it")
+			}, SyncTimeout, Interval).Should(Succeed())
 
 			// Exact read by the canonical opaque ID: the same sanitized
 			// resource comes back.
-			exact, err := client.GetManagedResource(h.Ctx, "loopback-cluster", inventory.CanonicalResourceID(svcIdent.Identity()))
-			Expect(err).NotTo(HaveOccurred(), "one exact resource read must succeed against the proven partition")
-			Expect(exact.Identity()).To(Equal(svcIdent.Identity()))
-			Expect(exact.Scope.Included).To(BeTrue())
+			var exact inventory.Resource
+			Eventually(func(g Gomega) {
+				var err error
+				exact, err = client.GetManagedResource(h.Ctx, "loopback-cluster", inventory.CanonicalResourceID(svcIdent.Identity()))
+				g.Expect(err).NotTo(HaveOccurred(), "one exact resource read must succeed against the proven partition")
+				g.Expect(exact.Identity()).To(Equal(svcIdent.Identity()))
+				g.Expect(exact.Scope.Included).To(BeTrue())
+			}, SyncTimeout, Interval).Should(Succeed())
 		})
 
 		It("emits empty only from a proven partition -- never for an unregistered cluster (BR-SAFETY-001, R2)", func() {
