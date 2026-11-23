@@ -65,8 +65,8 @@ var _ = Describe("FMC auth security_event dedicated logger wiring [Issue #2694]"
 		servers := buildFMCServers(cfg, testFMCDeps(fakeAuthorizedK8sClient(), unreachableValkeyAddr), hostLogger)
 
 		ln, addr := listenOn()
-		go func() { _ = servers.api.ServeTLS(ln, "", "") }()
-		defer func() { _ = servers.api.Close() }()
+		serveErr := make(chan error, 1)
+		go func() { serveErr <- servers.api.ServeTLS(ln, "", "") }()
 
 		// No bearer token: rejected at the missing Authorization header,
 		// before any TokenReview/SAR round-trip, so the fake K8s client is
@@ -78,6 +78,15 @@ var _ = Describe("FMC auth security_event dedicated logger wiring [Issue #2694]"
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
+
+		// Shut the server down explicitly, then collect ServeTLS's result:
+		// the probe succeeded, so it can only report the deliberate
+		// shutdown; anything else is the probe's real failure cause.
+		Expect(servers.api.Close()).To(Succeed())
+		Expect(<-serveErr).To(SatisfyAny(
+			BeNil(),
+			MatchError(http.ErrServerClosed),
+		), "ServeTLS must serve the probe and then shut down cleanly")
 
 		var securityEvents int
 		for _, line := range strings.Split(strings.TrimSpace(hostBuf.String()), "\n") {

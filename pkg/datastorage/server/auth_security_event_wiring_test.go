@@ -66,7 +66,7 @@ var _ = Describe("DS auth security_event dedicated logger wiring [Issue #2694]",
 		}
 
 		r := chi.NewRouter()
-		srv.registerAPIV1AuthMiddleware(r)
+		writeAuthMiddleware, mutateAuthMiddleware := srv.registerAPIV1AuthMiddleware(r)
 		// A concrete route is needed: chi only runs the Use-registered auth
 		// middleware for matched routes. The handler must never be reached.
 		r.Get("/api/v1/audit/events", func(w http.ResponseWriter, _ *http.Request) {
@@ -76,6 +76,22 @@ var _ = Describe("DS auth security_event dedicated logger wiring [Issue #2694]",
 		recorder := httptest.NewRecorder()
 		r.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/audit/events", nil))
 		Expect(recorder.Code).To(Equal(http.StatusUnauthorized))
+
+		// The write ("create") and mutate ("update") middlewares are applied
+		// at route level in production, not via r.Use; exercise each
+		// instance directly so a wiring regression in any of the three SAR
+		// middlewares fails this spec, not just the base "get" one.
+		for name, mw := range map[string]*auth.Middleware{
+			"write (create)":  writeAuthMiddleware,
+			"mutate (update)": mutateAuthMiddleware,
+		} {
+			probe := httptest.NewRecorder()
+			mw.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})).ServeHTTP(probe, httptest.NewRequest(http.MethodPost, "/api/v1/audit/events", nil))
+			Expect(probe.Code).To(Equal(http.StatusUnauthorized),
+				"the %s middleware must reject an unauthenticated request", name)
+		}
 
 		var securityEvents int
 		for _, line := range strings.Split(strings.TrimSpace(hostBuf.String()), "\n") {
