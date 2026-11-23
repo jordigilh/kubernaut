@@ -64,6 +64,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -86,9 +87,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/policyread"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
+	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
-	"github.com/jordigilh/kubernaut/pkg/fleet/inventory"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
@@ -212,11 +213,11 @@ func (allowAllAuthorizer) CheckTarget(context.Context, string, []string, auth.Ta
 
 var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane -- FMC collects from live ACM Search, Console reads the projection, no fallback", Ordered, func() {
 	var (
-		env      liveEnv
-		reg      *liveRegistry
-		store    *scopecache.ValkeyStatusStore
-		writer   *fmc.ValkeyWriter
-		readable *scopecache.ValkeyCacheReader
+		env       liveEnv
+		reg       *liveRegistry
+		store     *scopecache.ValkeyStatusStore
+		writer    *fmc.ValkeyWriter
+		readable  *scopecache.ValkeyCacheReader
 		readiness *scopecache.FMCReadinessSnapshot
 
 		fmcServer *httptest.Server
@@ -230,7 +231,7 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 	BeforeAll(func() {
 		env = loadLiveEnv()
 		reg = &liveRegistry{cluster: registry.ClusterInfo{
-			ID:             env.clusterID,
+			ID:              env.clusterID,
 			RegistrationUID: "dd2661-live-registration",
 		}}
 
@@ -328,9 +329,20 @@ var _ = Describe("E2E-FMC-INV-2661-001 [AC-4, AC-6, SI-10, ASVS V5/V8]: ACM lane
 		DeferCleanup(fmcServer.Close)
 
 		By("wiring the real AF Console dispatch from fleet.fmc.endpoint (wiring rows 4a/5)")
+		// The production reader's transport is an auth token source: in a
+		// real deployment it reads AF's projected ServiceAccount token. This
+		// loopback run is not in a pod, so the default projected-volume path
+		// does not exist and every request would fail with "authentication
+		// token unavailable". A configured TokenPath (the production knob for
+		// exactly this) points at a locally minted file; the FMC listener
+		// under test applies no inbound auth of its own (that leg is owned by
+		// the CI lanes' TokenReview/SAR middleware).
+		loopbackToken := filepath.Join(GinkgoT().TempDir(), "af-token")
+		Expect(os.WriteFile(loopbackToken, []byte("dd2661-live-loopback"), 0o600)).To(Succeed())
 		afReader, err := fleet.NewInventoryReader(fleet.FleetConfig{
-			Enabled: true,
-			FMC:     fleet.FleetFMCConfig{Endpoint: fmcServer.URL},
+			Enabled:   true,
+			FMC:       fleet.FleetFMCConfig{Endpoint: fmcServer.URL},
+			TokenPath: loopbackToken,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(afReader).NotTo(BeNil(), "fleet.fmc.endpoint must select the FMC reader")
