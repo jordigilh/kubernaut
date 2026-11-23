@@ -20,10 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 )
 
 // ContextKey is the type for context keys used in the auth middleware.
@@ -41,7 +44,7 @@ const (
 
 // failureReasonKey is an unexported context key for the mutable holder
 // WithFailureReasonCapture installs. Unexported so only this package can
-// write to it (via logSecurityEvent); consumers only ever see it through
+// write to it (via emitSecurityEvent); consumers only ever see it through
 // the accessor function WithFailureReasonCapture returns.
 type failureReasonKey struct{}
 
@@ -174,20 +177,20 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request) (userInfo UserInfo, ok bool) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		m.logSecurityEvent(r, "missing_auth_header", "", http.StatusUnauthorized)
+		m.logAuthenticationFailure(r, "missing_auth_header")
 		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Missing Authorization header")
 		return UserInfo{}, false
 	}
 
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		m.logSecurityEvent(r, "invalid_auth_format", "", http.StatusUnauthorized)
+		m.logAuthenticationFailure(r, "invalid_auth_format")
 		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid Authorization header format")
 		return UserInfo{}, false
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	if token == "" {
-		m.logSecurityEvent(r, "empty_bearer_token", "", http.StatusUnauthorized)
+		m.logAuthenticationFailure(r, "empty_bearer_token")
 		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Empty Bearer token")
 		return UserInfo{}, false
 	}
@@ -195,7 +198,7 @@ func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request)
 	userInfo, err := m.authenticator.ValidateTokenFull(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, ErrTokenInvalid) {
-			m.logSecurityEvent(r, invalidTokenReason(err), "", http.StatusUnauthorized)
+			m.logAuthenticationFailure(r, invalidTokenReason(err))
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
 			return UserInfo{}, false
 		}
@@ -203,6 +206,9 @@ func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request)
 			"path", r.URL.Path,
 			"method", r.Method,
 		)
+		// Issue #2664 (AU-2/AU-3): a TokenReview outage is a security-relevant,
+		// fail-closed decision and must be auditable, not only logged as an error.
+		m.logAuthenticationOutage(r, err)
 		// Issue #673 C-2: Generic error message; details logged server-side only
 		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authentication service unavailable")
 		return UserInfo{}, false
@@ -234,13 +240,16 @@ func (m *Middleware) authorizeRequest(w http.ResponseWriter, r *http.Request, us
 			"user", user,
 			"path", r.URL.Path,
 		)
+		// Issue #2664 (AU-2/AU-3): a SAR outage is a security-relevant,
+		// fail-closed decision and must be auditable, not only logged as an error.
+		m.logAuthorizationOutage(r, user, err)
 		// Issue #673 C-2: Generic error message; details logged server-side only
 		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authorization service unavailable")
 		return false
 	}
 
 	if !allowed {
-		m.logSecurityEvent(r, "authorization_denied", user, http.StatusForbidden)
+		m.logAuthorizationDenial(r, user)
 		m.writeError(w, http.StatusForbidden, "Forbidden", "Insufficient permissions")
 		return false
 	}
@@ -249,6 +258,7 @@ func (m *Middleware) authorizeRequest(w http.ResponseWriter, r *http.Request, us
 		"user", user,
 		"path", r.URL.Path,
 	)
+	m.logSecurityGrant(r, user)
 	return true
 }
 
@@ -318,27 +328,300 @@ func invalidTokenReason(err error) string {
 	return "invalid_token"
 }
 
-// writeError writes an RFC 7807 Problem Details JSON error response.
-// logSecurityEvent emits a structured security audit log entry for FedRAMP AU-2 compliance.
-// FED-M1: Every 401/403 must produce a traceable security event.
-func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, statusCode int) {
-	if holder, ok := r.Context().Value(failureReasonKey{}).(*string); ok {
-		*holder = reason
-	}
-	m.logger.Info("security_event",
-		"event_type", "authentication",
-		"reason", reason,
-		"user", user,
-		"status_code", statusCode,
-		"method", r.Method,
-		"path", r.URL.Path,
-		"remote_addr", r.RemoteAddr,
-		"resource", m.config.Resource,
-		"resource_name", m.config.ResourceName,
-		"verb", m.config.Verb,
-	)
+// ADR-034 event_type values used by the shared auth middleware.
+const (
+	securityEventTypeAuthentication = "authentication"
+	securityEventTypeAuthorization  = "authorization"
+)
+
+// securityEvent is one ADR-034 security decision to record. It carries only
+// what differs between the decision kinds; emitSecurityEvent owns the common
+// field shape.
+type securityEvent struct {
+	reason       string
+	user         string
+	statusCode   int
+	outcome      string
+	eventType    string
+	action       string
+	errorDetails *SecurityErrorDetails
 }
 
+// logAuthenticationFailure records a request rejected before identity was
+// established (401). FedRAMP AU-2: every rejected request is traceable.
+func (m *Middleware) logAuthenticationFailure(r *http.Request, reason string) {
+	m.emitSecurityEvent(r, securityEvent{
+		reason:     reason,
+		statusCode: http.StatusUnauthorized,
+		outcome:    "failure",
+	})
+}
+
+// logAuthorizationDenial records an authenticated user denied by SAR (403).
+func (m *Middleware) logAuthorizationDenial(r *http.Request, user string) {
+	m.emitSecurityEvent(r, securityEvent{
+		reason:     "authorization_denied",
+		user:       user,
+		statusCode: http.StatusForbidden,
+		outcome:    "failure",
+	})
+}
+
+// logAuthenticationOutage records a fail-closed TokenReview dependency outage
+// (500) with DD-ERROR-001 error_details. No identity was established.
+func (m *Middleware) logAuthenticationOutage(r *http.Request, cause error) {
+	const reason = "authentication_service_unavailable"
+	details := newSecurityErrorDetails(reason, cause)
+	m.emitSecurityEvent(r, securityEvent{
+		reason:       reason,
+		statusCode:   http.StatusInternalServerError,
+		outcome:      "failure",
+		errorDetails: &details,
+	})
+}
+
+// logAuthorizationOutage records a fail-closed SAR dependency outage (500) with
+// DD-ERROR-001 error_details; the authenticated user is already known.
+func (m *Middleware) logAuthorizationOutage(r *http.Request, user string, cause error) {
+	const reason = "authorization_service_unavailable"
+	details := newSecurityErrorDetails(reason, cause)
+	m.emitSecurityEvent(r, securityEvent{
+		reason:       reason,
+		user:         user,
+		statusCode:   http.StatusInternalServerError,
+		outcome:      "failure",
+		errorDetails: &details,
+	})
+}
+
+// logSecurityGrant emits the positive authorization decision required by
+// BR-SECURITY-016 ("every authorization decision (grant or deny) is observable
+// as a structured security-event log entry", FedRAMP AU-2).
+//
+// Volume: one Info line per authorization decision (SAR check), i.e. one per
+// authorized read request and two per DS write/mutate request because those
+// routes run both the base "get" and the route-level "create"/"update"
+// middleware. That roughly doubles the per-request log line count of a service
+// that already writes an access-log line per request.
+//
+// This method applies no sampling and no level gate of its own, but it logs
+// through the host service's logger: that logger's configured level and zap
+// sampling still apply (zap's production config samples repeated message keys).
+// Guaranteeing delivery under that configuration requires a dedicated
+// unsampled security-event logger in the service wiring -- a host-logger
+// change outside this middleware, tracked in issue #2694 rather than done here.
+// What this middleware guarantees is that every decision calls the emitter.
+//
+// The event is emitted as soon as the SAR check allows the request, before the
+// downstream handler runs: status_code=200 records the authorization decision
+// (allowed), not the eventual HTTP response, which the handler may still turn
+// into a 4xx/5xx.
+func (m *Middleware) logSecurityGrant(r *http.Request, user string) {
+	m.emitSecurityEvent(r, securityEvent{
+		reason:     "authorization_granted",
+		user:       user,
+		statusCode: http.StatusOK,
+		outcome:    "success",
+		eventType:  securityEventTypeAuthorization,
+		action:     "grant",
+	})
+}
+
+// SecurityEventRecord is the typed form of the security_event log record.
+// Its fields mirror the subset of pkg/audit.AuditEvent (ADR-034, DD-AUDIT-002)
+// that this middleware emits on the log channel: event identity, action,
+// outcome, actor and resource context. Keeping one struct means field names
+// and types are refactorable and cannot drift between call sites.
+type SecurityEventRecord struct {
+	EventID       string                `json:"event_id"`
+	EventType     string                `json:"event_type"`
+	EventAction   string                `json:"event_action"`
+	EventOutcome  string                `json:"event_outcome"`
+	Reason        string                `json:"reason"`
+	CorrelationID string                `json:"correlation_id"`
+	ActorType     string                `json:"actor_type"`
+	ActorID       string                `json:"actor_id"`
+	User          string                `json:"user"`
+	StatusCode    int                   `json:"status_code"`
+	Method        string                `json:"method"`
+	Path          string                `json:"path"`
+	RemoteAddr    string                `json:"remote_addr"`
+	Resource      string                `json:"resource"`
+	ResourceName  string                `json:"resource_name"`
+	Verb          string                `json:"verb"`
+	ErrorDetails  *SecurityErrorDetails `json:"error_details,omitempty"`
+}
+
+// logFields expands the record into logr key/value pairs. This is the single
+// place the wire field names are written.
+func (r SecurityEventRecord) logFields() []interface{} {
+	fields := []interface{}{
+		"event_id", r.EventID,
+		"event_type", r.EventType,
+		"event_action", r.EventAction,
+		"event_outcome", r.EventOutcome,
+		"reason", r.Reason,
+		"correlation_id", r.CorrelationID,
+		"actor_type", r.ActorType,
+		"actor_id", r.ActorID,
+		"user", r.User,
+		"status_code", r.StatusCode,
+		"method", r.Method,
+		"path", r.Path,
+		"remote_addr", r.RemoteAddr,
+		"resource", r.Resource,
+		"resource_name", r.ResourceName,
+		"verb", r.Verb,
+	}
+	// DD-ERROR-001 / DD-AUDIT-003: error events carry standardized
+	// error_details. Denials and grants have no dependency error and omit it.
+	if r.ErrorDetails != nil {
+		fields = append(fields, "error_details", *r.ErrorDetails)
+	}
+	return fields
+}
+
+// emitSecurityEvent writes one structured security_event record. event_type and
+// event_action are derived from the reason when a caller does not set them
+// explicitly, so a fail-closed outage is never reported as a denial.
+func (m *Middleware) emitSecurityEvent(r *http.Request, evt securityEvent) {
+	if evt.outcome == "failure" {
+		if holder, ok := r.Context().Value(failureReasonKey{}).(*string); ok {
+			*holder = evt.reason
+		}
+	}
+	eventType, action := evt.eventType, evt.action
+	if eventType == "" {
+		eventType, action = securityEventClassification(evt.reason)
+	}
+	record := SecurityEventRecord{
+		EventID:       uuid.NewString(),
+		EventType:     eventType,
+		EventAction:   action,
+		EventOutcome:  evt.outcome,
+		Reason:        evt.reason,
+		CorrelationID: requestCorrelationID(r),
+		ActorType:     securityActorType(evt.user),
+		ActorID:       evt.user,
+		User:          evt.user,
+		StatusCode:    evt.statusCode,
+		Method:        r.Method,
+		Path:          r.URL.Path,
+		RemoteAddr:    r.RemoteAddr,
+		Resource:      m.config.Resource,
+		ResourceName:  m.config.ResourceName,
+		Verb:          m.config.Verb,
+		ErrorDetails:  evt.errorDetails,
+	}
+	m.logger.Info("security_event", record.logFields()...)
+}
+
+// ParseSecurityEventRecord decodes a captured security_event log payload
+// (flat logr key/value fields) into the typed record, so tests and downstream
+// consumers assert against the schema instead of string keys.
+func ParseSecurityEventRecord(fields map[string]interface{}) (SecurityEventRecord, error) {
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		return SecurityEventRecord{}, fmt.Errorf("marshal security event fields: %w", err)
+	}
+	var record SecurityEventRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		return SecurityEventRecord{}, fmt.Errorf("unmarshal security event fields: %w", err)
+	}
+	return record, nil
+}
+
+// securityActorType classifies who made the decision for ADR-034 actor_type,
+// whose enum is 'service', 'external', 'user' (ADR-034 schema). A request
+// rejected before identity resolution has no authenticated principal, so it is
+// classified as 'external' with an empty actor_id -- matching the audit-table
+// precedent for unauthenticated callers (test/e2e/gateway/23_audit_emission_test.go).
+func securityActorType(user string) string {
+	if user == "" {
+		return "external"
+	}
+	return "user"
+}
+
+// securityEventClassification derives the ADR-034 event_type and event_action
+// for a security_event reason in one place, so the two fields can never
+// disagree about the decision domain. A denial is "deny"; a fail-closed
+// dependency outage is the operation that could not be completed
+// ("authenticate"/"authorize"), never a deny decision. The complete reason
+// vocabulary is pinned by UT-AUTH-2664-011.
+func securityEventClassification(reason string) (eventType, action string) {
+	switch reason {
+	case "authorization_denied":
+		return securityEventTypeAuthorization, "deny"
+	case "authorization_service_unavailable":
+		return securityEventTypeAuthorization, "authorize"
+	case "authentication_service_unavailable",
+		"missing_auth_header",
+		"invalid_auth_format",
+		"empty_bearer_token",
+		"invalid_token",
+		"invalid_token_audience":
+		return securityEventTypeAuthentication, "authenticate"
+	default:
+		// Forward-compatible fail-safe: a newly introduced authorization reason
+		// must never be classified as an authentication attempt or a denial.
+		if strings.HasPrefix(reason, "authorization_") {
+			return securityEventTypeAuthorization, "authorize"
+		}
+		return securityEventTypeAuthentication, "authenticate"
+	}
+}
+
+// requestCorrelationID resolves the request-scoped correlation identifier.
+//
+// ADR-034's canonical correlation_id is the remediation ID, which the payload
+// handler owns and which does not exist yet when authentication runs. The auth
+// middleware therefore records the standard request correlation ID: the
+// X-Request-ID request header when the service's request-ID middleware set it
+// (Gateway's RequestIDMiddleware rewrites it to the ID it returns and logs),
+// otherwise chi's RequestID context value (see
+// docs/architecture/LOG_CORRELATION_ID_STANDARD.md). It groups every security
+// decision made for one request (e.g. DS's base "get" and route-level "create"
+// grant lines). It is empty only when the caller is not behind a correlation-ID
+// middleware and sent no header.
+func requestCorrelationID(r *http.Request) string {
+	// The request header is authoritative when a service's request-ID
+	// middleware has set it (Gateway's RequestIDMiddleware overwrites it with the
+	// canonical ID it returns and logs). chi's RequestID reads an incoming header
+	// and otherwise generates one, so the fallbacks agree when no service
+	// middleware rewrote it.
+	if id := r.Header.Get("X-Request-ID"); id != "" {
+		return id
+	}
+	return chimiddleware.GetReqID(r.Context())
+}
+
+// SecurityErrorDetails is the DD-ERROR-001 standardized error payload attached
+// to fail-closed outage events (DD-AUDIT-003: every error event carries it).
+type SecurityErrorDetails struct {
+	Message       string `json:"message"`
+	Code          string `json:"code"`
+	Component     string `json:"component"`
+	RetryPossible bool   `json:"retry_possible"`
+}
+
+// securityErrorDetails maps a TokenReview/SAR dependency failure to the
+// DD-ERROR-001 contract. Both dependencies are Kubernetes API reads, so the
+// failure is transient and retryable.
+func newSecurityErrorDetails(reason string, cause error) SecurityErrorDetails {
+	code := "ERR_AUTH_SERVICE_UNAVAILABLE"
+	if reason == "authorization_service_unavailable" {
+		code = "ERR_AUTHZ_SERVICE_UNAVAILABLE"
+	}
+	return SecurityErrorDetails{
+		Message:       cause.Error(),
+		Code:          code,
+		Component:     "auth-middleware",
+		RetryPossible: true,
+	}
+}
+
+// writeError writes an RFC 7807 Problem Details JSON error response.
 func (m *Middleware) writeError(w http.ResponseWriter, status int, title, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(status)
