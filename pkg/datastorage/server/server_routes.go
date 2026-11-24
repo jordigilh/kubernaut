@@ -26,6 +26,8 @@ import (
 	"github.com/go-chi/cors"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp" // GAP-14 / Issue #1519: inbound tracing
 
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -149,15 +151,22 @@ func (s *Server) registerGlobalMiddleware(r chi.Router) {
 func (s *Server) registerAPIV1AuthMiddleware(r chi.Router) (writeAuthMiddleware, mutateAuthMiddleware *auth.Middleware) {
 	// SEC-H2: Auth runs BEFORE OpenAPI validation so unauthenticated
 	// requests get 401, not a 400 from spec validation.
+	// Issue #2694 (BR-SECURITY-016, FedRAMP AU-2): security_event records
+	// must not be dropped by the host logger's zap sampling or suppressed by
+	// its level; derive the dedicated unsampled logger once and share it
+	// across all three SAR middlewares.
+	securityEventLogger := kubelog.NewSecurityEventLogger(s.logger, kubelog.Options{ServiceName: "datastorage"})
+
 	// DD-AUTH-011: Base middleware requires SAR verb "get" — read access to DS.
 	baseAuthMiddleware := auth.NewMiddleware(
 		s.authenticator,
 		s.authorizer,
 		auth.MiddlewareConfig{
-			Namespace:    s.authNamespace,
-			Resource:     "services",
-			ResourceName: "data-storage-service",
-			Verb:         "get",
+			Namespace:           s.authNamespace,
+			Resource:            "services",
+			ResourceName:        "data-storage-service",
+			Verb:                "get",
+			SecurityEventLogger: securityEventLogger,
 		},
 		s.logger,
 	)
@@ -177,10 +186,11 @@ func (s *Server) registerAPIV1AuthMiddleware(r chi.Router) (writeAuthMiddleware,
 		s.authenticator,
 		s.authorizer,
 		auth.MiddlewareConfig{
-			Namespace:    s.authNamespace,
-			Resource:     "services",
-			ResourceName: "data-storage-service",
-			Verb:         "create",
+			Namespace:           s.authNamespace,
+			Resource:            "services",
+			ResourceName:        "data-storage-service",
+			Verb:                "create",
+			SecurityEventLogger: securityEventLogger,
 		},
 		s.logger,
 	)
@@ -191,10 +201,11 @@ func (s *Server) registerAPIV1AuthMiddleware(r chi.Router) (writeAuthMiddleware,
 		s.authenticator,
 		s.authorizer,
 		auth.MiddlewareConfig{
-			Namespace:    s.authNamespace,
-			Resource:     "services",
-			ResourceName: "data-storage-service",
-			Verb:         "update",
+			Namespace:           s.authNamespace,
+			Resource:            "services",
+			ResourceName:        "data-storage-service",
+			Verb:                "update",
+			SecurityEventLogger: securityEventLogger,
 		},
 		s.logger,
 	)

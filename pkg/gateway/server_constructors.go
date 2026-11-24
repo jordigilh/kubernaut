@@ -28,6 +28,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp" // GAP-14 / Issue #1519: inbound/outbound tracing
 
 	"github.com/jordigilh/kubernaut/pkg/audit" // DD-AUDIT-003: Audit integration
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	// Ogen generated audit types
 	// BR-AUDIT-005 Gap #7: Standardized error details
 	"github.com/jordigilh/kubernaut/pkg/shared/auth" // BR-GATEWAY-036/037: Shared auth middleware
@@ -123,6 +124,11 @@ func newAuthMiddleware(authenticator auth.Authenticator, authorizer auth.Authori
 		Resource:     "services",
 		ResourceName: "gateway-service",
 		Verb:         "create",
+		// Issue #2694 (BR-SECURITY-016, FedRAMP AU-2): security_event
+		// records bypass the host logger's zap sampling and level gate.
+		// For non-zap hosts (wiring-test capture sinks) this returns the
+		// host logger unchanged, so those tests keep capturing events.
+		SecurityEventLogger: kubelog.NewSecurityEventLogger(logger, kubelog.Options{ServiceName: "gateway"}),
 	}, logger)
 }
 
