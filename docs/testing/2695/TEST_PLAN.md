@@ -70,6 +70,8 @@ covered separately by the FMC lane's inventory E2E.
 |---|---|---|
 | UT-INFRA-AF-FLEET-2462-004 | Unit | Rendered `fleet.endpoint` and `fleet.fmc.endpoint` both equal the FMC service URL, derived from `FleetMetadataCacheNamespace` (distinct from the app namespace) |
 | IT-INFRA-AF-FLEET-2695-002 | Integration | The ConfigMap rendered by `deployAPIFrontendService` carries `fleet.fmc.endpoint` equal to the FMC service URL |
+| UT-OPCR-FLEET-2695-001 | Unit | The Kubernaut CR rendered by `BuildKubernautCRManifest` carries `fleet.fmc.endpoint`/`fleet.fmc.namespace` from `OperatorFleetOptions` (operator CR path: fullpipeline-fleet, demo) |
+| UT-OPCR-FLEET-2695-002 | Unit | `operatorFleetOptionsFromHelm` derives `FMCEndpoint`/`FMCNamespace` from `FleetHelmOptions.FleetMetadataCacheNamespace` (no empty fallback per #2298) |
 
 Key independence (`fmc.endpoint` vs `endpoint`) is proven by `UT-AF-CFG-2661-001` and
 `UT-FLEET-CFG-029`, not by the renderer test.
@@ -79,6 +81,7 @@ Key independence (`fmc.endpoint` vs `endpoint`) is proven by `UT-AF-CFG-2661-001
 | Component | Production entry point | Wiring location | Proving tests |
 |---|---|---|---|
 | `fleet.fmc.endpoint` value | `deployAPIFrontendService` → rendered ConfigMap → AF loader → `fleet.NewInventoryReader` | `buildAPIFrontendFleetConfig` | UT-INFRA-AF-FLEET-2462-004, IT-INFRA-AF-FLEET-2695-002 |
+| `spec.fleet.fmc` CR block | `BuildKubernautCRManifest` → Kubernaut CR → external kubernaut-operator → AF config | `applyOperatorCRFeatureOverrides`, `operatorFleetOptionsFromHelm` (callers: `demo_operator.go`, `fullpipeline_e2e.go`) | UT-OPCR-FLEET-2695-001, UT-OPCR-FLEET-2695-002 |
 
 ## 7. Control mapping
 
@@ -89,10 +92,10 @@ Key independence (`fmc.endpoint` vs `endpoint`) is proven by `UT-AF-CFG-2661-001
 
 ## 8. Follow-up (not in this change)
 
-- In-repo operator CR path: add the FMC endpoint/namespace to `OperatorFleetOptions`,
-  `operatorFleetSpec`, `applyOperatorCRFeatureOverrides`, and `operatorFleetOptionsFromHelm`.
-- External `kubernaut-operator`: expose the CRD/chart key that renders AF `fleet.fmc.endpoint`,
-  and verify operator-managed AF's RBAC still covers `get services/fleetmetadatacache-service`.
+- External `kubernaut-operator`: consume the new `spec.fleet.fmc` CR block (endpoint,
+  namespace) and render it into AF's `fleet.fmc.endpoint`; verify operator-managed AF's RBAC
+  still covers `get services/fleetmetadatacache-service`. Until this lands, the CR key is
+  carried but inert.
 
 ## 9. Rollback
 

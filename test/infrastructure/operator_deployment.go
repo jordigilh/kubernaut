@@ -344,6 +344,12 @@ type OperatorFleetOptions struct {
 	WriteCredentialsSecret string
 	TokenURL               string
 	Scopes                 []string
+	// FMCEndpoint is the FMC service URL the external operator renders
+	// into APIFrontend's fleet.fmc.endpoint (#2695); an empty value leaves
+	// AF's Console inventory reader nil.
+	FMCEndpoint string
+	// FMCNamespace is the namespace the FMC endpoint resolves in.
+	FMCNamespace string
 }
 
 // OperatorCROptions is the application configuration rendered into the
@@ -639,6 +645,15 @@ type operatorFleetSpec struct {
 	Enabled    bool                     `yaml:"enabled"`
 	MCPGateway operatorFleetGatewaySpec `yaml:"mcpGateway"`
 	OAuth2     operatorFleetOAuth2Spec  `yaml:"oauth2"`
+	// FMC carries the Console inventory endpoint (#2695, DD-FLEET-017
+	// D2.1a). Consumed by the external kubernaut-operator, which renders it
+	// into APIFrontend's fleet.fmc.endpoint.
+	FMC operatorFleetFMCSpec `yaml:"fmc,omitempty"`
+}
+
+type operatorFleetFMCSpec struct {
+	Endpoint  string `yaml:"endpoint,omitempty"`
+	Namespace string `yaml:"namespace,omitempty"`
 }
 
 type operatorFleetGatewaySpec struct {
@@ -867,7 +882,7 @@ func applyOperatorCRFeatureOverrides(spec *operatorCRSpec, options OperatorCROpt
 		return err
 	}
 	if options.Fleet != nil && options.Fleet.Enabled {
-		spec.Fleet = &operatorFleetSpec{Enabled: true, MCPGateway: operatorFleetGatewaySpec{Endpoint: options.Fleet.GatewayEndpoint, Type: options.Fleet.GatewayType, Namespace: options.Fleet.GatewayNamespace}, OAuth2: operatorFleetOAuth2Spec{TokenURL: options.Fleet.TokenURL, CredentialsSecretRef: options.Fleet.ReadCredentialsSecret, Scopes: options.Fleet.Scopes}}
+		spec.Fleet = &operatorFleetSpec{Enabled: true, MCPGateway: operatorFleetGatewaySpec{Endpoint: options.Fleet.GatewayEndpoint, Type: options.Fleet.GatewayType, Namespace: options.Fleet.GatewayNamespace}, OAuth2: operatorFleetOAuth2Spec{TokenURL: options.Fleet.TokenURL, CredentialsSecretRef: options.Fleet.ReadCredentialsSecret, Scopes: options.Fleet.Scopes}, FMC: operatorFleetFMCSpec{Endpoint: options.Fleet.FMCEndpoint, Namespace: options.Fleet.FMCNamespace}}
 		spec.WorkflowExecution = &operatorWorkflowExecutionSpec{Fleet: &operatorWorkflowFleetSpec{OAuth2CredentialsSecretRef: options.Fleet.WriteCredentialsSecret}}
 	}
 	return nil
@@ -2998,5 +3013,16 @@ func operatorFleetOptionsFromHelm(options *FleetHelmOptions) *OperatorFleetOptio
 		WriteCredentialsSecret: options.WEOAuth2CredentialsSecret,
 		TokenURL:               options.OAuth2TokenURL,
 		Scopes:                 options.OAuth2Scopes,
+		// #2695: FleetMetadataCacheNamespace has no safe empty fallback
+		// (#2298), so chart callers always set it; derive the FMC service
+		// URL from it so the CR carries the Console inventory endpoint.
+		FMCEndpoint:  fmcServiceURL(options.FleetMetadataCacheNamespace),
+		FMCNamespace: options.FleetMetadataCacheNamespace,
 	}
+}
+
+// fmcServiceURL returns the in-cluster FMC service URL for the given
+// namespace, shared by the hub-only renderer and the operator CR path.
+func fmcServiceURL(fmcNamespace string) string {
+	return fmt.Sprintf("https://fleetmetadatacache-service.%s.svc.cluster.local:8080", fmcNamespace)
 }
