@@ -466,7 +466,7 @@ var _ = Describe("operator-backed demo CR wiring", func() {
 	})
 
 	It("UT-2492-DEMO-002 [BR-PLATFORM-014]: fleet mode keeps read and WorkflowExecution write credentials distinct", func() {
-		fleet := &FleetHelmOptions{
+		fleet := &FleetDeployOptions{
 			MCPGatewayEndpoint:        "https://mcp-gateway.example.invalid/mcp",
 			MCPGatewayType:            "eaigw",
 			MCPGatewayNamespace:       "mcp-system",
@@ -484,7 +484,7 @@ var _ = Describe("operator-backed demo CR wiring", func() {
 	})
 
 	It("UT-INFRA-2602-DATASTORAGE-005 [BR-PLATFORM-014]: fleet demo CR references the cert-manager signing Secret", func() {
-		fleet := &FleetHelmOptions{
+		fleet := &FleetDeployOptions{
 			MCPGatewayEndpoint:        "https://mcp-gateway.example.invalid/mcp",
 			MCPGatewayType:            "eaigw",
 			OAuth2TokenURL:            "https://keycloak.idp.svc/token",

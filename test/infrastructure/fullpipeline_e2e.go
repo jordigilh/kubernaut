@@ -438,7 +438,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	return builtImages, seededUUIDs, afRemediateNS, nil
 }
 
-func provisionFullPipelineFleet(ctx context.Context, kubeconfigPath, namespace string, provisioner FleetProvisioner, writer io.Writer) (*FleetHelmOptions, error) {
+func provisionFullPipelineFleet(ctx context.Context, kubeconfigPath, namespace string, provisioner FleetProvisioner, writer io.Writer) (*FleetDeployOptions, error) {
 	if provisioner == nil {
 		return nil, nil
 	}
@@ -542,7 +542,7 @@ func seedFullPipelineWorkflowCatalog(ctx context.Context, namespace, kubeconfigP
 	return seededUUIDs, nil
 }
 
-func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig OperatorDeploymentConfig, fleetOpts *FleetHelmOptions, fleetProvisioner FleetProvisioner, kubeconfigPath, namespace string, writer io.Writer) error {
+func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig OperatorDeploymentConfig, fleetOpts *FleetDeployOptions, fleetProvisioner FleetProvisioner, kubeconfigPath, namespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 6: applying Kubernaut CR through the operator...")
 	phase6Start := time.Now()
 
@@ -553,7 +553,7 @@ func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig Operator
 	phase6Results := make(chan deployResult, 2)
 	go func() {
 		if fleetOpts != nil {
-			operatorConfig.CR.Fleet = operatorFleetOptionsFromHelm(fleetOpts)
+			operatorConfig.CR.Fleet = operatorFleetOptionsFromDeploy(fleetOpts)
 			operatorConfig.CR.IssuerURL = "https://keycloak:8443/realms/kubernaut-demo"
 			operatorConfig.CR.JWKSURL = "https://keycloak." + namespace + ".svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs"
 			// Fleet uses Keycloak, not the Dex test persona mapping.
