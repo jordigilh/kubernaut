@@ -1,17 +1,11 @@
-// Command bind-fleet-af-rbac creates the per-tool
-// kubernaut-tool-<persona> ClusterRoles and their ClusterRoleBindings and
-// binds them to the OIDC groups issued by the fleet-core Keycloak realm's
-// "kubernaut-console" client (test/infrastructure/keycloak-realm-demo.json's
-// "sre" group/user).
+// Command bind-fleet-af-rbac provisions demo RBAC on a fleet-core cluster:
+// the persona tool ClusterRoles and their group ClusterRoleBindings
+// (infrastructure.BindAFPersonaRBAC), and the external bindings for the
+// operator-rendered console roles (infrastructure.BindDemoConsoleRBAC,
+// bound to the Keycloak realm's "sre" group/user,
+// test/infrastructure/keycloak-realm-demo.json). The operator renders roles
+// only, so both halves are applied here after operator reconciliation.
 //
-// #2702 (kubernaut-operator#682): the operator no longer renders persona
-// ClusterRoles or user-facing ClusterRoleBindings, so this command -- via
-// infrastructure.BindAFPersonaRBAC / PersonaToolClusterRolesYAML -- owns the
-// full persona tool RBAC provisioning path. The coarse-grained
-// kubernaut-console-access ClusterRole is NOT handled here: the AF-only E2E
-// lane binds it via the harness-owned e2e-user-rbac.yaml fixture, and
-// operator-managed-lane console-access provisioning is tracked separately
-// (issue #2703 territory).
 // Run this once, AFTER the operator bootstrap and Kubernaut CR, against the fleet-core cluster set up
 // by `make setup-e2e-fleet-infra`:
 //
@@ -39,8 +33,12 @@ func main() {
 	if flag.Lookup("kubeconfig") == nil {
 		flag.String("kubeconfig", "", "path to the fleet-core cluster's kubeconfig (required)")
 	}
+	if flag.Lookup("namespace") == nil {
+		flag.String("namespace", "kubernaut-system", "namespace of the Kubernaut CR whose operator-rendered console roles should be bound")
+	}
 	flag.Parse()
 	kubeconfigPath := flag.Lookup("kubeconfig").Value.String()
+	namespace := flag.Lookup("namespace").Value.String()
 
 	if kubeconfigPath == "" {
 		fmt.Fprintln(os.Stderr, "❌ -kubeconfig is required (e.g. ~/.kube/fleet-e2e-config)")
@@ -52,5 +50,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\n❌ bind-fleet-af-rbac failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("\n✅ AF persona tool RBAC (ClusterRoles + bindings) bound to the Keycloak \"sre\" group.")
+	if err := infrastructure.BindDemoConsoleRBAC(ctx, kubeconfigPath, namespace, "sre", os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "\n❌ bind-fleet-af-rbac failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("\n✅ Demo persona tool roles (per-persona groups) and console-access/console-reader/console-inventory-reader (sre group) bound.")
 }

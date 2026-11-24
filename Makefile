@@ -1022,7 +1022,7 @@ setup-local-demo-infra: ## Create a local Kind cluster + install Kubernaut. Requ
 		$(if $(CLUSTER_NAME),-cluster-name "$(CLUSTER_NAME)")
 
 .PHONY: bind-fleet-af-rbac
-bind-fleet-af-rbac: ## Bind AF's kubernaut-tool-<persona>/console-access ClusterRoles to Keycloak's "sre" group (legacy/manual helper; demo CR wiring is preferred)
+bind-fleet-af-rbac: ## Bind demo persona tool roles (per-persona groups) + operator-rendered console roles (sre group) after operator reconciliation
 	@if [ -z "$(KUBECONFIG)" ]; then \
 		echo "❌ KUBECONFIG is required, e.g.: make bind-fleet-af-rbac KUBECONFIG=~/.kube/kubernaut-hub-config"; \
 		exit 1; \
