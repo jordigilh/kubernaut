@@ -159,6 +159,7 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 		Expect(err).NotTo(HaveOccurred())
 
 		var crbs []rbacv1.ClusterRoleBinding
+		rolesByPersona := map[string]bool{}
 		for _, doc := range strings.Split(string(data), "---") {
 			doc = strings.TrimSpace(doc)
 			if doc == "" {
@@ -182,6 +183,7 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 
 			persona := strings.TrimPrefix(cr.Name, "demo-tool-")
 			Expect(persona).NotTo(Equal(cr.Name), "persona role names must use the demo-tool-<persona> convention")
+			rolesByPersona[persona] = true
 			expected, ok := personaTools[persona]
 			Expect(ok).To(BeTrue(), "demo manifest persona %q must exist in the shared persona contract", persona)
 			if alertCapablePersonas[persona] {
@@ -191,9 +193,13 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 				"demo-tool-%s drifted from the shared persona contract (plus the both-names alert rule)", persona)
 		}
 
+		Expect(rolesByPersona).To(HaveLen(len(personaTools)),
+			"every persona in the shared contract must have a demo-tool-<persona> ClusterRole document")
 		Expect(crbs).To(HaveLen(len(personaTools)))
 		for _, crb := range crbs {
 			persona := strings.TrimSuffix(strings.TrimPrefix(crb.Name, "demo-tool-"), "-binding")
+			Expect(rolesByPersona).To(HaveKey(persona),
+				"binding demo-tool-%s-binding must reference an existing demo-tool-%s ClusterRole in the same manifest", persona, persona)
 			Expect(crb.RoleRef.Name).To(Equal("demo-tool-" + persona))
 			Expect(crb.RoleRef.Kind).To(Equal("ClusterRole")) // BR-PLATFORM-014: demo-owned persona role
 			Expect(crb.Subjects).To(HaveLen(1))
