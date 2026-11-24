@@ -32,7 +32,10 @@ import (
 
 var _ = Describe("operator Fleet TLS material", func() {
 	It("UT-INFRA-FLEET-TLS-005: signs the HTTPS gateway leaf from the operator CA and covers both gateway service identities", func() {
-		now := time.Date(2026, time.October, 21, 12, 0, 0, 0, time.UTC)
+		// Generated on demand with the real clock: a hardcoded "now" froze the
+		// 30-day validity window and broke verification once wall time passed
+		// the leaf's NotAfter (observed 2026-11-20).
+		now := time.Now()
 		caPEM, caKeyPEM, err := generateQualificationCA(now)
 		Expect(err).NotTo(HaveOccurred())
 		leafPEM, _, err := signQualificationLeaf(caPEM, caKeyPEM, now)
@@ -64,7 +67,7 @@ var _ = Describe("operator Fleet TLS material", func() {
 	})
 
 	It("UT-INFRA-FLEET-TLS-006: keeps the operator CA private key separate from the serving certificate", func() {
-		now := time.Date(2026, time.October, 21, 12, 0, 0, 0, time.UTC)
+		now := time.Now()
 		caPEM, caKeyPEM, err := generateQualificationCA(now)
 		Expect(err).NotTo(HaveOccurred())
 		leafPEM, leafKeyPEM, err := signQualificationLeaf(caPEM, caKeyPEM, now)
