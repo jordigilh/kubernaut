@@ -24,7 +24,48 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
 )
+
+// parseClusterRoleBindings decodes every ClusterRoleBinding document from a
+// multi-document YAML manifest, keyed by binding name. Structural (not
+// substring) so a swapped roleRef/subject pair cannot pass unnoticed.
+func parseClusterRoleBindings(data string) (map[string]rbacv1.ClusterRoleBinding, error) {
+	bindings := make(map[string]rbacv1.ClusterRoleBinding)
+	for _, doc := range strings.Split(data, "---") {
+		doc = strings.TrimSpace(doc)
+		if doc == "" || !strings.Contains(doc, "kind: ClusterRoleBinding") {
+			continue
+		}
+		var crb rbacv1.ClusterRoleBinding
+		if err := yaml.NewYAMLOrJSONDecoder(strings.NewReader(doc), 4096).Decode(&crb); err != nil {
+			return nil, err
+		}
+		if crb.Name != "" {
+			bindings[crb.Name] = crb
+		}
+	}
+	return bindings, nil
+}
+
+// assertPersonaBindingPinned verifies, structurally, that the
+// kubernaut-tool-<persona>-binding ClusterRoleBinding maps exactly the
+// persona's own OIDC group to exactly the persona's own ClusterRole -- a
+// swapped group-to-role binding must fail (CodeRabbit #2709 review finding).
+func assertPersonaBindingPinned(bindings map[string]rbacv1.ClusterRoleBinding, persona string) {
+	crb, ok := bindings["kubernaut-tool-"+persona+"-binding"]
+	ExpectWithOffset(1, ok).To(BeTrue(),
+		"manifest must render ClusterRoleBinding kubernaut-tool-%s-binding", persona)
+	ExpectWithOffset(1, crb.RoleRef.Kind).To(Equal("ClusterRole"))
+	ExpectWithOffset(1, crb.RoleRef.Name).To(Equal("kubernaut-tool-"+persona),
+		"kubernaut-tool-%s-binding must reference its own persona ClusterRole, not another persona's", persona)
+	ExpectWithOffset(1, crb.Subjects).To(HaveLen(1),
+		"kubernaut-tool-%s-binding must bind exactly one group subject", persona)
+	ExpectWithOffset(1, crb.Subjects[0].Kind).To(Equal("Group"))
+	ExpectWithOffset(1, crb.Subjects[0].Name).To(Equal(persona),
+		"kubernaut-tool-%s-binding must be bound to group %q, not another persona's group", persona, persona)
+}
 
 var _ = Describe("Fleet demo host-port isolation", func() {
 	It("UT-2492-FLEET-PORT-001 [BR-PLATFORM-014]: offsets the host gateway probe without changing its NodePort", func() {
@@ -197,19 +238,27 @@ var _ = Describe("AF persona RBAC wiring", func() {
 			rules, err := parseClusterRoleRulesFromYAML([]byte(fullManifest), "kubernaut-tool-"+persona)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rules).NotTo(BeEmpty(), "harness manifest must render ClusterRole kubernaut-tool-%s", persona)
-
-			Expect(fullManifest).To(ContainSubstring("name: kubernaut-tool-" + persona + "-binding"),
-				"harness manifest must render the ClusterRoleBinding for %s", persona)
-			Expect(fullManifest).To(ContainSubstring("kind: ClusterRoleBinding"))
 		}
+
+		// Structural binding pins: each kubernaut-tool-<persona>-binding must
+		// map the persona's own group to the persona's own ClusterRole. A
+		// swapped group-to-role binding (e.g. sre's binding granting the cicd
+		// group) must fail here -- substring assertions cannot catch that
+		// (CodeRabbit #2709 review finding).
+		fullBindings, err := parseClusterRoleBindings(fullManifest)
+		Expect(err).NotTo(HaveOccurred(), "harness manifest must be parseable")
+		Expect(fullBindings).To(HaveLen(6), "harness manifest must render exactly 6 persona ClusterRoleBindings")
 
 		// The bindings-only manifest (used by the fullpipeline phase-6b wave)
 		// must stay consistent with the full harness manifest's subjects.
 		bindingsManifest := BuildAFPersonaToolClusterRoleBindingsManifest()
+		waveBindings, err := parseClusterRoleBindings(bindingsManifest)
+		Expect(err).NotTo(HaveOccurred(), "bindings-only manifest must be parseable")
+		Expect(waveBindings).To(HaveLen(6), "bindings-only manifest must render exactly 6 persona ClusterRoleBindings")
+
 		for _, persona := range []string{"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver"} {
-			Expect(bindingsManifest).To(ContainSubstring("name: kubernaut-tool-" + persona + "-binding"))
-			Expect(bindingsManifest).To(ContainSubstring("name: kubernaut-tool-" + persona))
-			Expect(bindingsManifest).To(ContainSubstring("name: " + persona))
+			assertPersonaBindingPinned(fullBindings, persona)
+			assertPersonaBindingPinned(waveBindings, persona)
 		}
 	})
 
