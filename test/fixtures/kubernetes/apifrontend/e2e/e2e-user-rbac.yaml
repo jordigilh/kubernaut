@@ -19,16 +19,18 @@
 # test asserted a *negative* (denied) case for those (persona, tool) pairs
 # through AF's real /mcp endpoint using a genuine Dex-issued token.
 #
-# The block was removed rather than reconciled with values.yaml because it
-# had already drifted from it and duplicated authority
-# PersonaToolClusterRolesYAML already derives correctly from values.yaml
-# (afDeployE2ERBAC applies both). Removal impact was verified by grepping
-# every kubernaut_* raw MCP tool call in test/e2e/apifrontend for the
-# persona token used; the only dependency found was sre's
+# The block was removed rather than reconciled with the persona lists
+# because it had already drifted from them and duplicated authority
+# PersonaToolClusterRolesYAML already derives correctly from
+# LoadPersonaTools (the persona tool contract pinned by UT-INFRA-RBAC-002
+# since #2702; afDeployE2ERBAC applies both). Removal impact was verified
+# by grepping every kubernaut_* raw MCP tool call in test/e2e/apifrontend
+# for the persona token used; the only dependency found was sre's
 # alert_prioritization_e2e_test.go calls to "kubernaut_list_alerts" --
-# now authorized directly by the sre persona ClusterRole since #2713
-# unified the alert tool name across the A2A and raw MCP surfaces, so no
-# compat grant is needed.
+# now authorized directly by the sre persona ClusterRole because #2713
+# unified the alert tool name across the A2A and raw MCP surfaces and
+# LoadPersonaTools carries the canonical kubernaut_list_alerts name, so
+# no compat grant is needed.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
