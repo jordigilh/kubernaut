@@ -917,17 +917,19 @@ var personaOrder = []string{
 
 // PersonaToolClusterRolesYAML generates the 6 per-persona ClusterRoles (with
 // kubernaut.ai/tools verb=use resourceNames) and 6 ClusterRoleBindings
-// (mapping DEX OIDC groups to the ClusterRoles).
+// (mapping OIDC groups to the ClusterRoles).
 //
-// Tool lists are kept in one test-infrastructure source of truth rather than
-// read from the retired application Helm chart. This prevents the AF-only E2E
-// lane from depending on a deployment artifact that is no longer shipped.
+// #2702 (kubernaut-operator#682): the operator no longer renders persona
+// ClusterRoles or user-facing ClusterRoleBindings, so this generator is the
+// single source of persona tool RBAC for every E2E lane -- the AF-only
+// deployment (afDeployE2ERBAC), the operator-managed fullpipeline paths
+// (BindAFPersonaRBAC), and the operator demo.
 //
-// Used by AF-only E2E deployments (see afDeployE2ERBAC). Full-pipeline E2E
-// uses the operator-managed persona ClusterRoles and only adds the
-// deployment-specific ClusterRoleBindings (see bindAFPersonaToolClusterRoles,
-// fullpipeline_e2e_helm.go), so it does not depend on the retired application
-// chart.
+// Tool lists are kept in one test-infrastructure source of truth
+// (LoadPersonaTools) rather than read from any deployment artifact: they
+// duplicate the operator's former persona lists and are pinned as test
+// contracts by UT-INFRA-RBAC-002 and UT-2492-RBAC-001, so any drift fails CI
+// instead of silently breaking the persona ACL matrix (TC-E2E-ACL-001).
 func PersonaToolClusterRolesYAML() (string, error) {
 	personaTools, err := LoadPersonaTools()
 	if err != nil {
@@ -976,8 +978,11 @@ subjects:
 	return b.String(), nil
 }
 
-// LoadPersonaTools returns the AF persona tool contract used by the operator
-// qualification harness and the persona ACL-matrix test. The map is copied so
+// LoadPersonaTools returns the AF persona tool contract used by the E2E
+// harness and the persona ACL-matrix test. #2702: these lists duplicate the
+// operator's former persona lists (kubernaut-operator#682 removed the
+// operator-side rendering) and are pinned as test contracts by
+// UT-INFRA-RBAC-002 and UT-2492-RBAC-001. The map is copied so
 // callers cannot mutate the shared contract between parallel Ginkgo specs.
 func LoadPersonaTools() (map[string][]string, error) {
 	tools := map[string][]string{
