@@ -204,38 +204,41 @@ stringData:
 	return nil
 }
 
-// FleetHelmOptions carries the pre-provisioned fleet infrastructure
+// FleetDeployOptions carries the pre-provisioned fleet infrastructure
 // (MCP Gateway + OAuth2 IdP) endpoints and credentials needed to render
-// global.fleet.* correctly on the FIRST `operator reconciliation`, instead of patching
-// it in afterward via kubectl once the operator-managed pods are already
-// running (DD-TEST-015, "deploy correctly the first time" -- see
-// SetupFleetE2EInfrastructure). Nil (the FP suite's default, via
+// fleet configuration correctly on the FIRST `operator reconciliation`,
+// instead of patching it in afterward via kubectl once the operator-managed
+// pods are already running (DD-TEST-015, "deploy correctly the first time"
+// -- see SetupFleetE2EInfrastructure). Nil (the FP suite's default, via
 // SetupFullPipelineInfrastructure's fleetProvisioner=nil) leaves fleet
-// disabled, matching the chart's own global.fleet.enabled=false default.
+// disabled.
+//
+// The "Helm" heritage in some field docs refers to the retired application
+// chart's global.fleet.* values, which these fields mirrored. No consumer
+// passes this struct to Helm today: the fullpipeline/demo lanes convert it
+// to operator CR fields (operatorFleetOptionsFromDeploy) and the hub-only
+// lanes render raw manifests from it (buildAPIFrontendFleetConfig).
 //
 // Every referenced Secret (OAuth2CredentialsSecret/WEOAuth2CredentialsSecret)
 // MUST already exist in the target namespace before operator-backed deployment
 // runs, and the MCP Gateway (MCPGatewayEndpoint) MUST already be reachable
 // and AuthPolicy-converged -- see FleetProvisioner's doc comment for why.
-type FleetHelmOptions struct {
-	// MCPGatewayEndpoint is the shared Kuadrant/EAIGW MCP Gateway URL
-	// (global.fleet.mcpGatewayEndpoint), e.g.
-	// "https://mcp-gateway-istio.gateway-system.svc:8080/mcp".
+type FleetDeployOptions struct {
+	// MCPGatewayEndpoint is the shared Kuadrant/EAIGW MCP Gateway URL,
+	// e.g. "https://mcp-gateway-istio.gateway-system.svc:8080/mcp".
 	MCPGatewayEndpoint string
-	// MCPGatewayType is "kuadrant" or "eaigw" (global.fleet.mcpGatewayType).
+	// MCPGatewayType is "kuadrant" or "eaigw".
 	MCPGatewayType string
 	// MCPGatewayNamespace is the namespace where the MCP Gateway manages its
-	// registration/backend resources (global.fleet.mcpGatewayNamespace).
+	// registration/backend resources.
 	MCPGatewayNamespace string
-	// OAuth2TokenURL is the IdP's client_credentials token endpoint
-	// (global.fleet.oauth2.tokenURL).
+	// OAuth2TokenURL is the IdP's client_credentials token endpoint.
 	OAuth2TokenURL string
 	// OAuth2CredentialsSecret is the pre-created K8s Secret name (keys:
 	// client-id, client-secret) shared by every fleet-aware service except
-	// WorkflowExecution (global.fleet.oauth2.credentialsSecretRef).
+	// WorkflowExecution.
 	OAuth2CredentialsSecret string
-	// OAuth2Scopes is the OAuth2 scope list requested from the IdP
-	// (global.fleet.oauth2.scopes).
+	// OAuth2Scopes is the OAuth2 scope list requested from the IdP.
 	OAuth2Scopes []string
 	// WEOAuth2CredentialsSecret is WorkflowExecution's OWN required
 	// credentialsSecretRef (workflowexecution.fleet.oauth2.credentialsSecretRef)
@@ -248,13 +251,11 @@ type FleetHelmOptions struct {
 	// (signalprocessing.fleet.namespace) -- empty watches cluster-wide.
 	SignalProcessingNamespace string
 	// FleetMetadataCacheNamespace is the namespace where the MCP Gateway
-	// manages its MCPServerRegistration/Backend CRs
-	// (fleetmetadatacache.namespace) for operator-managed FMC. Issue #2298:
-	// unlike SignalProcessingNamespace above, this has no safe empty-string
-	// fallback -- pkg/fleet/fmc/config.Validate() refuses to start FMC
-	// without it, so chart callers MUST set it. Hub-only AF E2E reuses this
-	// field for the namespace of its raw-manifest FMC Service, because that
-	// path does not pass FleetHelmOptions to Helm.
+	// manages its MCPServerRegistration/Backend CRs for operator-managed FMC.
+	// Issue #2298: unlike SignalProcessingNamespace above, this has no safe
+	// empty-string fallback -- pkg/fleet/fmc/config.Validate() refuses to
+	// start FMC without it, so callers MUST set it. Hub-only AF E2E reuses
+	// this field for the namespace of its raw-manifest FMC Service.
 	FleetMetadataCacheNamespace string
 
 	ImageTag string
@@ -273,15 +274,15 @@ type FleetHelmOptions struct {
 // Gateway that doesn't exist yet, the exact race the old patch-after-deploy
 // design (kubectl-patching fleet config into already-running pods once
 // infra was ready) worked around instead of resolving. Returns the
-// global.fleet.* values operator-backed deployment should render with.
+// deployment should render with.
 //
-// Kept as a callback (not a pre-computed *FleetHelmOptions) specifically
+// Kept as a callback (not a pre-computed *FleetDeployOptions) specifically
 // because fleet infrastructure deployment needs a live Kind cluster + the
 // target namespace, both of which only exist partway through
 // SetupFullPipelineInfrastructure's own PHASE 1/2/5 -- this lets Fleet's
 // provisioning share that single cluster-creation path with FP instead of
 // duplicating it.
-type FleetProvisioner func(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*FleetHelmOptions, error)
+type FleetProvisioner func(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*FleetDeployOptions, error)
 
 // provisionInterServiceCA self-signs a fresh ECDSA P-256 CA and creates both
 // the authwebhook-tls Secret (tls.crt/tls.key/ca.crt/ca.key) AND the

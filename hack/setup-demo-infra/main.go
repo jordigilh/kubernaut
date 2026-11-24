@@ -189,8 +189,8 @@ func parseDemoFlags() demoCLIConfig {
 }
 
 // setupDemoInfrastructure provisions the selected local or fleet prerequisite topology.
-func setupDemoInfrastructure(ctx context.Context, config demoCLIConfig) (*infrastructure.FleetHelmOptions, string, *infrastructure.OperatorExposurePlan, error) {
-	var fleetOpts *infrastructure.FleetHelmOptions
+func setupDemoInfrastructure(ctx context.Context, config demoCLIConfig) (*infrastructure.FleetDeployOptions, string, *infrastructure.OperatorExposurePlan, error) {
+	var fleetOpts *infrastructure.FleetDeployOptions
 	var remoteKubeconfigPath string
 	var operatorExposure *infrastructure.OperatorExposurePlan
 	var err error

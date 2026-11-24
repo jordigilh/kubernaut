@@ -120,13 +120,13 @@ var _ = Describe("buildAlertManagerManifest", func() {
 var _ = Describe("Fleet-only identity and webhook setup", func() {
 	It("UT-INFRA-FLEET-OIDC-001: skips Dex when Fleet infrastructure is provisioned", func() {
 		Expect(shouldDeployDexForAF(nil)).To(BeTrue())
-		Expect(shouldDeployDexForAF(func(context.Context, string, string, io.Writer) (*FleetHelmOptions, error) {
+		Expect(shouldDeployDexForAF(func(context.Context, string, string, io.Writer) (*FleetDeployOptions, error) {
 			return nil, nil
 		})).To(BeFalse())
 	})
 
 	It("UT-INFRA-FLEET-OIDC-002: excludes Dex from Fleet readiness checks", func() {
-		fleetDeployments := fullPipelineReadinessDeployments(func(context.Context, string, string, io.Writer) (*FleetHelmOptions, error) {
+		fleetDeployments := fullPipelineReadinessDeployments(func(context.Context, string, string, io.Writer) (*FleetDeployOptions, error) {
 			return nil, nil
 		})
 		Expect(fleetDeployments).ToNot(ContainElement("dex"))
