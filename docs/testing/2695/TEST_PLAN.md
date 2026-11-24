@@ -89,10 +89,15 @@ Key independence (`fmc.endpoint` vs `endpoint`) is proven by `UT-AF-CFG-2661-001
 
 ## 8. Follow-up (not in this change)
 
-- In-repo operator CR path: add the FMC endpoint/namespace to `OperatorFleetOptions`,
-  `operatorFleetSpec`, `applyOperatorCRFeatureOverrides`, and `operatorFleetOptionsFromHelm`.
-- External `kubernaut-operator`: expose the CRD/chart key that renders AF `fleet.fmc.endpoint`,
-  and verify operator-managed AF's RBAC still covers `get services/fleetmetadatacache-service`.
+- External `kubernaut-operator`: the AF fleet ConfigMap mirror type
+  (`internal/resources/configmaps.go:fleetConfigYAML`) has no `fmc` field, so operator-managed
+  AF cannot carry `fleet.fmc.endpoint`. The fix is operator-side only — the CR contract is
+  derived-only (operator issue #521): bump kubernaut past #2696 (phase c), add the `FMC` mirror
+  field, and render it in `resolveAPIFrontendFleetConfig` from the already-derived
+  `FleetMetadataCacheURL(knV2.Namespace)`. No CRD key is needed or wanted: a `spec.fleet.fmc`
+  block would be pruned by the CRD's structural schema and contradicts the derived-only
+  contract. Also verify operator-managed AF's RBAC covers
+  `get services/fleetmetadatacache-service`.
 
 ## 9. Rollback
 
