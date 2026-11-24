@@ -124,25 +124,52 @@ path. When upgrading an installation that uses another realm, migrate the Keyclo
 issuer configuration, and active sessions before changing `issuerURL`; do not switch realms
 while existing tokens are expected to remain valid.
 
-## 4. RBAC: gate real tool calls, not just login
+## 4. RBAC: roles-only model — compose and bind externally
 
 Logging in successfully is not the same as being authorized to call MCP tools
-(`kubernaut_investigate`, `kubernaut_approve`, etc.) — those go through a real Kubernetes
-`SubjectAccessReview`. Two things commonly need explicit setup on a fresh OIDC realm with
-no prior human-user model:
+(`kubernaut_investigate`, `kubernaut_approve`, ...) or read console
+projections — every one of those goes through a real Kubernetes
+`SubjectAccessReview` as the logged-in user, and the checks are
+**deny-by-default**: a capability exists only where a ClusterRole bound to one
+of the user's groups enumerates it (FedRAMP AC-6 least privilege).
 
-- A claim (typically `groups`) mapping the logged-in user to a role/persona your RBAC
-  config recognizes. Configure `apifrontend.config.rbac` with `roleBindings` mapping OIDC
-  groups to Kubernaut personas (e.g. `sre`).
-- `apifrontend.config.rbac.consoleAccessAuthorizationCheckEnabled` defaults to `false`
-  (#2150) — authentication-only, so a fresh install works with zero RBAC config for
-  dev/eval. Set it `true` once you've configured real personas/groups for production, to
-  additionally gate the console-access check itself (per-tool authorization already
-  applies either way).
+Since the operator RBAC decoupling
+([kubernaut-operator#682](https://github.com/jordigilh/kubernaut-operator/issues/682),
+Issue #2701):
 
-Without a matching group claim and role binding, the symptom looks like "login works, then
-every tool call silently fails" rather than an obvious auth error — check for `403`s from a
-real `SubjectAccessReview` denial, not a login/redirect loop.
+- The **Kubernaut CR deploys the platform**. It no longer accepts
+  `spec.apiFrontend.rbac.roleBindings` or `consoleAccessGroups` — user-access
+  policy is an operational decision, not a deployment decision.
+- The **operator renders roles only**, all unbound, namespaced by the CR's
+  namespace: `<ns>-console-access` (the coarse-grained login gate),
+  `<ns>-console-reader` (console REST read capabilities) and
+  `<ns>-console-inventory-reader` (local-target inventory reads). It never
+  renders a user-facing ClusterRoleBinding, and the built-in persona
+  ClusterRoles are gone — personas are documented use-case bundles you
+  compose yourself.
+- **Role composition and bindings are your SOP**: apply your own
+  ClusterRoles/ClusterRoleBindings (GitOps, OpenShift RBAC, or `kubectl
+  apply`) after the operator has reconciled the CR.
+
+The demo's ready-made example bundles live in
+[`test/fixtures/demo/rbac/`](../../../test/fixtures/demo/rbac/): the six
+former persona bundles as demo-owned ClusterRoles with external bindings to
+the demo IdP's groups, plus external bindings for the three operator-rendered
+console roles. Alert-capable bundles must carry both alert surfaces' tool
+names (`list_alerts`, `get_alert_details` **and** `kubernaut_list_alerts`) —
+see the both-names rule in that directory's README.
+
+Two AF-side settings remain in the CR (`spec.apiFrontend.rbac`):
+`consoleAccessAuthorizationCheckEnabled` (default `false`, #2150 —
+authentication-only gate for dev/eval) and `sarCacheTTL`. Set it `true` once
+you have bound the `<ns>-console-access` role to your groups, so the console
+gate's authorization check is enforced too — without the binding, a `true`
+gate denies every user (deny-by-default).
+
+Without a matching group claim and role binding, the symptom looks like
+"login works, then every tool call silently fails" rather than an obvious
+auth error — check for `403`s from a real `SubjectAccessReview` denial, not a
+login/redirect loop.
 
 ---
 
@@ -167,7 +194,7 @@ kubectl get investigationsessions,agentsessions -n kubernaut-system
 | Symptom | Cause | Fix |
 |---|---|---|
 | Console redirects to login in a loop, never completes | Missing/incorrect audience claim on the OIDC token for Console's own client ID | Add a self-referential audience mapper (`aud` must include `kubernaut-console` itself, not just `kubernaut-apifrontend`) |
-| Login succeeds, but every real tool call fails | No RBAC role binding for the logged-in user's group | See step 4 — configure `apifrontend.config.rbac.roleBindings` |
+| Login succeeds, but every real tool call fails | No ClusterRole bound to the logged-in user's group | See step 4 — compose roles and apply external ClusterRoleBindings ([demo examples](../../../test/fixtures/demo/rbac/)) |
 | Console reconciliation fails | Missing Console secret, OIDC issuer, or ingress host | Inspect the `Kubernaut` CR conditions and Operator events |
 | APIFrontend rejects every console-issued token outright | No audience mapper injecting `kubernaut-apifrontend` into `aud` | See step 1's note on audience mappers — common on a fresh Keycloak realm with no existing kubernaut-apifrontend-aware client scope |
 | Investigating a spoke resource fails with "cannot determine which cluster it belongs to" (or "not managed") despite the `kubernaut.ai/managed=true` label | No `cluster_id` was supplied and the alert/rule carries no `cluster` label, so fleet scope attribution is ambiguous — by design this refuses rather than guessing (Issue #2362) | Pass `cluster_id` (e.g. from the alert's `cluster` label, see `list_clusters` for IDs); for alerts, bake a static `cluster:` label into the alerting rule so every evaluation carries attribution |

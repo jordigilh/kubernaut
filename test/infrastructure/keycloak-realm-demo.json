@@ -348,7 +348,7 @@
     },
     {
       "name": "groups",
-      "description": "Maps group memberships into a \"groups\" claim (kubernaut-console client), matching APIFrontend's default JWT claim mapping and consoleAccessGroups keys.",
+      "description": "Maps group memberships into a \"groups\" claim (kubernaut-console client), matching APIFrontend's default JWT claim mapping. Groups are bound to roles through external, deployment-owned ClusterRoleBindings (roles-only model, kubernaut-operator#682).",
       "protocol": "openid-connect",
       "attributes": {
         "include.in.token.scope": "true",

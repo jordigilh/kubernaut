@@ -142,10 +142,12 @@ var _ = Describe("Fleet static operator contract", func() {
 		Expect(manifest).NotTo(ContainSubstring(`confidenceThreshold: "0.85"`))
 		Expect(manifest).To(ContainSubstring("apiFrontend:\n    enabled: true"))
 		Expect(manifest).To(ContainSubstring("groups: claims.groups"))
-		// #2702: spec.apiFrontend.rbac.roleBindings (and consoleAccessGroups)
-		// were removed from the operator CRD. Persona ClusterRoles/CRBs are
-		// harness-applied (BindAFPersonaRBAC), never operator-rendered, so the
-		// CR must not carry any persona RBAC stanza.
+		// #2702/#2703: spec.apiFrontend.rbac.roleBindings (and
+		// consoleAccessGroups) were removed from the operator CRD. Persona
+		// ClusterRoles/CRBs are harness-applied (BindAFPersonaRBAC), never
+		// operator-rendered, and the operator-rendered console roles are
+		// bound externally as demo-owned ClusterRoleBindings (#2703) -- so
+		// the CR must not carry any persona RBAC stanza.
 		Expect(manifest).NotTo(ContainSubstring("roleBindings:"))
 		Expect(manifest).NotTo(ContainSubstring("role: sre"))
 		Expect(manifest).NotTo(ContainSubstring("consoleAccessGroups"))

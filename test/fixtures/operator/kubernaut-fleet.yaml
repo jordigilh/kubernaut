@@ -50,11 +50,13 @@ spec:
           claimMappings:
             username: claims.preferred_username
             groups: claims.groups
-    # #2702 (kubernaut-operator#682): the apiFrontend RBAC role-binding and
-    # console access group CR fields were removed from the CRD. Persona ClusterRoles
-    # (kubernaut-tool-<persona>) and their group ClusterRoleBindings are
-    # applied by the E2E harness (BindAFPersonaRBAC /
-    # PersonaToolClusterRolesYAML), never by the operator.
+    # #2702/#2703 (kubernaut-operator#682): the apiFrontend RBAC role-binding
+    # and console access group CR fields were removed from the CRD. Persona
+    # ClusterRoles (kubernaut-tool-<persona>) and their group
+    # ClusterRoleBindings are applied by the E2E harness (BindAFPersonaRBAC /
+    # PersonaToolClusterRolesYAML), never by the operator, and the
+    # operator-rendered console roles are bound externally as demo-owned
+    # ClusterRoleBindings after reconciliation.
   remediationOrchestrator:
     effectivenessAssessment:
       stabilizationWindow: 30s

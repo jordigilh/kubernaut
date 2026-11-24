@@ -388,6 +388,10 @@ type OperatorCROptions struct {
 	JWKSURL                          string
 	Audience                         string
 	APIFrontendUsernameClaim         string
+	// ConsoleAccessAuthorizationCheckEnabled sets
+	// spec.apiFrontend.rbac.consoleAccessAuthorizationCheckEnabled when
+	// non-nil. Nil leaves the operator default (false, auth-only gate).
+	ConsoleAccessAuthorizationCheckEnabled *bool
 }
 
 type operatorCRManifest struct {
@@ -515,6 +519,21 @@ type operatorAPIFrontendSpec struct {
 	LLMProfileRef string                 `yaml:"llmProfileRef,omitempty"`
 	Auth          *operatorAPIAuthSpec   `yaml:"auth,omitempty"`
 	RateLimit     *operatorRateLimitSpec `yaml:"rateLimit,omitempty"`
+	// RBAC carries the post-#682 AF-side RBAC configuration only. The
+	// operator CRD no longer accepts roleBindings or consoleAccessGroups
+	// (kubernaut-operator#682): role composition and bindings are owned by
+	// the deployer as external ClusterRoleBindings.
+	RBAC *operatorAPIFrontendRBACSpec `yaml:"rbac,omitempty"`
+}
+
+// operatorAPIFrontendRBACSpec mirrors the post-#682 CRD's reduced
+// spec.apiFrontend.rbac contract: AF's own behavior knobs only.
+type operatorAPIFrontendRBACSpec struct {
+	// ConsoleAccessAuthorizationCheckEnabled enforces the coarse-grained
+	// console-access SAR gate (#2148/#2150 default false). A deployment
+	// that binds the operator-rendered console-access ClusterRole
+	// externally (e.g. the demo) sets this true.
+	ConsoleAccessAuthorizationCheckEnabled *bool `yaml:"consoleAccessAuthorizationCheckEnabled,omitempty"`
 }
 
 type operatorAPIAuthSpec struct {
@@ -809,7 +828,11 @@ func operatorAPIFrontendSpecFor(options OperatorCROptions, audience string) *ope
 			ClaimMappings: operatorJWTClaimMappings{Username: options.APIFrontendUsernameClaim, Groups: "claims.groups"},
 		}}
 	}
-	return &operatorAPIFrontendSpec{Enabled: pointerToBool(true), Auth: auth}
+	var rbac *operatorAPIFrontendRBACSpec
+	if options.ConsoleAccessAuthorizationCheckEnabled != nil {
+		rbac = &operatorAPIFrontendRBACSpec{ConsoleAccessAuthorizationCheckEnabled: options.ConsoleAccessAuthorizationCheckEnabled}
+	}
+	return &operatorAPIFrontendSpec{Enabled: pointerToBool(true), Auth: auth, RBAC: rbac}
 }
 
 func operatorMonitoringSpecFor(options OperatorCROptions) *operatorMonitoringSpec {
