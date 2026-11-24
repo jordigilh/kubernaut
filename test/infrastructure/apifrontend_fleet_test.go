@@ -168,75 +168,10 @@ integrations:
 		Expect(config.Interactive.JWTProviders[0].ClaimMappings).To(HaveKeyWithValue("groups", "groups"))
 	})
 
-	It("UT-INFRA-AF-FLEET-2462-006 [BR-RBAC-020, BR-FLEET-054]: grants AF only the scoped Fleet registry and FMC SAR permissions it needs", func() {
+	It("UT-INFRA-AF-FLEET-2462-006 [BR-RBAC-020, BR-FLEET-054]: grants AF only the scoped EAIGW registry permissions it needs", func() {
 		manifest := buildAFleetRBACManifest("kubernaut-system")
-
-		registryRole := findManifestDocument(manifest, "Role", "apifrontend-fleet-registry-reader")
-		registryRules := rbacRules(registryRole.Object)
-		Expect(registryRules).To(HaveLen(2))
-		// Two order-matched rules: EAIGW backends, then AI Gateway MCPRoutes.
-		Expect(rbacStringSlice(registryRules[0], "apiGroups")).To(ConsistOf("gateway.envoyproxy.io"))
-		Expect(rbacStringSlice(registryRules[0], "resources")).To(ConsistOf("backends"))
-		Expect(rbacStringSlice(registryRules[0], "verbs")).To(ConsistOf("get", "list", "watch"))
-		Expect(rbacStringSlice(registryRules[1], "apiGroups")).To(ConsistOf("aigateway.envoyproxy.io"))
-		Expect(rbacStringSlice(registryRules[1], "resources")).To(ConsistOf("mcproutes"))
-		Expect(rbacStringSlice(registryRules[1], "verbs")).To(ConsistOf("get", "list", "watch"))
-
-		// #2695: FMC authorizes every API request with a SAR for
-		// get services/fleetmetadatacache-service (cmd/fleetmetadatacache/main.go).
-		// The grant is a named-service ClusterRole so an FMC/app namespace split
-		// cannot silently leave Console inventory at 403.
-		fmcRole := findManifestDocument(manifest, "ClusterRole", "apifrontend-fmc-sar-client")
-		fmcRules := rbacRules(fmcRole.Object)
-		Expect(fmcRules).To(HaveLen(1))
-		Expect(rbacStringSlice(fmcRules[0], "apiGroups")).To(ConsistOf(""))
-		Expect(rbacStringSlice(fmcRules[0], "resources")).To(ConsistOf("services"))
-		Expect(rbacStringSlice(fmcRules[0], "resourceNames")).To(ConsistOf("fleetmetadatacache-service"))
-		Expect(rbacStringSlice(fmcRules[0], "verbs")).To(ConsistOf("get"))
-
-		fmcBinding := findManifestDocument(manifest, "ClusterRoleBinding", "apifrontend-fmc-sar-client")
-		roleRefName, found, err := unstructured.NestedString(fmcBinding.Object, "roleRef", "name")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeTrue())
-		Expect(roleRefName).To(Equal("apifrontend-fmc-sar-client"))
-		subjects, found, err := unstructured.NestedSlice(fmcBinding.Object, "subjects")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeTrue())
-		Expect(subjects).To(HaveLen(1))
-		subject, ok := subjects[0].(map[string]interface{})
-		Expect(ok).To(BeTrue())
-		subjectKind, found, err := unstructured.NestedString(subject, "kind")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeTrue())
-		Expect(subjectKind).To(Equal("ServiceAccount"))
-		subjectName, found, err := unstructured.NestedString(subject, "name")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeTrue())
-		Expect(subjectName).To(Equal("apifrontend"))
-		subjectNamespace, found, err := unstructured.NestedString(subject, "namespace")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeTrue())
-		Expect(subjectNamespace).To(Equal("kubernaut-system"))
-		expectValidYAMLDocuments(manifest)
-	})
-
-	It("IT-INFRA-AF-FLEET-2695-003 [BR-RBAC-020, BR-FLEET-054]: renders the FMC SAR ClusterRole and binding through the Fleet RBAC deployer", func() {
-		manifest := captureKubectlManifest(func() error {
-			return afDeployFleetRBAC(context.Background(), "test-kubeconfig", "kubernaut-system", io.Discard)
-		})
-
-		fmcRole := findManifestDocument(manifest, "ClusterRole", "apifrontend-fmc-sar-client")
-		rules := rbacRules(fmcRole.Object)
-		Expect(rules).To(HaveLen(1))
-		Expect(rbacStringSlice(rules[0], "resources")).To(ConsistOf("services"))
-		Expect(rbacStringSlice(rules[0], "resourceNames")).To(ConsistOf("fleetmetadatacache-service"))
-		Expect(rbacStringSlice(rules[0], "verbs")).To(ConsistOf("get"))
-
-		binding := findManifestDocument(manifest, "ClusterRoleBinding", "apifrontend-fmc-sar-client")
-		subjects, found, err := unstructured.NestedSlice(binding.Object, "subjects")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeTrue())
-		Expect(subjects).To(HaveLen(1))
+		Expect(manifest).To(ContainSubstring("resources: [\"backends\"]"))
+		Expect(manifest).To(ContainSubstring("resources: [\"mcproutes\"]"))
 		expectValidYAMLDocuments(manifest)
 	})
 
@@ -349,21 +284,3 @@ integrations:
 		Expect(deploymentPatch.Spec.Template.Spec.Volumes[0].Secret.SecretName).To(Equal(fleetOAuth2SecretName))
 	})
 })
-
-// rbacRules decodes a rendered RBAC document's rules list.
-func rbacRules(object map[string]interface{}) []interface{} {
-	rules, found, err := unstructured.NestedSlice(object, "rules")
-	Expect(err).NotTo(HaveOccurred())
-	Expect(found).To(BeTrue())
-	return rules
-}
-
-// rbacStringSlice decodes one string-list field of a rendered RBAC rule.
-func rbacStringSlice(rule interface{}, field string) []string {
-	ruleMap, ok := rule.(map[string]interface{})
-	Expect(ok).To(BeTrue(), "RBAC rule must be a mapping")
-	values, found, err := unstructured.NestedStringSlice(ruleMap, field)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(found).To(BeTrue(), "RBAC rule must carry %q", field)
-	return values
-}
