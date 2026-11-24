@@ -371,16 +371,16 @@ var _ = Describe("RO RBAC parity (IT-RO-2575-005)", func() {
 // because both sides compiled and ran fine independently. This left
 // test/e2e/apifrontend/interactive_wiring_e2e_test.go's E2E-KA-1418-001/002
 // (which call kubernaut_complete_no_action as the sre persona through AF's
-// real /mcp endpoint) failing on SAR denial in that suite's Kind cluster,
-// even though the same calls work correctly in the fullpipeline E2E suite
-// (which binds ClusterRoleBindings to the chart's own Helm-rendered
-// ClusterRoles instead of a second hand-copied list -- see
-// bindAFPersonaToolClusterRoles's doc comment, fullpipeline_e2e_helm.go).
+// real /mcp endpoint) failing on SAR denial in that suite's Kind cluster.
 //
-// This test pins PersonaToolClusterRolesYAML's generated tool set to exactly
-// match LoadPersonaTools's operator qualification persona contract, so any future persona/tool change that
-// isn't reflected in both places fails CI instead of silently breaking the
-// AF-only E2E suite.
+// #2702 (kubernaut-operator#682): the operator no longer renders persona
+// ClusterRoles, so LoadPersonaTools's lists are now the sole authority for
+// harness-applied persona RBAC and deliberately duplicate the operator's
+// former persona lists. This test pins that duplication as a test contract:
+// PersonaToolClusterRolesYAML's generated tool set must exactly match
+// LoadPersonaTools, so any future persona/tool change that isn't reflected
+// in both places fails CI instead of silently breaking the AF-only E2E
+// suite.
 var _ = Describe("AF persona tool RBAC parity (UT-INFRA-RBAC-002)", func() {
 	var (
 		personaTools  map[string][]string
@@ -390,7 +390,7 @@ var _ = Describe("AF persona tool RBAC parity (UT-INFRA-RBAC-002)", func() {
 	BeforeEach(func() {
 		var err error
 		personaTools, err = LoadPersonaTools()
-		Expect(err).NotTo(HaveOccurred(), "operator qualification persona contract must load")
+		Expect(err).NotTo(HaveOccurred(), "harness persona tool contract must load")
 		Expect(personaTools).NotTo(BeEmpty(), "operator qualification must define at least one persona")
 
 		generatedYAML, err = PersonaToolClusterRolesYAML()
@@ -400,7 +400,7 @@ var _ = Describe("AF persona tool RBAC parity (UT-INFRA-RBAC-002)", func() {
 	DescribeTable("generated ClusterRole tool set matches operator persona contract",
 		func(persona string) {
 			expectedTools, ok := personaTools[persona]
-			Expect(ok).To(BeTrue(), "operator qualification persona contract must define persona %q", persona)
+			Expect(ok).To(BeTrue(), "harness persona tool contract must define persona %q", persona)
 
 			rules, err := parseClusterRoleRulesFromYAML([]byte(generatedYAML), "kubernaut-tool-"+persona)
 			Expect(err).NotTo(HaveOccurred())
@@ -425,7 +425,7 @@ var _ = Describe("AF persona tool RBAC parity (UT-INFRA-RBAC-002)", func() {
 	It("covers every persona group name AF's SAR authorization recognizes", func() {
 		for _, name := range afPersonaGroupNamesForParity {
 			Expect(personaTools).To(HaveKey(name),
-				"operator qualification persona contract must define persona %q referenced by afPersonaGroupNames", name)
+				"harness persona tool contract must define persona %q referenced by afPersonaGroupNames", name)
 		}
 	})
 })

@@ -580,42 +580,32 @@ func deployDexOIDCProviderForAF(ctx context.Context, kubeconfigPath string, writ
 
 // afPersonaGroupNames lists the persona names AF's SAR-based tool
 // authorization recognizes. The list is intentionally kept alongside the
-// operator qualification RBAC contract rather than read from the retired
-// application chart.
+// harness-owned persona RBAC contract (LoadPersonaTools, #2702) rather than
+// read from any deployment artifact.
 var afPersonaGroupNames = []string{
 	"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver",
 }
 
 // bindAFPersonaToolClusterRoles creates the ClusterRoleBindings that map each
-// DEX-issued OIDC "groups" claim (e.g. "sre") to the operator-managed
-// per-persona ClusterRoles (kubernaut-tool-<persona>).
+// OIDC "groups" claim (e.g. DEX's or Keycloak's "sre") to the per-persona
+// ClusterRoles (kubernaut-tool-<persona>).
 //
-// Issue #1737 gap found: the chart deliberately creates only the ClusterRoles
-// -- its own comment says "Bind these ClusterRoles to OIDC groups via
-// ClusterRoleBindings to grant tool access per persona", by design, since a
-// production chart cannot presume to know the deployer's real OIDC group
-// names. The old (now-removed) deployAPIFrontendInFP supplied this binding
-// step for E2E via afDeployE2ERBAC -> PersonaToolClusterRolesYAML (which
-// also duplicated the ClusterRoles themselves, now superseded by the chart).
-// That whole call was dropped when deployAPIFrontendInFP was replaced by
-// `operator reconciliation`, with nothing standing in for the ClusterRoleBinding half --
-// leaving every kubernaut-tool-<persona> ClusterRole with zero subjects
-// bound to it. AF's SAR checks (pkg/apifrontend/auth/sar.go) therefore denied
-// every tool call regardless of persona; the denial is only *observable* for
-// kubernaut_remediate (whose failure prevents RemediationRequest creation,
-// verified by a real K8s API assertion) because AF's own audit trail
-// (newAuditToolCallback/buildToolAuditDetail, pkg/apifrontend/agent/root.go)
-// misreports a nil-error-but-denied tool call as tool_outcome=success for
-// every other tool, masking the identical denial for
-// kubernaut_investigate/discover_workflows/select_workflow/watch.
+// #2702 (kubernaut-operator#682): the operator no longer renders persona
+// ClusterRoles or user-facing ClusterRoleBindings, and
+// spec.apiFrontend.rbac.roleBindings / consoleAccessGroups are gone from the
+// CRD. Both halves are now harness-owned: these bindings plus the
+// ClusterRoles that BindAFPersonaRBAC applies (PersonaToolClusterRolesYAML).
+// The binding shape works for any IdP's "groups" claim, not just DEX's.
 //
 // The persona name list is intentionally re-declared here (afPersonaGroupNames)
-// rather than parsed out of the retired application chart: this is Go test
-// infrastructure binding to operator-owned ClusterRoles by name/convention,
+// rather than parsed from any deployment artifact: this is Go test
+// infrastructure applying harness-owned ClusterRoles by name/convention,
 // not a second source of truth for which *tools* each persona can call --
-// that authorization content lives in the shared persona RBAC contract.
+// that authorization content lives in the shared persona RBAC contract
+// (LoadPersonaTools), pinned as a test contract by UT-INFRA-RBAC-002 and
+// UT-2492-RBAC-001.
 func bindAFPersonaToolClusterRoles(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  🔑 Binding AF persona ClusterRoles to DEX OIDC groups (Issue #1737 RBAC gap)...")
+	_, _ = fmt.Fprintln(writer, "  🔑 Binding AF persona ClusterRoles to OIDC groups (#2702 harness-owned persona RBAC)...")
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildAFPersonaToolClusterRoleBindingsManifest()); err != nil {
 		return fmt.Errorf("failed to bind AF persona tool ClusterRoles: %w", err)
@@ -624,9 +614,10 @@ func bindAFPersonaToolClusterRoles(ctx context.Context, kubeconfigPath string, w
 }
 
 // BuildAFPersonaToolClusterRoleBindingsManifest returns the OIDC group bindings
-// required by AF's SAR-based A2A tool guard. The operator creates the persona
-// ClusterRoles, while this qualification wiring supplies the deployment-specific
-// identity-to-persona mapping.
+// required by AF's SAR-based A2A tool guard. #2702: both the persona
+// ClusterRoles and these bindings are harness-owned qualification wiring
+// (applied by bindAFPersonaToolClusterRoles / BindAFPersonaRBAC); the
+// operator no longer renders either.
 func BuildAFPersonaToolClusterRoleBindingsManifest() string {
 	var b strings.Builder
 	for _, persona := range afPersonaGroupNames {
@@ -649,19 +640,24 @@ subjects:
 }
 
 // BindAFPersonaRBAC is the exported, post-`operator reconciliation` entry point for
-// `make bind-fleet-af-rbac` (hack/bind-fleet-af-rbac): binds the operator-managed
-// kubernaut-tool-<persona> ClusterRoles to the OIDC
+// `make bind-fleet-af-rbac` (hack/bind-fleet-af-rbac): applies the harness-owned
+// kubernaut-tool-<persona> ClusterRoles and binds them to the OIDC
 // groups issued by the Keycloak realm's kubernaut-console client
 // (test/infrastructure/keycloak-realm-demo.json's "sre" group/user).
+//
+// #2702 (kubernaut-operator#682): the operator no longer renders persona
+// ClusterRoles or user-facing ClusterRoleBindings, so this function now owns
+// the full provisioning path (roles + bindings + SAR verification) for every
+// operator-managed AF lane -- fullpipeline (fleet and non-fleet) and the
+// operator demo.
 //
 // Does NOT also bind kubernaut-console-access: the operator owns the
 // console-access bindings as part of the reconciled Kubernaut resource; unlike
 // the per-tool persona bindings above, no test-owned manual step is needed.
 //
-// Must run after operator reconciliation -- the ClusterRoles this
-// binds don't exist until the chart's apifrontend templates render them.
-// Reuses bindAFPersonaToolClusterRoles unchanged (same binding shape works
-// for any IdP's "groups" claim, not just DEX's) rather than duplicating it.
+// Must run after operator reconciliation so the reconciled workload exists;
+// the persona RBAC itself is harness-owned and applied idempotently here
+// (PersonaToolClusterRolesYAML renders both ClusterRoles and bindings).
 func BindAFPersonaRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔑 Creating and binding AF persona ClusterRoles for operator-managed AF...")
 	personaToolRBAC, err := PersonaToolClusterRolesYAML()

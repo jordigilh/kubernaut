@@ -101,7 +101,13 @@ var _ = Describe("Fleet static operator contract", func() {
 		Expect(manifest).NotTo(ContainSubstring(`confidenceThreshold: "0.85"`))
 		Expect(manifest).To(ContainSubstring("apiFrontend:\n    enabled: true"))
 		Expect(manifest).To(ContainSubstring("groups: claims.groups"))
-		Expect(manifest).To(ContainSubstring("role: sre"))
+		// #2702: spec.apiFrontend.rbac.roleBindings (and consoleAccessGroups)
+		// were removed from the operator CRD. Persona ClusterRoles/CRBs are
+		// harness-applied (BindAFPersonaRBAC), never operator-rendered, so the
+		// CR must not carry any persona RBAC stanza.
+		Expect(manifest).NotTo(ContainSubstring("roleBindings:"))
+		Expect(manifest).NotTo(ContainSubstring("role: sre"))
+		Expect(manifest).NotTo(ContainSubstring("consoleAccessGroups"))
 		Expect(manifest).To(ContainSubstring("url: https://prometheus-svc.monitoring.svc.cluster.local:9090"))
 		Expect(manifest).To(ContainSubstring("url: https://alertmanager-svc.monitoring.svc.cluster.local:9093"))
 		Expect(manifest).To(ContainSubstring("prometheus:\n      enabled: true"))
@@ -167,16 +173,58 @@ var _ = Describe("EAIGW stable Service alias", func() {
 })
 
 var _ = Describe("AF persona RBAC wiring", func() {
-	It("UT-2492-RBAC-001 [BR-SECURITY-001]: binds every AF persona ClusterRole to its OIDC group", func() {
-		manifest := BuildAFPersonaToolClusterRoleBindingsManifest()
-		for _, persona := range []string{"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver"} {
-			Expect(manifest).To(ContainSubstring("name: kubernaut-tool-" + persona + "-binding"))
-			Expect(manifest).To(ContainSubstring("name: kubernaut-tool-" + persona))
-			Expect(manifest).To(ContainSubstring("name: " + persona))
-		}
+	// #2702 (kubernaut-operator#682): the operator no longer renders persona
+	// ClusterRoles (kubernaut-tool-<persona>) or user-facing
+	// ClusterRoleBindings, and spec.apiFrontend.rbac.roleBindings /
+	// consoleAccessGroups are gone from the CRD. The E2E harness owns this
+	// provisioning end to end: PersonaToolClusterRolesYAML renders BOTH the
+	// per-persona ClusterRoles and their group bindings, applied by
+	// afDeployE2ERBAC (AF-only lane) and BindAFPersonaRBAC (operator-managed
+	// AF lanes). This test pins that harness contract so the persona lists --
+	// which duplicate the operator's former persona contract -- cannot drift
+	// or silently lose the roles half.
+	It("UT-2492-RBAC-001 [BR-SECURITY-001]: harness renders every AF persona ClusterRole and its OIDC group binding", func() {
 		fullManifest, err := PersonaToolClusterRolesYAML()
 		Expect(err).NotTo(HaveOccurred())
-		Expect(fullManifest).To(ContainSubstring("kind: ClusterRole"))
-		Expect(fullManifest).To(ContainSubstring("name: kubernaut-tool-sre"))
+
+		personaTools, err := LoadPersonaTools()
+		Expect(err).NotTo(HaveOccurred(), "harness persona tool contract must load")
+
+		for _, persona := range []string{"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver"} {
+			Expect(personaTools).To(HaveKey(persona),
+				"harness persona tool contract must define persona %q", persona)
+
+			rules, err := parseClusterRoleRulesFromYAML([]byte(fullManifest), "kubernaut-tool-"+persona)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rules).NotTo(BeEmpty(), "harness manifest must render ClusterRole kubernaut-tool-%s", persona)
+
+			Expect(fullManifest).To(ContainSubstring("name: kubernaut-tool-" + persona + "-binding"),
+				"harness manifest must render the ClusterRoleBinding for %s", persona)
+			Expect(fullManifest).To(ContainSubstring("kind: ClusterRoleBinding"))
+		}
+
+		// The bindings-only manifest (used by the fullpipeline phase-6b wave)
+		// must stay consistent with the full harness manifest's subjects.
+		bindingsManifest := BuildAFPersonaToolClusterRoleBindingsManifest()
+		for _, persona := range []string{"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver"} {
+			Expect(bindingsManifest).To(ContainSubstring("name: kubernaut-tool-" + persona + "-binding"))
+			Expect(bindingsManifest).To(ContainSubstring("name: kubernaut-tool-" + persona))
+			Expect(bindingsManifest).To(ContainSubstring("name: " + persona))
+		}
+	})
+
+	// #2702: the fullpipeline lane previously relied on the operator CR's
+	// rbac.roleBindings to render persona ClusterRoles when a fleet
+	// provisioner was active (waitForAFPersonaRBAC only, no harness apply).
+	// With the operator RBAC decoupling, every operator-managed AF path must
+	// apply the harness-owned persona RBAC via BindAFPersonaRBAC.
+	It("UT-2702-RBAC-001 [BR-SECURITY-001]: fullpipeline applies harness persona RBAC on every operator-managed AF path", func() {
+		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "fullpipeline_e2e.go"))
+		Expect(err).NotTo(HaveOccurred())
+		text := string(source)
+		Expect(text).To(ContainSubstring("if err := BindAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {"),
+			"fullpipeline must apply harness-owned persona ClusterRoles/bindings via BindAFPersonaRBAC")
+		Expect(text).NotTo(ContainSubstring("fleetProvisioner != nil {\n\t\tif err := waitForAFPersonaRBAC"),
+			"no fullpipeline path may rely on operator-rendered persona ClusterRoles (#2702)")
 	})
 })
