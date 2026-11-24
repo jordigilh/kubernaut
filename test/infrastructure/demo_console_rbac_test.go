@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -199,6 +200,33 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 			Expect(crb.Subjects[0].Kind).To(Equal("Group")) // BR-PLATFORM-014: external IdP group binding
 			Expect(crb.Subjects[0].Name).To(Equal(persona),
 				"the demo IdP issues one group per persona (keycloak-realm-demo.json)")
+		}
+	})
+
+	// Fixture ground-truth fidelity: every group the persona bindings target
+	// must actually exist in the demo Keycloak realm, or a human following
+	// the README applies bindings that can never match a token's groups
+	// claim (five of six would be inert).
+	It("issues every persona group the demo bindings target", func() {
+		data, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "keycloak-realm-demo.json")) //nolint:gosec // G304: known project path
+		Expect(err).NotTo(HaveOccurred())
+
+		var realm struct {
+			Groups []struct {
+				Name string `json:"name"`
+			} `json:"groups"`
+		}
+		Expect(json.Unmarshal(data, &realm)).To(Succeed())
+
+		realmGroups := map[string]bool{}
+		for _, g := range realm.Groups {
+			realmGroups[g.Name] = true
+		}
+		for persona := range alertCapablePersonas {
+			Expect(realmGroups).To(HaveKey(persona))
+		}
+		for _, persona := range []string{"cicd", "observability", "l3-audit", "remediation-approver"} {
+			Expect(realmGroups).To(HaveKey(persona))
 		}
 	})
 })

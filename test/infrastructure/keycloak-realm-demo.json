@@ -375,6 +375,26 @@
     {
       "name": "sre",
       "path": "/sre"
+    },
+    {
+      "name": "ai-orchestrator",
+      "path": "/ai-orchestrator"
+    },
+    {
+      "name": "cicd",
+      "path": "/cicd"
+    },
+    {
+      "name": "observability",
+      "path": "/observability"
+    },
+    {
+      "name": "l3-audit",
+      "path": "/l3-audit"
+    },
+    {
+      "name": "remediation-approver",
+      "path": "/remediation-approver"
     }
   ],
   "users": [
