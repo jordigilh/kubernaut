@@ -3,7 +3,7 @@
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
 **Test Plan Identifier**: TP-1412-v1
-**Feature**: Deterministic alert severity prioritization in list_alerts tool
+**Feature**: Deterministic alert severity prioritization in kubernaut_list_alerts tool
 **Version**: 1.0
 **Created**: 2026-06-13
 **Author**: AI Agent
@@ -16,7 +16,7 @@
 
 ### 1.1 Purpose
 
-This test plan validates the deterministic alert severity prioritization feature added to the `list_alerts` / `kubernaut_list_alerts` tool. When multiple Prometheus alerts fire simultaneously, the tool must select the highest-severity, longest-firing alert and structure the response for downstream consumers (LLM agent, Console, autonomous flow).
+This test plan validates the deterministic alert severity prioritization feature added to the `kubernaut_list_alerts` tool (A2A name unified with the bridge by #2713). When multiple Prometheus alerts fire simultaneously, the tool must select the highest-severity, longest-firing alert and structure the response for downstream consumers (LLM agent, Console, autonomous flow).
 
 ### 1.2 Objectives
 
