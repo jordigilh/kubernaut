@@ -1,18 +1,10 @@
-// Command bind-fleet-af-rbac creates the per-tool
-// kubernaut-tool-<persona> ClusterRoles and their ClusterRoleBindings and
-// binds them to the OIDC groups issued by the fleet-core Keycloak realm's
-// "kubernaut-console" client (test/infrastructure/keycloak-realm-demo.json's
-// "sre" group/user).
-//
-// #2702 (kubernaut-operator#682): the operator no longer renders persona
-// ClusterRoles or user-facing ClusterRoleBindings, so this command -- via
-// infrastructure.BindAFPersonaRBAC / PersonaToolClusterRolesYAML -- owns the
-// full persona tool RBAC provisioning path.
-//
-// #2703: the operator also renders the coarse-grained console roles
-// (console-access, console-reader, console-inventory-reader) unbound in the
-// CR's namespace; this command binds them externally via
-// infrastructure.BindDemoConsoleRBAC (the demo operator's SOP).
+// Command bind-fleet-af-rbac provisions demo RBAC on a fleet-core cluster:
+// the persona tool ClusterRoles and their group ClusterRoleBindings
+// (infrastructure.BindAFPersonaRBAC), and the external bindings for the
+// operator-rendered console roles (infrastructure.BindDemoConsoleRBAC,
+// bound to the Keycloak realm's "sre" group/user,
+// test/infrastructure/keycloak-realm-demo.json). The operator renders roles
+// only, so both halves are applied here after operator reconciliation.
 //
 // Run this once, AFTER the operator bootstrap and Kubernaut CR, against the fleet-core cluster set up
 // by `make setup-e2e-fleet-infra`:

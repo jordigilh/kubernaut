@@ -124,48 +124,37 @@ path. When upgrading an installation that uses another realm, migrate the Keyclo
 issuer configuration, and active sessions before changing `issuerURL`; do not switch realms
 while existing tokens are expected to remain valid.
 
-## 4. RBAC: roles-only model — compose and bind externally
+## 4. RBAC: roles-only model
 
-Logging in successfully is not the same as being authorized to call MCP tools
-(`kubernaut_investigate`, `kubernaut_approve`, ...) or read console
-projections — every one of those goes through a real Kubernetes
-`SubjectAccessReview` as the logged-in user, and the checks are
-**deny-by-default**: a capability exists only where a ClusterRole bound to one
-of the user's groups enumerates it (FedRAMP AC-6 least privilege).
+Every tool call and console read is authorized with a real Kubernetes
+`SubjectAccessReview` as the logged-in user, and every check is
+**deny-by-default**: a user holds a capability only if a ClusterRole bound to
+one of their OIDC groups grants it (AC-6 least privilege).
 
-Since the operator RBAC decoupling
-([kubernaut-operator#682](https://github.com/jordigilh/kubernaut-operator/issues/682),
-Issue #2701):
+The operator renders three ClusterRoles, unbound, prefixed with the CR's
+namespace:
 
-- The **Kubernaut CR deploys the platform**. It no longer accepts
-  `spec.apiFrontend.rbac.roleBindings` or `consoleAccessGroups` — user-access
-  policy is an operational decision, not a deployment decision.
-- The **operator renders roles only**, all unbound, namespaced by the CR's
-  namespace: `<ns>-console-access` (the coarse-grained login gate),
-  `<ns>-console-reader` (console REST read capabilities) and
-  `<ns>-console-inventory-reader` (local-target inventory reads). It never
-  renders a user-facing ClusterRoleBinding, and the built-in persona
-  ClusterRoles are gone — personas are documented use-case bundles you
-  compose yourself.
-- **Role composition and bindings are your SOP**: apply your own
-  ClusterRoles/ClusterRoleBindings (GitOps, OpenShift RBAC, or `kubectl
-  apply`) after the operator has reconciled the CR.
+| ClusterRole | Grants |
+|---|---|
+| `<ns>-console-access` | Passing the console login gate |
+| `<ns>-console-reader` | Console read capabilities (`kubernaut_read_policy_scope`, `kubernaut_list/get_managed_resource(s)`) |
+| `<ns>-console-inventory-reader` | Local-target `get`/`list` for the console inventory projection |
 
-The demo's ready-made example bundles live in
-[`test/fixtures/demo/rbac/`](../../../test/fixtures/demo/rbac/): the six
-former persona bundles as demo-owned ClusterRoles with external bindings to
-the demo IdP's groups, plus external bindings for the three operator-rendered
-console roles. Alert-capable bundles must carry both alert surfaces' tool
-names (`list_alerts`, `get_alert_details` **and** `kubernaut_list_alerts`) —
-see the both-names rule in that directory's README.
+It renders no persona ClusterRoles and no user-facing ClusterRoleBindings,
+and the CR carries no user-access policy. Compose your own roles and bind
+them to your IdP groups (`kubectl apply`, GitOps, OpenShift RBAC) after the
+CR is reconciled. Ready-made example bundles — the six demo personas plus
+bindings for the three console roles — live in
+[`test/fixtures/demo/rbac/`](../../../test/fixtures/demo/rbac/).
 
-Two AF-side settings remain in the CR (`spec.apiFrontend.rbac`, per
-[kubernaut-operator#682](https://github.com/jordigilh/kubernaut-operator/issues/682)):
-`consoleAccessAuthorizationCheckEnabled` (default `false`, #2150 —
-authentication-only gate for dev/eval) and `sarCacheTTL`. Set it `true` once
-you have bound the `<ns>-console-access` role to your groups, so the console
-gate's authorization check is enforced too — without the binding, a `true`
-gate denies every user (deny-by-default).
+If a bundle grants alert access, it must carry both tool names
+(`list_alerts`/`get_alert_details` **and** `kubernaut_list_alerts`): the chat
+and raw-MCP surfaces authorize the alert capability under different names.
+
+`spec.apiFrontend.rbac` configures APIFrontend itself, not users:
+`consoleAccessAuthorizationCheckEnabled` (default `false` — auth-only gate)
+and `sarCacheTTL`. Enable the check only after binding `<ns>-console-access`
+to your groups; without the binding it denies every user.
 
 Without a matching group claim and role binding, the symptom looks like
 "login works, then every tool call silently fails" rather than an obvious

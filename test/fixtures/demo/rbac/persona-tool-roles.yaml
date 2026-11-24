@@ -1,19 +1,16 @@
 # Demo-owned persona tool ClusterRoles and external group bindings (Issue #2703).
 #
-# Since the operator RBAC decoupling (kubernaut-operator#682) the operator no
-# longer ships built-in persona ClusterRoles and the Kubernaut CR no longer
-# accepts spec.apiFrontend.rbac.roleBindings. These example bundles reproduce
-# the six documented use-case personas as demo-owned manifests: the demo
-# operator composes roles per their own SOP and binds them to the demo IdP's
-# groups (one group per persona, see test/infrastructure/keycloak-realm-demo.json).
+# Example role composition for the roles-only model: the operator renders no
+# persona ClusterRoles, so the deployer defines them and binds them to their
+# IdP's groups (one group per persona, see
+# test/infrastructure/keycloak-realm-demo.json).
 #
-# Authorization model (FedRAMP AC-6): APIFrontend authorizes every tool call
-# with a SubjectAccessReview on kubernaut.ai/tools, verb=use, resourceName=
-# <tool>. The check is deny-by-default: a tool not listed in the user's bound
-# role is denied. SAR on a never-invoked tool name is inert, so carrying both
+# Authorization model (AC-6): every tool call is authorized by a
+# SubjectAccessReview on kubernaut.ai/tools, verb=use, resourceName=<tool> --
+# deny-by-default. SAR on a never-invoked tool name is inert, so carrying both
 # alert surfaces' names is safe if upstream later unifies them.
 #
-# Both-names rule (kubernaut-operator#682/#683, DD-636 row 4d): the alert
+# Both-names rule (kubernaut-operator#683, DD-636 row 4d): the alert
 # capability has two authorization identities -- list_alerts/get_alert_details
 # on the A2A/chat surface and kubernaut_list_alerts on the raw MCP bridge
 # (which the Console proxies). Alert-capable bundles carry all three names so

@@ -1,66 +1,51 @@
-# Demo RBAC: roles-only model (Issue #2703)
+# Demo RBAC example bundles (Issue #2703)
 
-Since the operator RBAC decoupling ([kubernaut-operator#682](https://github.com/jordigilh/kubernaut-operator/issues/682),
-umbrella [kubernaut#2701](https://github.com/jordigilh/kubernaut/issues/2701)):
-
-- The **Kubernaut CR deploys the platform**. It no longer accepts
-  `spec.apiFrontend.rbac.roleBindings` or `consoleAccessGroups` — user-access
-  policy is an operational decision, not a deployment decision.
-- The **operator renders roles only**: `console-access` (login gate),
-  `console-reader` (console read capabilities) and
-  `console-inventory-reader` (local-target inventory reads), all rendered
-  **unbound** with the CR's namespace prefixed (e.g.
-  `kubernaut-system-console-access`). It never renders a user-facing
-  ClusterRoleBinding, and the six built-in persona ClusterRoles are gone.
-- **Role composition and bindings are the demo operator's SOP**, applied as
-  external ClusterRoleBindings after reconciliation.
+Roles-only model: the operator renders ClusterRoles but never user-facing
+ClusterRoleBindings, and the Kubernaut CR carries no user-access policy. Role
+composition and bindings are the deployer's job, applied after the CR is
+reconciled.
 
 ## Files
 
-| File | Purpose |
+| File | Contents |
 |---|---|
-| `persona-tool-roles.yaml` | The six former persona bundles as demo-owned ClusterRoles + external bindings to the demo IdP's per-persona groups |
-| `console-bindings.yaml` | External bindings for the operator-rendered console roles |
+| `persona-tool-roles.yaml` | Six persona ClusterRoles (`demo-tool-<persona>`) + ClusterRoleBindings to the demo IdP's per-persona groups |
+| `console-bindings.yaml` | ClusterRoleBindings for the operator-rendered console roles |
 
-## Deny-by-default capability SARs
+## Authorization model
 
-Every tool call and console read goes through a real Kubernetes
-`SubjectAccessReview` as the logged-in user (`kubernaut.ai/tools`, verb `use`,
-resourceName = tool name; `kubernaut.ai/console` for the coarse-grained gate).
-These checks are **deny-by-default**: any capability not listed in a role
-bound to one of the user's groups is denied. A binding grants nothing by
-itself — capabilities exist only where a role enumerates them (FedRAMP AC-6
-least privilege; SOC2 CC6.1 logical access controls stay outside the platform
-CR).
+Tool calls and console reads are authorized by `SubjectAccessReview`
+(`kubernaut.ai/tools`, verb `use`, resourceName = tool name; `kubernaut.ai/console`
+for the login gate), always as the logged-in user and always deny-by-default.
+A binding grants nothing by itself — capabilities exist only where a role
+enumerates them.
 
-## The both-names alert rule
+The operator-rendered console roles are namespace-prefixed
+(`kubernaut-system-console-access`, `-console-reader`,
+`-console-inventory-reader`); adjust the prefix if your CR lives in another
+namespace. The demo Keycloak realm
+(`test/infrastructure/keycloak-realm-demo.json`) defines one group per persona
+and the user `sre-user` in `sre`.
 
-The alert capability has two authorization identities: `list_alerts` /
-`get_alert_details` on the A2A/chat surface and `kubernaut_list_alerts` on
-the raw MCP bridge (which the Console proxies). Alert-capable bundles must
-carry all three names or the same capability is denied on one surface
-([kubernaut-operator#682](https://github.com/jordigilh/kubernaut-operator/issues/682),
-DD-636 row 4d). SAR on a never-invoked tool name is inert, so carrying both
-is safe if upstream later unifies them.
+## Alert bundles: both names
+
+The alert capability is authorized under different tool names on different
+surfaces — `list_alerts`/`get_alert_details` on the chat/A2A surface and
+`kubernaut_list_alerts` on the raw MCP bridge (which the Console proxies).
+Bundles that grant alert access must carry all three names or the capability
+works on one surface only. SAR on a never-invoked tool name is inert.
 
 ## Applying
 
-The automated demo harness applies the equivalents automatically after
-operator reconciliation (`infrastructure.BindAFPersonaRBAC` +
-`infrastructure.BindDemoConsoleRBAC`, see `test/infrastructure/demo_operator.go`
-and `make bind-fleet-af-rbac`). To apply manually:
+The demo harness applies the equivalents automatically after operator
+reconciliation (`infrastructure.BindAFPersonaRBAC` +
+`infrastructure.BindDemoConsoleRBAC`); `make bind-fleet-af-rbac` does the same
+for a fleet-core cluster. Manually:
 
 ```bash
 kubectl apply -f test/fixtures/demo/rbac/persona-tool-roles.yaml
 kubectl apply -f test/fixtures/demo/rbac/console-bindings.yaml
 ```
-
-Adjust the `kubernaut-system-` role-name prefix if your Kubernaut CR lives in
-another namespace, and the Group subjects to your IdP's group names. The demo
-Keycloak realm (`test/infrastructure/keycloak-realm-demo.json`) issues one
-group per persona plus the `sre` user `sre-user`.
-
-## Keeping this in sync
 
 `test/infrastructure/demo_console_rbac_test.go` (UT-INFRA-2703-004/005)
 parity-tests these manifests against the shared persona contract
