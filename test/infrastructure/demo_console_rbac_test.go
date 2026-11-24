@@ -140,12 +140,15 @@ var _ = Describe("Fleet CR fixture roles-only compatibility (UT-INFRA-2703-003)"
 })
 
 // UT-INFRA-2703-004 [AC-6]: the demo-owned persona tool-role manifest (the
-// human SOP artifact replacing the operator's retired built-in personas) must
-// stay in parity with the shared persona RBAC contract the harness applies
-// (LoadPersonaTools), plus the operator #682/#683 both-names rule: alert-
-// capable bundles carry list_alerts, get_alert_details AND
-// kubernaut_list_alerts, because AF authorizes the invoked tool name and the
-// raw MCP bridge names the alert list tool differently than the A2A surface.
+// human SOP artifact) and the automated harness path must grant the same
+// tool set: the manifest is parity-tested against the shared persona RBAC
+// contract (LoadPersonaTools, which the harness applies via
+// PersonaToolClusterRolesYAML/BindAFPersonaRBAC) AND against the rendered
+// harness output itself, so automated/manual drift fails CI. The contract
+// carries the operator #682/#683 both-names rule: alert-capable personas
+// hold list_alerts, get_alert_details AND kubernaut_list_alerts, because AF
+// authorizes the invoked tool name and the raw MCP bridge registers the
+// alert list tool under a different name than the A2A surface.
 var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", func() {
 	const manifestPath = "test/fixtures/demo/rbac/persona-tool-roles.yaml"
 
@@ -157,6 +160,9 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 
 		personaTools, err := LoadPersonaTools()
 		Expect(err).NotTo(HaveOccurred())
+
+		renderedYAML, err := PersonaToolClusterRolesYAML()
+		Expect(err).NotTo(HaveOccurred(), "the automated path must render from the same contract")
 
 		var crbs []rbacv1.ClusterRoleBinding
 		rolesByPersona := map[string]bool{}
@@ -187,10 +193,26 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 			expected, ok := personaTools[persona]
 			Expect(ok).To(BeTrue(), "demo manifest persona %q must exist in the shared persona contract", persona)
 			if alertCapablePersonas[persona] {
-				expected = append(append([]string(nil), expected...), "kubernaut_list_alerts")
+				Expect(cr.Rules[0].ResourceNames).To(ContainElement("kubernaut_list_alerts"),
+					"demo-tool-%s must carry the raw-MCP alert name (both-names rule)", persona)
 			}
 			Expect(cr.Rules[0].ResourceNames).To(ConsistOf(toAnySlice(expected)...),
-				"demo-tool-%s drifted from the shared persona contract (plus the both-names alert rule)", persona)
+				"demo-tool-%s drifted from the shared persona contract", persona)
+
+			// Automated-path parity: the harness-rendered kubernaut-tool-<persona>
+			// ClusterRole must grant exactly the same tool set as the manifest's
+			// demo-tool-<persona>, or the two provisioning paths diverge (the
+			// manual SOP artifact would grant capabilities the automated demo
+			// denies, or vice versa).
+			renderedRules, renderErr := parseClusterRoleRulesFromYAML([]byte(renderedYAML), "kubernaut-tool-"+persona)
+			Expect(renderErr).NotTo(HaveOccurred())
+			Expect(renderedRules).NotTo(BeEmpty(), "rendered kubernaut-tool-%s must have rules", persona)
+			var renderedTools []string
+			for _, r := range renderedRules {
+				renderedTools = append(renderedTools, r.ResourceNames...)
+			}
+			Expect(renderedTools).To(ConsistOf(toAnySlice(cr.Rules[0].ResourceNames)...),
+				"automated (kubernaut-tool-%s) and manual (demo-tool-%s) provisioning paths drifted", persona, persona)
 		}
 
 		Expect(rolesByPersona).To(HaveLen(len(personaTools)),
