@@ -2984,7 +2984,7 @@ func operatorOperandImagesForDemo(options DemoHelmOptions, version string) (map[
 	return OperatorOperandImagesFromBuiltImages(built)
 }
 
-func operatorFleetOptionsFromHelm(options *FleetHelmOptions) *OperatorFleetOptions {
+func operatorFleetOptionsFromDeploy(options *FleetDeployOptions) *OperatorFleetOptions {
 	if options == nil {
 		return nil
 	}

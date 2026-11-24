@@ -61,13 +61,16 @@ var _ = Describe("standalone AF Fleet configuration [BR-FLEET-054, BR-INTEGRATIO
 	It("UT-INFRA-AF-FLEET-2462-004 [BR-FLEET-054, BR-INTEGRATION-065]: renders matching Keycloak, FMC, and Gateway settings for AF", func() {
 		baseConfig, err := os.ReadFile(filepath.Join(getProjectRoot(), "test/fixtures/kubernetes/apifrontend/e2e/config.yaml"))
 		Expect(err).NotTo(HaveOccurred())
-		fleetOptions := &FleetHelmOptions{
-			MCPGatewayEndpoint:          "http://envoy-ai-gateway.kubernaut-system.svc.cluster.local:8080/mcp",
-			MCPGatewayType:              "eaigw",
-			OAuth2TokenURL:              "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
-			OAuth2CredentialsSecret:     fleetOAuth2SecretName,
-			OAuth2Scopes:                []string{"kube-mcp-server-audience"},
-			FleetMetadataCacheNamespace: "kubernaut-system",
+		fleetOptions := &FleetDeployOptions{
+			MCPGatewayEndpoint:      "http://envoy-ai-gateway.kubernaut-system.svc.cluster.local:8080/mcp",
+			MCPGatewayType:          "eaigw",
+			OAuth2TokenURL:          "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
+			OAuth2CredentialsSecret: fleetOAuth2SecretName,
+			OAuth2Scopes:            []string{"kube-mcp-server-audience"},
+			// Distinct from the application namespace so the assertions below
+			// prove the FMC service URL derives from FleetMetadataCacheNamespace,
+			// not from the namespace argument.
+			FleetMetadataCacheNamespace: "fmc-system",
 		}
 
 		rendered, err := buildAPIFrontendFleetConfig(baseConfig, "kubernaut-system", fleetOptions)
@@ -89,7 +92,11 @@ var _ = Describe("standalone AF Fleet configuration [BR-FLEET-054, BR-INTEGRATIO
 		Expect(config.Auth.OIDCCaFile).To(Equal("/etc/apifrontend/inter-service-ca/ca.crt"))
 		Expect(config.Fleet.Enabled).To(BeTrue())
 		Expect(config.Fleet.Backend).To(Equal(fleet.BackendFMC))
-		Expect(config.Fleet.Endpoint).To(Equal("https://fleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080"))
+		Expect(config.Fleet.Endpoint).To(Equal("https://fleetmetadatacache-service.fmc-system.svc.cluster.local:8080"))
+		// #2695: the Console inventory reader is built only from fleet.fmc.endpoint
+		// (DD-FLEET-017 D2.1a). Key independence from fleet.endpoint is proven by
+		// UT-AF-CFG-2661-001 and UT-FLEET-CFG-029, not by this renderer test.
+		Expect(config.Fleet.FMC.Endpoint).To(Equal("https://fleetmetadatacache-service.fmc-system.svc.cluster.local:8080"))
 		Expect(config.Fleet.MCPGatewayEndpoint).To(Equal(fleetOptions.MCPGatewayEndpoint))
 		Expect(config.Fleet.EffectiveMCPGatewayType()).To(Equal(fleet.GatewayEAIGW))
 		Expect(config.Fleet.OAuth2.Enabled).To(BeTrue())
@@ -109,7 +116,7 @@ integrations:
   dataStorage:
     url: https://data-storage-service:8080
 `)
-		fleetOptions := &FleetHelmOptions{
+		fleetOptions := &FleetDeployOptions{
 			MCPGatewayEndpoint:      "http://envoy-ai-gateway.kubernaut-system.svc.cluster.local:8080/mcp",
 			MCPGatewayType:          "eaigw",
 			OAuth2TokenURL:          "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
@@ -169,7 +176,7 @@ integrations:
 	})
 
 	It("IT-INFRA-AF-FLEET-2462-007 [BR-FLEET-054]: deploys AF with the Fleet OAuth secret and routing config", func() {
-		fleetOptions := &FleetHelmOptions{
+		fleetOptions := &FleetDeployOptions{
 			MCPGatewayEndpoint:          "http://envoy-ai-gateway.kubernaut-system.svc.cluster.local:8080/mcp",
 			MCPGatewayType:              "eaigw",
 			OAuth2TokenURL:              "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
@@ -185,6 +192,32 @@ integrations:
 		Expect(manifest).To(ContainSubstring("issuerURL: https://keycloak:8443/realms/kubernaut-demo"))
 		Expect(manifest).To(ContainSubstring("mountPath: /etc/apifrontend/" + fleetOAuth2SecretName))
 		Expect(manifest).To(ContainSubstring("secretName: " + fleetOAuth2SecretName))
+		expectValidYAMLDocuments(manifest)
+	})
+
+	It("IT-INFRA-AF-FLEET-2695-002 [BR-FLEET-054, BR-INTEGRATION-065]: renders fleet.fmc.endpoint into the AF ConfigMap", func() {
+		fleetOptions := &FleetDeployOptions{
+			MCPGatewayEndpoint:          "http://envoy-ai-gateway.kubernaut-system.svc.cluster.local:8080/mcp",
+			MCPGatewayType:              "eaigw",
+			OAuth2TokenURL:              "https://keycloak:8443/realms/kubernaut-demo/protocol/openid-connect/token",
+			OAuth2CredentialsSecret:     fleetOAuth2SecretName,
+			OAuth2Scopes:                []string{"kube-mcp-server-audience"},
+			FleetMetadataCacheNamespace: "fmc-system",
+		}
+		manifest := captureKubectlManifest(func() error {
+			return deployAPIFrontendService(context.Background(), "test-kubeconfig", "kubernaut-system", "localhost/apifrontend:test", false, fleetOptions, io.Discard)
+		})
+
+		configMap := findManifestDocument(manifest, "ConfigMap", "apifrontend-config")
+		configYAML, found, err := unstructured.NestedString(configMap.Object, "data", "config.yaml")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue())
+		var config struct {
+			Fleet fleet.FleetConfig `yaml:"fleet"`
+		}
+		Expect(yaml.Unmarshal([]byte(configYAML), &config)).To(Succeed())
+		Expect(config.Fleet.FMC.Endpoint).To(Equal("https://fleetmetadatacache-service.fmc-system.svc.cluster.local:8080"),
+			"the rendered ConfigMap must carry the Console inventory endpoint")
 		expectValidYAMLDocuments(manifest)
 	})
 
@@ -214,7 +247,7 @@ integrations:
 	})
 
 	It("UT-INFRA-AF-FLEET-2462-009 [BR-INTEGRATION-065]: KA mounts the shared Fleet OAuth2 secret at its configured path", func() {
-		patch, err := buildKubernautAgentFleetDeploymentPatch(&FleetHelmOptions{
+		patch, err := buildKubernautAgentFleetDeploymentPatch(&FleetDeployOptions{
 			OAuth2CredentialsSecret: fleetOAuth2SecretName,
 		})
 		Expect(err).NotTo(HaveOccurred())

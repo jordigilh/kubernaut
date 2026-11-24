@@ -381,7 +381,7 @@ func DeployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, af
 	return deployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, enableCoverage, nil, writer)
 }
 
-func completeAPIFrontendSetup(ctx context.Context, kubeconfigPath, namespace string, options apiFrontendE2EOptions, fleetOptions *FleetHelmOptions, writer io.Writer) error {
+func completeAPIFrontendSetup(ctx context.Context, kubeconfigPath, namespace string, options apiFrontendE2EOptions, fleetOptions *FleetDeployOptions, writer io.Writer) error {
 	// PHASE 6: Wait for rollouts + enable JWT on KA
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 6: Waiting for deployments...")
@@ -464,7 +464,7 @@ func AFGenerateCerts(ctx context.Context, certDir string, writer io.Writer) erro
 	return nil
 }
 
-func setupAPIFrontendStack(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) (*FleetHelmOptions, error) {
+func setupAPIFrontendStack(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) (*FleetDeployOptions, error) {
 	fleetOptions, err := setupAPIFrontendDependencies(ctx, clusterName, kubeconfigPath, namespace, images, options, writer)
 	if err != nil {
 		return nil, err
@@ -553,7 +553,7 @@ func setupAPIFrontendStack(ctx context.Context, clusterName, kubeconfigPath, nam
 	return fleetOptions, nil
 }
 
-func setupAPIFrontendDependencies(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) (*FleetHelmOptions, error) {
+func setupAPIFrontendDependencies(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) (*FleetDeployOptions, error) {
 	// PHASE 4: Deploy kubernaut stack (DS + KA + dependencies)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 4: Deploying kubernaut stack...")
@@ -634,7 +634,7 @@ func setupAPIFrontendDependencies(ctx context.Context, clusterName, kubeconfigPa
 	return fleetOptions, nil
 }
 
-func provisionAPIFrontendFleet(ctx context.Context, clusterName, kubeconfigPath, namespace string, options apiFrontendE2EOptions, writer io.Writer) (*FleetHelmOptions, error) {
+func provisionAPIFrontendFleet(ctx context.Context, clusterName, kubeconfigPath, namespace string, options apiFrontendE2EOptions, writer io.Writer) (*FleetDeployOptions, error) {
 	if !options.FleetEnabled {
 		return nil, nil
 	}
@@ -650,7 +650,7 @@ func provisionAPIFrontendFleet(ctx context.Context, clusterName, kubeconfigPath,
 }
 
 // deployAPIFrontendService applies the APIFrontend E2E config and deployment fixture.
-func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, enableCoverage bool, fleetOptions *FleetHelmOptions, writer io.Writer) error {
+func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, enableCoverage bool, fleetOptions *FleetDeployOptions, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	configData, err := os.ReadFile(filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "e2e", "config.yaml")) //nolint:gosec // G304
 	if err != nil {
@@ -851,7 +851,7 @@ spec:
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
-func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptions *FleetHelmOptions) ([]byte, error) {
+func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptions *FleetDeployOptions) ([]byte, error) {
 	if fleetOptions == nil {
 		return baseConfig, nil
 	}
@@ -875,10 +875,20 @@ func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptio
 	if fmcNamespace == "" {
 		fmcNamespace = namespace
 	}
+	fmcServiceURL := fmt.Sprintf("https://fleetmetadatacache-service.%s.svc.cluster.local:8080", fmcNamespace)
+	// The rendered fleet block is written wholesale, never merged: any
+	// fleet.* key added to config.yaml is dropped here.
 	config["fleet"] = map[string]any{
-		"enabled":            true,
-		"backend":            string(fleet.BackendFMC),
-		"endpoint":           fmt.Sprintf("https://fleetmetadatacache-service.%s.svc.cluster.local:8080", fmcNamespace),
+		"enabled": true,
+		"backend": string(fleet.BackendFMC),
+		// fleet.endpoint is the scope adapter's key; fleet.fmc.endpoint is the
+		// Console inventory key (DD-FLEET-017 D2.1a). Both point at the FMC
+		// service here, but the reader is built only from the latter and never
+		// inherits the former.
+		"endpoint": fmcServiceURL,
+		"fmc": map[string]any{
+			"endpoint": fmcServiceURL,
+		},
 		"mcpGatewayEndpoint": fleetOptions.MCPGatewayEndpoint,
 		"mcpGatewayType":     fleetOptions.MCPGatewayType,
 		"namespace":          namespace,
@@ -1099,7 +1109,7 @@ func afPatchKAJWTAudience(ctx context.Context, kubeconfigPath, namespace string,
 	return nil
 }
 
-func afPatchKubernautAgentFleetConfig(ctx context.Context, kubeconfigPath, namespace string, fleetOptions *FleetHelmOptions, writer io.Writer) error {
+func afPatchKubernautAgentFleetConfig(ctx context.Context, kubeconfigPath, namespace string, fleetOptions *FleetDeployOptions, writer io.Writer) error {
 	if fleetOptions == nil || fleetOptions.OAuth2CredentialsSecret == "" {
 		return fmt.Errorf("fleet gateway options and OAuth2 secret are required for Kubernaut Agent")
 	}
@@ -1154,7 +1164,7 @@ func afPatchKubernautAgentFleetConfig(ctx context.Context, kubeconfigPath, names
 	return nil
 }
 
-func buildKubernautAgentFleetDeploymentPatch(fleetOptions *FleetHelmOptions) ([]byte, error) {
+func buildKubernautAgentFleetDeploymentPatch(fleetOptions *FleetDeployOptions) ([]byte, error) {
 	if fleetOptions == nil || fleetOptions.OAuth2CredentialsSecret == "" {
 		return nil, fmt.Errorf("fleet OAuth2 credentials secret is required for Kubernaut Agent")
 	}
@@ -1180,7 +1190,7 @@ func buildKubernautAgentFleetDeploymentPatch(fleetOptions *FleetHelmOptions) ([]
 	})
 }
 
-func buildKubernautAgentFleetConfig(currentConfig []byte, namespace string, fleetOptions *FleetHelmOptions) ([]byte, error) {
+func buildKubernautAgentFleetConfig(currentConfig []byte, namespace string, fleetOptions *FleetDeployOptions) ([]byte, error) {
 	if fleetOptions == nil || fleetOptions.OAuth2CredentialsSecret == "" || fleetOptions.MCPGatewayEndpoint == "" || fleetOptions.OAuth2TokenURL == "" {
 		return nil, fmt.Errorf("fleet gateway endpoint, OAuth2 token URL, and secret are required for Kubernaut Agent")
 	}
