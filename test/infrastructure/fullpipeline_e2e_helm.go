@@ -651,9 +651,13 @@ subjects:
 // operator-managed AF lane -- fullpipeline (fleet and non-fleet) and the
 // operator demo.
 //
-// Does NOT also bind kubernaut-console-access: the operator owns the
-// console-access bindings as part of the reconciled Kubernaut resource; unlike
-// the per-tool persona bindings above, no test-owned manual step is needed.
+// Does NOT also bind kubernaut-console-access: that is a separate
+// coarse-grained gate (#1919), not the per-tool persona RBAC this function
+// owns. The AF-only E2E lane binds it via the harness-owned
+// e2e-user-rbac.yaml fixture (e2e-*-console-access ClusterRoleBindings);
+// provisioning of console access on the operator-managed lanes after the
+// CRD's consoleAccessGroups removal (#2702 / kubernaut-operator#682) is
+// tracked separately in issue #2703, not here.
 //
 // Must run after operator reconciliation so the reconciled workload exists;
 // the persona RBAC itself is harness-owned and applied idempotently here

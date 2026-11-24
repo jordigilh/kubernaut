@@ -1,16 +1,17 @@
-// Command bind-fleet-af-rbac binds the per-tool kubernaut-tool-<persona>
-// ClusterRoles that the Kubernaut Operator creates for API Frontend
-// to the OIDC groups issued by the fleet-core Keycloak realm's
+// Command bind-fleet-af-rbac creates the per-tool
+// kubernaut-tool-<persona> ClusterRoles and their ClusterRoleBindings and
+// binds them to the OIDC groups issued by the fleet-core Keycloak realm's
 // "kubernaut-console" client (test/infrastructure/keycloak-realm-demo.json's
 // "sre" group/user).
 //
-// The operator deliberately creates only these ClusterRoles, never the
-// bindings (it can't presume to know a real deployer's IdP group names) --
-// see infrastructure.bindAFPersonaToolClusterRoles's doc comment (Issue
-// #1737). The coarse-grained kubernaut-console-access ClusterRole is NOT
-// handled here: the chart already binds it directly from
-// the user-applied CR's consoleAccessGroups (default includes "sre"), no
-// manual step needed for that one.
+// #2702 (kubernaut-operator#682): the operator no longer renders persona
+// ClusterRoles or user-facing ClusterRoleBindings, so this command -- via
+// infrastructure.BindAFPersonaRBAC / PersonaToolClusterRolesYAML -- owns the
+// full persona tool RBAC provisioning path. The coarse-grained
+// kubernaut-console-access ClusterRole is NOT handled here: the AF-only E2E
+// lane binds it via the harness-owned e2e-user-rbac.yaml fixture, and
+// operator-managed-lane console-access provisioning is tracked separately
+// (issue #2703 territory).
 // Run this once, AFTER the operator bootstrap and Kubernaut CR, against the fleet-core cluster set up
 // by `make setup-e2e-fleet-infra`:
 //
@@ -51,5 +52,5 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\n❌ bind-fleet-af-rbac failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("\n✅ AF persona + console-access RBAC bound to the Keycloak \"sre\" group.")
+	fmt.Println("\n✅ AF persona tool RBAC (ClusterRoles + bindings) bound to the Keycloak \"sre\" group.")
 }

@@ -217,14 +217,18 @@ var _ = Describe("AF persona RBAC wiring", func() {
 	// rbac.roleBindings to render persona ClusterRoles when a fleet
 	// provisioner was active (waitForAFPersonaRBAC only, no harness apply).
 	// With the operator RBAC decoupling, every operator-managed AF path must
-	// apply the harness-owned persona RBAC via BindAFPersonaRBAC.
+	// apply the harness-owned persona RBAC via BindAFPersonaRBAC. Assertions
+	// are deliberately coarse (function name presence, not exact source
+	// lines) so harmless refactors do not break the contract, while the
+	// negative assertion pins that no fullpipeline path may gate persona
+	// RBAC on the operator having rendered it.
 	It("UT-2702-RBAC-001 [BR-SECURITY-001]: fullpipeline applies harness persona RBAC on every operator-managed AF path", func() {
 		source, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "fullpipeline_e2e.go"))
 		Expect(err).NotTo(HaveOccurred())
 		text := string(source)
-		Expect(text).To(ContainSubstring("if err := BindAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {"),
+		Expect(text).To(ContainSubstring("BindAFPersonaRBAC(ctx"),
 			"fullpipeline must apply harness-owned persona ClusterRoles/bindings via BindAFPersonaRBAC")
-		Expect(text).NotTo(ContainSubstring("fleetProvisioner != nil {\n\t\tif err := waitForAFPersonaRBAC"),
-			"no fullpipeline path may rely on operator-rendered persona ClusterRoles (#2702)")
+		Expect(text).NotTo(ContainSubstring("waitForAFPersonaRBAC"),
+			"no fullpipeline path may rely on operator-rendered persona ClusterRoles (#2702); the SAR wait belongs to BindAFPersonaRBAC")
 	})
 })
