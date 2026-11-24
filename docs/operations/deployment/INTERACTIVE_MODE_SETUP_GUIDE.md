@@ -159,7 +159,8 @@ console roles. Alert-capable bundles must carry both alert surfaces' tool
 names (`list_alerts`, `get_alert_details` **and** `kubernaut_list_alerts`) —
 see the both-names rule in that directory's README.
 
-Two AF-side settings remain in the CR (`spec.apiFrontend.rbac`):
+Two AF-side settings remain in the CR (`spec.apiFrontend.rbac`, per
+[kubernaut-operator#682](https://github.com/jordigilh/kubernaut-operator/issues/682)):
 `consoleAccessAuthorizationCheckEnabled` (default `false`, #2150 —
 authentication-only gate for dev/eval) and `sarCacheTTL`. Set it `true` once
 you have bound the `<ns>-console-access` role to your groups, so the console

@@ -91,39 +91,61 @@ func BindDemoConsoleRBAC(ctx context.Context, kubeconfigPath, namespace, group s
 	return waitForDemoConsoleRBAC(ctx, kubeconfigPath, namespace, group, writer)
 }
 
-// waitForDemoConsoleRBAC polls a SubjectAccessReview as the demo user until
-// the coarse-grained console-access gate allows it, proving the external
-// binding took effect (the check is deny-by-default without it).
+// demoConsoleSARUser is the demo Keycloak realm's sole human user
+// (keycloak-realm-demo.json), a member of the group the console roles are
+// bound to. The SAR probes run as this user to prove the bindings actually
+// authorize a real demo identity.
+const demoConsoleSARUser = "sre-user"
+
+// waitForDemoConsoleRBAC polls SubjectAccessReviews as the demo user until
+// both the coarse-grained console-access gate and the console-reader
+// capability SAR allow, proving the external bindings took effect (both
+// checks are deny-by-default without them). The reader probe also fails fast
+// if the operator's rendered role names drift from this harness's contract.
 func waitForDemoConsoleRBAC(ctx context.Context, kubeconfigPath, namespace, group string, writer io.Writer) error {
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("create Kubernetes client for demo console RBAC verification: %w", err)
 	}
+	probes := []authorizationv1.ResourceAttributes{
+		{Verb: "use", Group: "kubernaut.ai", Resource: "console"},
+		{Verb: "use", Group: "kubernaut.ai", Resource: "tools", Name: "kubernaut_read_policy_scope"},
+	}
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		result, sarErr := clientset.AuthorizationV1().SubjectAccessReviews().Create(ctx, &authorizationv1.SubjectAccessReview{
-			Spec: authorizationv1.SubjectAccessReviewSpec{
-				User:   "sre-user",
-				Groups: []string{group},
-				ResourceAttributes: &authorizationv1.ResourceAttributes{
-					Verb:     "use",
-					Group:    "kubernaut.ai",
-					Resource: "console",
+		allowed := true
+		for _, probe := range probes {
+			result, sarErr := clientset.AuthorizationV1().SubjectAccessReviews().Create(ctx, &authorizationv1.SubjectAccessReview{
+				Spec: authorizationv1.SubjectAccessReviewSpec{
+					User:   demoConsoleSARUser,
+					Groups: []string{group},
+					ResourceAttributes: &authorizationv1.ResourceAttributes{
+						Verb:     probe.Verb,
+						Group:    probe.Group,
+						Resource: probe.Resource,
+						Name:     probe.Name,
+					},
 				},
-			},
-		}, metav1.CreateOptions{})
-		if sarErr == nil && result.Status.Allowed {
-			_, _ = fmt.Fprintf(writer, "  ✅ console-access SAR verified for %s/%s\n", group, namespace)
-			return nil
+			}, metav1.CreateOptions{})
+			if sarErr != nil {
+				err = sarErr
+				allowed = false
+				break
+			}
+			if !result.Status.Allowed {
+				err = fmt.Errorf("SubjectAccessReview denied %s/%s%s for group %s: %s",
+					probe.Group, probe.Resource, probe.Name, group, result.Status.Reason)
+				allowed = false
+				break
+			}
 		}
-		if sarErr != nil {
-			err = sarErr
-		} else {
-			err = fmt.Errorf("SubjectAccessReview denied console access for group %s: %s", group, result.Status.Reason)
+		if allowed {
+			_, _ = fmt.Fprintf(writer, "  ✅ console-access and console-reader SARs verified for %s/%s\n", group, namespace)
+			return nil
 		}
 		if sleepErr := sleepOrDone(ctx, 2*time.Second); sleepErr != nil {
 			return fmt.Errorf("wait for demo console RBAC SAR: %w", sleepErr)
 		}
 	}
-	return fmt.Errorf("demo console RBAC SAR did not allow console access within 60s: %w", err)
+	return fmt.Errorf("demo console RBAC SARs did not allow console access within 60s: %w", err)
 }

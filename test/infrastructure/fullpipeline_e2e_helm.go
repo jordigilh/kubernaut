@@ -652,13 +652,11 @@ subjects:
 // operator-managed AF lane -- fullpipeline (fleet and non-fleet) and the
 // operator demo.
 //
-// Does NOT also bind kubernaut-console-access: that is a separate
-// coarse-grained gate (#1919), not the per-tool persona RBAC this function
-// owns. The AF-only E2E lane binds it via the harness-owned
-// e2e-user-rbac.yaml fixture (e2e-*-console-access ClusterRoleBindings);
-// provisioning of console access on the operator-managed lanes after the
-// CRD's consoleAccessGroups removal (#2702 / kubernaut-operator#682) is
-// tracked separately in issue #2703, not here.
+// Does NOT also bind the operator-rendered console roles
+// (console-access/console-reader/console-inventory-reader): #2703's
+// BindDemoConsoleRBAC (demo_console_rbac.go) supplies those external
+// bindings for the demo, and the AF-only E2E lane uses the harness-owned
+// e2e-user-rbac.yaml fixture (e2e-*-console-access ClusterRoleBindings).
 //
 // Must run after operator reconciliation so the reconciled workload exists;
 // the persona RBAC itself is harness-owned and applied idempotently here

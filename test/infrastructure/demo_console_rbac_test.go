@@ -19,6 +19,7 @@ package infrastructure
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -215,15 +216,22 @@ var _ = Describe("Demo console binding manifest (UT-INFRA-2703-005)", func() {
 		fixtureCRBs := decodeClusterRoleBindings(string(data))
 		Expect(fixtureCRBs).To(HaveLen(len(harnessCRBs)))
 
-		byRoleRef := func(crbs []rbacv1.ClusterRoleBinding) map[string]string {
-			out := map[string]string{}
-			for _, crb := range crbs {
-				out[crb.RoleRef.Name] = crb.Subjects[0].Name
-			}
-			return out
+		harnessByRoleRef := map[string]rbacv1.ClusterRoleBinding{}
+		for _, crb := range harnessCRBs {
+			harnessByRoleRef[crb.RoleRef.Name] = crb
 		}
-		Expect(byRoleRef(fixtureCRBs)).To(Equal(byRoleRef(harnessCRBs)),
-			"docs/console fixture must bind the same (role, group) pairs the demo harness applies")
+		for _, crb := range fixtureCRBs {
+			harness, ok := harnessByRoleRef[crb.RoleRef.Name]
+			Expect(ok).To(BeTrue(), "fixture binds role %q the harness does not", crb.RoleRef.Name)
+			// BR-PLATFORM-014: same CRB name and demo-rbac label, so the
+			// documented teardown (label-selector delete) covers both paths.
+			Expect(crb.Name).To(Equal(harness.Name),
+				"fixture CRB name must mirror the harness-generated name")
+			Expect(crb.Labels["kubernaut.ai/demo-rbac"]).To(Equal(harness.Labels["kubernaut.ai/demo-rbac"]),
+				"fixture must carry the same demo-rbac teardown label")
+			Expect(crb.Subjects).To(Equal(harness.Subjects),
+				"fixture must bind the same (role, group) pair the demo harness applies")
+		}
 	})
 })
 
@@ -231,19 +239,23 @@ var _ = Describe("Demo console binding manifest (UT-INFRA-2703-005)", func() {
 // the manual make target must both apply the demo-owned console bindings --
 // the operator no longer renders any user-facing ClusterRoleBinding
 // (kubernaut-operator#682), so without this call the console-access gate and
-// console read capabilities are deny-by-default for every demo user.
+// console read capabilities are deny-by-default for every demo user. The
+// regexp anchors on an actual (non-commented) call statement; runtime
+// dispatch proof is the SAR wait inside BindDemoConsoleRBAC itself.
+var wiringCallPattern = regexp.MustCompile(`(?m)^\s*(if err := )?(infrastructure\.)?BindDemoConsoleRBAC\(`)
+
 var _ = Describe("Demo console RBAC wiring (UT-INFRA-2703-006)", func() {
 	It("finalizeDemoOperatorApplication applies the demo console bindings", func() {
 		data, err := os.ReadFile(filepath.Join(getProjectRoot(), "test", "infrastructure", "demo_operator.go")) //nolint:gosec // G304: known project path
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(data)).To(ContainSubstring("BindDemoConsoleRBAC("),
-			"demo_operator.go must bind console-access/console-reader externally after operator reconciliation")
+		Expect(wiringCallPattern.FindString(string(data))).NotTo(BeEmpty(),
+			"demo_operator.go must call BindDemoConsoleRBAC (an actual call, not a comment) after operator reconciliation")
 	})
 
 	It("hack/bind-fleet-af-rbac applies the demo console bindings", func() {
 		data, err := os.ReadFile(filepath.Join(getProjectRoot(), "hack", "bind-fleet-af-rbac", "main.go")) //nolint:gosec // G304: known project path
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(data)).To(ContainSubstring("BindDemoConsoleRBAC("),
+		Expect(wiringCallPattern.FindString(string(data))).NotTo(BeEmpty(),
 			"the manual make target must also bind the operator-rendered console roles")
 	})
 })
