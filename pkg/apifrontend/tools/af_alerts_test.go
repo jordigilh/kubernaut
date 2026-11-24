@@ -446,7 +446,7 @@ var _ = Describe("Alert Tools (#1367)", func() {
 		})
 	})
 
-	// Issue #2274: list_alerts/get_alert_details are the only two AF tools
+	// Issue #2274: kubernaut_list_alerts/kubernaut_get_alert_details are the only two AF tools
 	// that read Prometheus/AlertManager data without a cluster_id filter
 	// (kubernaut_investigate_alert already has one, af_investigate_alert.go).
 	// In a fleet deployment, GetAlerts() returns alerts fleet-wide (Thanos/

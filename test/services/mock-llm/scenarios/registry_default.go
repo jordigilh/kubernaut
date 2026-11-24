@@ -355,7 +355,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(afFleetKubectlE2EScenario())
 
 	// E2E-FLEET-020 (Issue #2274): real AF binary calls
-	// list_alerts(cluster_id) via a real A2A request against a real
+	// kubernaut_list_alerts(cluster_id) via a real A2A request against a real
 	// AlertManager, proving cluster-scoped alert filtering.
 	r.Register(afFleetAlertsE2EScenario())
 

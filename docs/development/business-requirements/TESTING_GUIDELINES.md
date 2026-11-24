@@ -625,8 +625,8 @@ InjectAlerts(amURL, []Alert{
 ### 4b. **Fleet Cluster-Collision Testing Pattern (Issue #2274)**
 
 **Applies to**: any fleet-aware service E2E test that reads Prometheus/AlertManager/Thanos data
-scoped by `cluster_id` (currently: Effectiveness Monitor, API Frontend's `list_alerts`/
-`get_alert_details` tools).
+scoped by `cluster_id` (currently: Effectiveness Monitor, API Frontend's `kubernaut_list_alerts`/
+`kubernaut_get_alert_details` tools).
 
 **Lesson learned**: Issue #2274 shipped a real production bug (EM's PromQL/AlertManager queries
 were not cluster-scoped in fleet deployments) that the fleet E2E lane's existing tests never
@@ -656,7 +656,7 @@ matching-cluster data.
 - **Alerts** (`InjectAlerts`, AlertManager `/api/v2/alerts`): inject a **resolved** alert for the
   matching cluster and a still-**firing** alert with the same `alertname`/correlation-ID for a
   colliding cluster. If cluster scoping is broken, AlertManager returns both, and the still-firing
-  collision alert masks the real resolution (E2E-FLEET-019b; also used for AF's `list_alerts` via a
+  collision alert masks the real resolution (E2E-FLEET-019b; also used for AF's `kubernaut_list_alerts` via a
   marker-annotation substring check, E2E-FLEET-020).
 - Prefer **deterministic value/state contradictions** (net regression vs. net improvement; firing
   vs. resolved) over subtle numeric deltas — the test should fail loudly and unambiguously if the

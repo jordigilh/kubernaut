@@ -118,7 +118,7 @@ This test plan validates the deterministic alert severity prioritization feature
 |-----------|----------------------|---------------------|----------------|
 | PrioritizeAlerts | HandleListAlerts() | pkg/apifrontend/tools/af_alerts.go:179 | UT-AF-1412-010 |
 | kubernaut_list_alerts (MCP) | RegisterTools() | pkg/apifrontend/handler/mcp_bridge.go | IT-AF-1412-001 |
-| list_alerts (A2A) | buildToolList() | pkg/apifrontend/agent/root.go:147 | UT-AF-1412-001 |
+| kubernaut_list_alerts (A2A) | buildToolList() | pkg/apifrontend/agent/root.go | UT-AF-1412-001 |
 | PromClient → MCPBridgeConfig | main.go bridgeCfg | cmd/apifrontend/main.go:845 | E2E-AF-1412-001 |
 | RBAC grant | e2e-user-rbac.yaml | deploy/apifrontend/overlays/e2e/ | IT-AF-1412-002 |
 

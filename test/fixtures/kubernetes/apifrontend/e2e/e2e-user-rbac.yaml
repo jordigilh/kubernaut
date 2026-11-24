@@ -20,14 +20,15 @@
 # through AF's real /mcp endpoint using a genuine Dex-issued token.
 #
 # The block was removed rather than reconciled with values.yaml because it
-# had already drifted from it (e.g. "kubernaut_list_alerts" here vs.
-# "list_alerts" in values.yaml's persona lists -- see the compat grant
-# below) and duplicated authority PersonaToolClusterRolesYAML already
-# derives correctly from values.yaml (afDeployE2ERBAC applies both). Removal
-# impact was verified by grepping every kubernaut_* raw MCP tool call in
-# test/e2e/apifrontend for the persona token used; the only dependency found
-# was sre's alert_prioritization_e2e_test.go calls to "kubernaut_list_alerts"
-# -- preserved narrowly below instead of restoring the full broad grant.
+# had already drifted from it and duplicated authority
+# PersonaToolClusterRolesYAML already derives correctly from values.yaml
+# (afDeployE2ERBAC applies both). Removal impact was verified by grepping
+# every kubernaut_* raw MCP tool call in test/e2e/apifrontend for the
+# persona token used; the only dependency found was sre's
+# alert_prioritization_e2e_test.go calls to "kubernaut_list_alerts" --
+# now authorized directly by the sre persona ClusterRole since #2713
+# unified the alert tool name across the A2A and raw MCP surfaces, so no
+# compat grant is needed.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -228,38 +229,4 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: e2e-console-access
-  apiGroup: rbac.authorization.k8s.io
----
-# Narrow compat grant for sre only: values.yaml's sre persona list carries
-# "list_alerts" (the internal name AF's own ADK agent uses for the A2A tool
-# -- pkg/apifrontend/agent/root.go), but the raw /mcp endpoint registers the
-# same capability under a different resourceName, "kubernaut_list_alerts"
-# (pkg/apifrontend/handler/mcp_bridge.go, mcptools.go). This pre-existing
-# naming mismatch means PersonaToolClusterRolesYAML (which derives strictly
-# from values.yaml) cannot itself authorize sre's direct-MCP
-# alert_prioritization_e2e_test.go calls. Scoped to sre + this single
-# resourceName only -- see the removal note above for why the broader grant
-# this replaced was deleted rather than kept for all 4 groups.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: e2e-sre-list-alerts-compat
-rules:
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["tools"]
-    resourceNames:
-      - kubernaut_list_alerts
-    verbs: ["use"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: e2e-sre-list-alerts-compat
-subjects:
-  - kind: Group
-    name: sre
-    apiGroup: rbac.authorization.k8s.io
-roleRef:
-  kind: ClusterRole
-  name: e2e-sre-list-alerts-compat
   apiGroup: rbac.authorization.k8s.io

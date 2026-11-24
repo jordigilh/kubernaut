@@ -994,13 +994,7 @@ func LoadPersonaTools() (map[string][]string, error) {
 			"kubernaut_get_effectiveness", "kubernaut_get_audit_trail", "kubernaut_message",
 			"kubernaut_complete", "kubernaut_cancel", "kubernaut_status", "kubernaut_reconnect",
 			"kubectl_get", "kubectl_list", "kubectl_list_events", "kubernaut_check_existing_remediation",
-			"kubernaut_remediate", "list_alerts", "get_alert_details", "kubernaut_investigate_alert",
-			// both-names rule (kubernaut-operator#682/#683, DD-636 row 4d):
-			// the raw MCP bridge registers the alert-list tool as
-			// kubernaut_list_alerts (mcp_bridge.go), so alert-capable
-			// personas carry that name too or the Console's /mcp surface
-			// denies the capability the chat surface grants.
-			"kubernaut_list_alerts",
+			"kubernaut_remediate", "kubernaut_list_alerts", "kubernaut_get_alert_details", "kubernaut_investigate_alert",
 			"kubernaut_get_approval_request", "kubernaut_complete_no_action", "kubernaut_list_approval_requests",
 			"list_clusters",
 		},
@@ -1010,8 +1004,7 @@ func LoadPersonaTools() (map[string][]string, error) {
 			"kubernaut_select_workflow", "kubernaut_present_decision", "kubernaut_message",
 			"kubernaut_complete", "kubernaut_cancel", "kubernaut_status", "kubernaut_reconnect",
 			"kubectl_get", "kubectl_list", "kubectl_list_events", "kubernaut_check_existing_remediation",
-			"kubernaut_remediate", "list_alerts", "get_alert_details", "kubernaut_investigate_alert",
-			"kubernaut_list_alerts", // both-names rule, see sre above
+			"kubernaut_remediate", "kubernaut_list_alerts", "kubernaut_get_alert_details", "kubernaut_investigate_alert",
 			"list_clusters", "kubernaut_list_approval_requests", "kubernaut_get_approval_request",
 		},
 		"cicd":                 {"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch", "kubernaut_await_session"},

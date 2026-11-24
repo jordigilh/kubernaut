@@ -7,7 +7,7 @@
 
 ## Context
 
-When multiple Prometheus alerts fire simultaneously in a namespace, the `list_alerts` tool must deterministically identify the highest-priority alert for investigation. Without prioritization, the LLM or autonomous flow would select alerts non-deterministically, potentially wasting remediation time on low-severity events while critical alerts go unaddressed.
+When multiple Prometheus alerts fire simultaneously in a namespace, the `kubernaut_list_alerts` tool must deterministically identify the highest-priority alert for investigation. Without prioritization, the LLM or autonomous flow would select alerts non-deterministically, potentially wasting remediation time on low-severity events while critical alerts go unaddressed.
 
 FedRAMP control SI-4(5) requires automated mechanisms to alert on security-relevant events with appropriate severity classification.
 
@@ -46,7 +46,7 @@ Unknown or empty severity labels rank 0, ensuring they always sort below info.
 
 ### Response Contract
 
-The `list_alerts` tool returns a `ListAlertsResult` with an optional `prioritized` field:
+The `kubernaut_list_alerts` tool returns a `ListAlertsResult` with an optional `prioritized` field:
 
 ```json
 {
@@ -89,7 +89,7 @@ if cfg.PromClient != nil {
 
 When `PromClient` is nil (Prometheus not configured), the tool is not available via MCP.
 
-In the A2A agent (ADK path), the tool is registered as `list_alerts` (no prefix).
+In the A2A agent (ADK path), the tool is registered as `kubernaut_list_alerts` (unified with the bridge name by #2713; formerly the bare `list_alerts`).
 
 ### RBAC
 
