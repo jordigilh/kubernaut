@@ -54,6 +54,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
@@ -509,6 +510,11 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, logger logr.Lo
 		Resource:     "services",
 		ResourceName: "fleetmetadatacache-service",
 		Verb:         "get",
+		// Issue #2694 (BR-SECURITY-016, FedRAMP AU-2): security_event
+		// records bypass the host logger's zap sampling (FMC's host is
+		// zapr around zap.NewProduction, which samples 100/100) and level
+		// gate.
+		SecurityEventLogger: kubelog.NewSecurityEventLogger(logger, kubelog.Options{ServiceName: "fleetmetadatacache"}),
 	}, logger)
 
 	// DD-PLATFORM-010 (Issue #2169): /readyz is registered at the top level
