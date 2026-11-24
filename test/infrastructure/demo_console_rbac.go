@@ -102,6 +102,8 @@ const demoConsoleSARUser = "sre-user"
 // capability SAR allow, proving the external bindings took effect (both
 // checks are deny-by-default without them). The reader probe also fails fast
 // if the operator's rendered role names drift from this harness's contract.
+// The 60s deadline is a child context, so a stalled SAR request (not just a
+// slow retry loop) is bounded too.
 func waitForDemoConsoleRBAC(ctx context.Context, kubeconfigPath, namespace, group string, writer io.Writer) error {
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
@@ -111,11 +113,12 @@ func waitForDemoConsoleRBAC(ctx context.Context, kubeconfigPath, namespace, grou
 		{Verb: "use", Group: "kubernaut.ai", Resource: "console"},
 		{Verb: "use", Group: "kubernaut.ai", Resource: "tools", Name: "kubernaut_read_policy_scope"},
 	}
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
+	pollCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	for {
 		allowed := true
 		for _, probe := range probes {
-			result, sarErr := clientset.AuthorizationV1().SubjectAccessReviews().Create(ctx, &authorizationv1.SubjectAccessReview{
+			result, sarErr := clientset.AuthorizationV1().SubjectAccessReviews().Create(pollCtx, &authorizationv1.SubjectAccessReview{
 				Spec: authorizationv1.SubjectAccessReviewSpec{
 					User:   demoConsoleSARUser,
 					Groups: []string{group},
@@ -143,9 +146,8 @@ func waitForDemoConsoleRBAC(ctx context.Context, kubeconfigPath, namespace, grou
 			_, _ = fmt.Fprintf(writer, "  ✅ console-access and console-reader SARs verified for %s/%s\n", group, namespace)
 			return nil
 		}
-		if sleepErr := sleepOrDone(ctx, 2*time.Second); sleepErr != nil {
-			return fmt.Errorf("wait for demo console RBAC SAR: %w", sleepErr)
+		if sleepErr := sleepOrDone(pollCtx, 2*time.Second); sleepErr != nil {
+			return fmt.Errorf("demo console RBAC SARs did not allow console access within 60s: %w", err)
 		}
 	}
-	return fmt.Errorf("demo console RBAC SARs did not allow console access within 60s: %w", err)
 }
