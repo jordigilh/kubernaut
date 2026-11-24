@@ -875,7 +875,7 @@ func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptio
 	if fmcNamespace == "" {
 		fmcNamespace = namespace
 	}
-	fmcServiceURL := fmcServiceURL(fmcNamespace)
+	fmcServiceURL := fmt.Sprintf("https://fleetmetadatacache-service.%s.svc.cluster.local:8080", fmcNamespace)
 	// The rendered fleet block is written wholesale, never merged: any
 	// fleet.* key added to config.yaml is dropped here.
 	config["fleet"] = map[string]any{

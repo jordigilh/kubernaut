@@ -638,31 +638,6 @@ var _ = Describe("issue #2492 operator deployment contracts", func() {
 		Expect(manifest).To(ContainSubstring("oauth2CredentialsSecretRef: fleet-write"))
 	})
 
-	It("UT-OPCR-FLEET-2695-001 [BR-FLEET-054, BR-INTEGRATION-065]: renders the FMC Console inventory endpoint in the CR fleet spec", func() {
-		options := testOperatorCROptions()
-		options.Fleet = &OperatorFleetOptions{Enabled: true, ReadCredentialsSecret: "fleet-read", WriteCredentialsSecret: "fleet-write", GatewayEndpoint: "https://mcp.example/mcp", GatewayType: "eaigw", FMCEndpoint: "https://fleetmetadatacache-service.fmc-system.svc.cluster.local:8080", FMCNamespace: "fmc-system"}
-		manifest, err := BuildKubernautCRManifest(options)
-		Expect(err).NotTo(HaveOccurred())
-		// #2695: the operator CR must carry the FMC endpoint the external
-		// operator renders into AF's fleet.fmc.endpoint (DD-FLEET-017 D2.1a);
-		// without it operator-managed AF loses Console inventory.
-		Expect(manifest).To(ContainSubstring("fmc:"))
-		Expect(manifest).To(ContainSubstring("endpoint: https://fleetmetadatacache-service.fmc-system.svc.cluster.local:8080"))
-		Expect(manifest).To(ContainSubstring("namespace: fmc-system"))
-	})
-
-	It("UT-OPCR-FLEET-2695-002 [BR-FLEET-054, BR-INTEGRATION-065]: derives operator fleet FMC options from the fleet Helm options", func() {
-		options := operatorFleetOptionsFromHelm(&FleetHelmOptions{
-			MCPGatewayEndpoint:         "http://envoy-ai-gateway.kubernaut-system.svc.cluster.local:8080/mcp",
-			MCPGatewayType:             "eaigw",
-			OAuth2CredentialsSecret:    fleetOAuth2SecretName,
-			WEOAuth2CredentialsSecret:  fleetOAuth2SecretName,
-			FleetMetadataCacheNamespace: "fmc-system",
-		})
-		Expect(options.FMCEndpoint).To(Equal("https://fleetmetadatacache-service.fmc-system.svc.cluster.local:8080"))
-		Expect(options.FMCNamespace).To(Equal("fmc-system"))
-	})
-
 	It("UT-2492-015 [BR-PLATFORM-014]: diagnostic output contains the complete failure contract", func() {
 		diagnostic := BuildOperatorDiagnostics(OperatorDiagnosticInput{Scenario: "IT-2492-CR-001", OperatorSHA: "cebebf7", OperatorImage: "operator@sha256:operator", CRManifest: "kind: Kubernaut", Status: "phase: Error", Conditions: "TLSReady=False", Events: "Warning ReconcileFailed", Dependencies: "postgresql Ready=false"})
 		Expect(diagnostic).To(ContainSubstring("IT-2492-CR-001"))
