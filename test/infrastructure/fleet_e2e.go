@@ -569,7 +569,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	// this ~200-line sequence. This adapter closure only exists to satisfy
 	// FleetProvisioner's signature (no room for a remoteKubeconfigPath
 	// return) by writing it into the outer named return instead.
-	provisioner := func(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*FleetHelmOptions, error) {
+	provisioner := func(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*FleetDeployOptions, error) {
 		// keycloakNamespace=namespace: unchanged behavior for this Ginkgo-
 		// suite path (see provisionFleetCoreInfra's doc comment).
 		// gatewayType=GatewayEAIGW: kubernaut#2309 found Kuadrant's static
@@ -694,7 +694,7 @@ func addFleetWorkloadNamespaces(namespaces map[string]string) {
 // defaults to registry.GatewayKuadrant (this function's long-standing
 // behavior before gateway-type selection existed). Prefer
 // SetupFleetCoreInfrastructureWithGateway for new callers.
-func SetupFleetCoreInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
+func SetupFleetCoreInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (fleetOpts *FleetDeployOptions, remoteKubeconfigPath string, err error) {
 	return SetupFleetCoreInfrastructureWithGateway(ctx, clusterName, "", kubeconfigPath, FleetCoreDemoOptions{GatewayType: registry.GatewayKuadrant}, writer)
 }
 
@@ -750,7 +750,7 @@ type FleetCoreDemoOptions struct {
 // remoteClusterName names the remote/spoke Kind cluster explicitly; empty
 // falls back to clusterName+"-remote" (see FleetCoreInfraOptions.
 // RemoteClusterName's doc comment).
-func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, remoteClusterName, kubeconfigPath string, opts FleetCoreDemoOptions, writer io.Writer) (fleetOpts *FleetHelmOptions, remoteKubeconfigPath string, err error) {
+func SetupFleetCoreInfrastructureWithGateway(ctx context.Context, clusterName, remoteClusterName, kubeconfigPath string, opts FleetCoreDemoOptions, writer io.Writer) (fleetOpts *FleetDeployOptions, remoteKubeconfigPath string, err error) {
 	if remoteClusterName == "" {
 		remoteClusterName = clusterName + "-remote"
 	}
@@ -994,7 +994,7 @@ func installFleetCoreDemoMonitoring(ctx context.Context, clusterName, remoteClus
 	return installFleetCoreDemoMonitoringWorkloads(ctx, clusterName, remoteClusterName, kubeconfigPath, remoteKubeconfigPath, writer)
 }
 
-func printFleetCoreDemoSummary(fleetOpts *FleetHelmOptions, kubeconfigPath, remoteKubeconfigPath, namespace string, opts FleetCoreDemoOptions, writer io.Writer) {
+func printFleetCoreDemoSummary(fleetOpts *FleetDeployOptions, kubeconfigPath, remoteKubeconfigPath, namespace string, opts FleetCoreDemoOptions, writer io.Writer) {
 	crOptions := buildDemoOperatorCROptions(DemoHelmOptions{Autonomous: opts.Autonomous}, fleetOpts)
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet-core infrastructure READY -- Kubernaut is NOT installed")
@@ -1123,18 +1123,18 @@ func shouldPreloadFleetExternalImages(imageRegistry string) bool {
 //
 //   - SetupFleetE2EInfrastructure: invokes this via a FleetProvisioner
 //     adapter closure, then proceeds to `helm install` with the returned
-//     FleetHelmOptions (DD-TEST-015).
+//     FleetDeployOptions (DD-TEST-015).
 //   - SetupFleetCoreInfrastructure: invokes this directly and stops --
 //     no kubernaut images, no `helm install` -- for local/QE environments
 //     that need a live fleet-core stack before a manual, per-setup
 //     `helm install` with real LLM credentials and Rego policies
 //     (`make setup-e2e-fleet-infra`).
 //
-// Returns the FleetHelmOptions (MCP Gateway endpoint/type, OAuth2 token
+// Returns the FleetDeployOptions (MCP Gateway endpoint/type, OAuth2 token
 // URL/secret/scopes) needed to render a fleet-enabled `helm install`, and
 // the remote cluster's kubeconfig path. See FleetCoreInfraOptions' field
 // docs for individual parameter semantics.
-func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, writer io.Writer) (*FleetHelmOptions, string, error) {
+func provisionFleetCoreInfra(ctx context.Context, opts FleetCoreInfraOptions, writer io.Writer) (*FleetDeployOptions, string, error) {
 	clusterName := opts.ClusterName
 	kubeconfigPath := opts.KubeconfigPath
 	namespace := opts.Namespace
@@ -1233,7 +1233,7 @@ type fleetGatewayPhaseState struct {
 	GatewayVersions                                                                FleetGatewayVersionOverrides
 }
 
-func deployFleetGatewayPhase(ctx context.Context, state fleetGatewayPhaseState, writer io.Writer) (*FleetHelmOptions, error) {
+func deployFleetGatewayPhase(ctx context.Context, state fleetGatewayPhaseState, writer io.Writer) (*FleetDeployOptions, error) {
 	clusterName := state.ClusterName
 	kubeconfigPath := state.KubeconfigPath
 	namespace := state.Namespace
@@ -1268,7 +1268,7 @@ func deployFleetGatewayPhase(ctx context.Context, state fleetGatewayPhaseState, 
 	kubeMCPAuthConfig.AllRegistrationsRemote = true
 
 	// FMC's own client_credentials grant (and every other fleet-aware
-	// service's, via the FleetHelmOptions returned below) goes to
+	// service's, via the FleetDeployOptions returned below) goes to
 	// Keycloak instead of Dex.
 	const (
 		fleetClientID     = "kubernaut-fleet-read"
@@ -1355,7 +1355,7 @@ func deployFleetGatewayPhase(ctx context.Context, state fleetGatewayPhaseState, 
 	_, _ = fmt.Fprintf(writer, "  Remote kubeconfig:  %s\n", remoteKubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	return &FleetHelmOptions{
+	return &FleetDeployOptions{
 		MCPGatewayEndpoint:        mcpGatewayEndpoint,
 		MCPGatewayType:            string(gatewayType),
 		MCPGatewayNamespace:       mcpGatewayNamespace,
@@ -1701,8 +1701,8 @@ func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcIma
 // callers that still need Phase 4 (the standalone FMC E2E lane, which does
 // not install the Helm chart at all).
 //
-// Returns mcpGatewayEndpoint for wiring into whatever consumes it (chart
-// --set values via FleetHelmOptions, FMCOAuth2Config-adjacent callers, etc.).
+// Returns mcpGatewayEndpoint for wiring into whatever consumes it
+// (FleetDeployOptions, FMCOAuth2Config-adjacent callers, etc.).
 func DeployFleetGatewayInfra(ctx context.Context, namespace, kubeconfigPath string, authConfig KubeMCPServerAuthConfig, writer io.Writer) (string, error) {
 	return deployFleetGatewayInfraWithVersions(ctx, namespace, kubeconfigPath, authConfig, FleetGatewayVersionOverrides{}, writer)
 }

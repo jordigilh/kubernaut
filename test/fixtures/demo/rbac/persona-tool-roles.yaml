@@ -1,0 +1,278 @@
+# Demo-owned persona tool ClusterRoles and external group bindings (Issue #2703).
+#
+# Example role composition for the roles-only model: the operator renders no
+# persona ClusterRoles, so the deployer defines them and binds them to their
+# IdP's groups (one group per persona, see
+# test/infrastructure/keycloak-realm-demo.json).
+#
+# Authorization model (AC-6): every tool call is authorized by a
+# SubjectAccessReview on kubernaut.ai/tools, verb=use, resourceName=<tool> --
+# deny-by-default. SAR on a never-invoked tool name is inert, so carrying both
+# alert surfaces' names is safe if upstream later unifies them.
+#
+# Both-names rule (kubernaut-operator#683, DD-636 row 4d): the alert
+# capability has two authorization identities -- list_alerts/get_alert_details
+# on the A2A/chat surface and kubernaut_list_alerts on the raw MCP bridge
+# (which the Console proxies). Alert-capable bundles carry all three names so
+# the same capability works through either surface.
+#
+# The automated demo harness applies the equivalent of these manifests after
+# operator reconciliation (infrastructure.BindAFPersonaRBAC); this file is the
+# human SOP artifact and is parity-tested against the shared persona contract
+# (test/infrastructure/demo_console_rbac_test.go, UT-INFRA-2703-004).
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: demo-tool-sre
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+      - "kubernaut_list_remediations"
+      - "kubernaut_get_remediation"
+      - "kubernaut_approve"
+      - "kubernaut_cancel_remediation"
+      - "kubernaut_watch"
+      - "kubernaut_await_session"
+      - "kubernaut_investigate"
+      - "kubernaut_discover_workflows"
+      - "kubernaut_select_workflow"
+      - "kubernaut_present_decision"
+      - "kubernaut_list_workflows"
+      - "kubernaut_get_remediation_history"
+      - "kubernaut_get_effectiveness"
+      - "kubernaut_get_audit_trail"
+      - "kubernaut_message"
+      - "kubernaut_complete"
+      - "kubernaut_cancel"
+      - "kubernaut_status"
+      - "kubernaut_reconnect"
+      - "kubectl_get"
+      - "kubectl_list"
+      - "kubectl_list_events"
+      - "kubernaut_check_existing_remediation"
+      - "kubernaut_remediate"
+      # alert capability, both surfaces (#682 both-names rule)
+      - "list_alerts"
+      - "get_alert_details"
+      - "kubernaut_list_alerts"
+      - "kubernaut_investigate_alert"
+      - "kubernaut_get_approval_request"
+      - "kubernaut_complete_no_action"
+      - "kubernaut_list_approval_requests"
+      - "list_clusters"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-tool-sre-binding
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: demo-tool-sre
+subjects:
+  - kind: Group
+    name: sre
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: demo-tool-ai-orchestrator
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+      - "kubernaut_list_remediations"
+      - "kubernaut_get_remediation"
+      - "kubernaut_watch"
+      - "kubernaut_await_session"
+      - "kubernaut_investigate"
+      - "kubernaut_discover_workflows"
+      - "kubernaut_select_workflow"
+      - "kubernaut_present_decision"
+      - "kubernaut_message"
+      - "kubernaut_complete"
+      - "kubernaut_cancel"
+      - "kubernaut_status"
+      - "kubernaut_reconnect"
+      - "kubectl_get"
+      - "kubectl_list"
+      - "kubectl_list_events"
+      - "kubernaut_check_existing_remediation"
+      - "kubernaut_remediate"
+      # alert capability, both surfaces (#682 both-names rule)
+      - "list_alerts"
+      - "get_alert_details"
+      - "kubernaut_list_alerts"
+      - "kubernaut_investigate_alert"
+      - "list_clusters"
+      - "kubernaut_list_approval_requests"
+      - "kubernaut_get_approval_request"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-tool-ai-orchestrator-binding
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: demo-tool-ai-orchestrator
+subjects:
+  - kind: Group
+    name: ai-orchestrator
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: demo-tool-cicd
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+      - "kubernaut_list_remediations"
+      - "kubernaut_get_remediation"
+      - "kubernaut_watch"
+      - "kubernaut_await_session"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-tool-cicd-binding
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: demo-tool-cicd
+subjects:
+  - kind: Group
+    name: cicd
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: demo-tool-observability
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+      - "kubernaut_list_remediations"
+      - "kubernaut_get_remediation"
+      - "kubernaut_watch"
+      - "kubernaut_await_session"
+      - "kubernaut_get_effectiveness"
+      - "kubernaut_list_workflows"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-tool-observability-binding
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: demo-tool-observability
+subjects:
+  - kind: Group
+    name: observability
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: demo-tool-l3-audit
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+      - "kubernaut_list_remediations"
+      - "kubernaut_get_remediation"
+      - "kubernaut_list_workflows"
+      - "kubernaut_get_remediation_history"
+      - "kubernaut_get_effectiveness"
+      - "kubernaut_get_audit_trail"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-tool-l3-audit-binding
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: demo-tool-l3-audit
+subjects:
+  - kind: Group
+    name: l3-audit
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: demo-tool-remediation-approver
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+      - "kubernaut_approve"
+      - "kubernaut_list_approval_requests"
+      - "kubernaut_get_approval_request"
+      - "kubernaut_list_remediations"
+      - "kubernaut_get_remediation"
+      - "kubernaut_watch"
+      - "kubernaut_await_session"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-tool-remediation-approver-binding
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: demo-tool-remediation-approver
+subjects:
+  - kind: Group
+    name: remediation-approver
+    apiGroup: rbac.authorization.k8s.io

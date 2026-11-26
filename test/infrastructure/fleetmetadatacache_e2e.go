@@ -88,7 +88,7 @@ func SetupFMCE2EInfrastructureEAIGW(ctx context.Context, clusterName, kubeconfig
 // kube-mcp-server, Valkey, and FMC components into an already-created AF E2E
 // cluster. It reuses the AF lane's existing inter-service CA, registers only
 // the logical hub, and creates no remote Kind cluster (DD-TEST-019).
-func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace, fmcImage string, writer io.Writer) (*FleetHelmOptions, error) {
+func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace, fmcImage string, writer io.Writer) (*FleetDeployOptions, error) {
 	if strings.TrimSpace(fmcImage) == "" {
 		return nil, fmt.Errorf("fmc image is required for hub-only FMC infrastructure")
 	}
@@ -182,7 +182,7 @@ func SetupFMCHubOnlyInfrastructure(ctx context.Context, clusterName, kubeconfigP
 	}
 	finishAFInfraSetupStep(writer, "deploy Fleet-lane Valkey and Metadata Cache", fmcStarted)
 
-	return &FleetHelmOptions{
+	return &FleetDeployOptions{
 		MCPGatewayEndpoint:        mcpGatewayEndpoint,
 		MCPGatewayType:            string(registry.GatewayEAIGW),
 		MCPGatewayNamespace:       DefaultMCPGatewayNamespace,

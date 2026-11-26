@@ -304,4 +304,41 @@ var _ = Describe("Gateway auth security_event wiring [Issue #2664]", Ordered, fu
 		Expect(last[len(last)-1].record().CorrelationID).To(Equal(requestID),
 			"clients and access logs must be able to find security events by the request ID they were given")
 	})
+
+	It("IT-AUTH-2694-050: a burst of authorized requests emits one grant record per SAR decision with unique event_ids", func() {
+		// Issue #2694 (BR-SECURITY-016, FedRAMP AU-2): every authorization
+		// decision must be observable -- one grant record per SAR check,
+		// none dropped. The wiringLogSink host applies no sampling, so this
+		// proves the per-decision emission contract through the production
+		// dispatch path; the unsampled/non-level-gated zap behavior of the
+		// dedicated logger is proven in pkg/log (UT-LOG-2694-002/003) and
+		// pkg/shared/auth (UT-AUTH-2694-003/004).
+		const burst = 150
+
+		grantsBefore := 0
+		for _, e := range logs.securityEvents() {
+			if e.record().Reason == "authorization_granted" {
+				grantsBefore++
+			}
+		}
+
+		for i := 0; i < burst; i++ {
+			Expect(post("Bearer " + testToken)).To(Equal(http.StatusBadRequest),
+				"the probe adapter rejects the payload after the grant decision; auth itself must stay unchanged")
+		}
+
+		ids := make(map[string]bool, burst)
+		grantsAfter := 0
+		for _, e := range logs.securityEvents() {
+			if e.record().Reason != "authorization_granted" {
+				continue
+			}
+			grantsAfter++
+			ids[e.record().EventID] = true
+		}
+		Expect(grantsAfter - grantsBefore).To(Equal(burst),
+			"AU-2: one grant record per SAR decision through the production route")
+		Expect(ids).To(HaveLen(grantsAfter),
+			"every grant record must carry a unique event_id")
+	})
 })

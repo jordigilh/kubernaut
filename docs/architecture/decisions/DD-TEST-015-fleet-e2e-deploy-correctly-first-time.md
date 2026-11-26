@@ -59,6 +59,14 @@ patch calls relative to `WaitForFleetReady`.
 
 ## Decision
 
+> **Renamed (2026-11-23, #2708)**: `FleetHelmOptions` is now `FleetDeployOptions`
+> and `operatorFleetOptionsFromHelm` is `operatorFleetOptionsFromDeploy`. The
+> application chart this decision's `global.fleet.*` mechanics describe was
+> subsequently retired; the struct survives as the shared fleet deployment
+> options bag consumed by the operator CR conversion (fullpipeline/demo) and
+> the hub-only raw-manifest renderers. The historical text below keeps the
+> original names.
+
 Provision all fleet infrastructure (Keycloak, the Kuadrant MCP Gateway,
 kube-mcp-server, the remote Kind cluster) **before** the chart's single
 `helm install`, and render every fleet-aware service -- including FMC --

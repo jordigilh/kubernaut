@@ -1,0 +1,74 @@
+# Demo-owned external console ClusterRoleBindings (Issue #2703).
+#
+# Binds the operator-rendered console ClusterRoles -- which are unbound by
+# design and namespaced by the Kubernaut CR's namespace -- to the demo IdP
+# group:
+#
+#   kubernaut-system-console-access           console login gate
+#                                             (kubernaut.ai/console, verb=use)
+#   kubernaut-system-console-reader           console read capabilities
+#                                             (kubernaut.ai/tools resourceNames
+#                                             kubernaut_read_policy_scope,
+#                                             kubernaut_list_managed_resources,
+#                                             kubernaut_get_managed_resource)
+#   kubernaut-system-console-inventory-reader local-target get/list grants for
+#                                             the inventory projection
+#
+# All three SAR checks are deny-by-default: without an external binding, a
+# logged-in user can neither pass the console-access gate (when
+# consoleAccessAuthorizationCheckEnabled=true, as the demo CR sets) nor read
+# console projections. Adjust the namespace prefix if your CR lives
+# elsewhere, and the subject to your IdP's group.
+#
+# The demo harness applies the equivalent bindings automatically after
+# operator reconciliation (infrastructure.BindDemoConsoleRBAC); this file is
+# the human SOP artifact and is parity-tested against the harness output
+# (test/infrastructure/demo_console_rbac_test.go, UT-INFRA-2703-005).
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-console-access-kubernaut-system-binding
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-system-console-access
+subjects:
+  - kind: Group
+    name: sre
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-console-reader-kubernaut-system-binding
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-system-console-reader
+subjects:
+  - kind: Group
+    name: sre
+    apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: demo-console-inventory-reader-kubernaut-system-binding
+  labels:
+    app.kubernetes.io/part-of: kubernaut-e2e
+    kubernaut.ai/demo-rbac: "2703"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-system-console-inventory-reader
+subjects:
+  - kind: Group
+    name: sre
+    apiGroup: rbac.authorization.k8s.io

@@ -381,7 +381,7 @@ func DeployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, af
 	return deployAPIFrontendService(ctx, kubeconfigPath, namespace, afImage, enableCoverage, nil, writer)
 }
 
-func completeAPIFrontendSetup(ctx context.Context, kubeconfigPath, namespace string, options apiFrontendE2EOptions, fleetOptions *FleetHelmOptions, writer io.Writer) error {
+func completeAPIFrontendSetup(ctx context.Context, kubeconfigPath, namespace string, options apiFrontendE2EOptions, fleetOptions *FleetDeployOptions, writer io.Writer) error {
 	// PHASE 6: Wait for rollouts + enable JWT on KA
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 6: Waiting for deployments...")
@@ -464,7 +464,7 @@ func AFGenerateCerts(ctx context.Context, certDir string, writer io.Writer) erro
 	return nil
 }
 
-func setupAPIFrontendStack(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) (*FleetHelmOptions, error) {
+func setupAPIFrontendStack(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) (*FleetDeployOptions, error) {
 	fleetOptions, err := setupAPIFrontendDependencies(ctx, clusterName, kubeconfigPath, namespace, images, options, writer)
 	if err != nil {
 		return nil, err
@@ -553,7 +553,7 @@ func setupAPIFrontendStack(ctx context.Context, clusterName, kubeconfigPath, nam
 	return fleetOptions, nil
 }
 
-func setupAPIFrontendDependencies(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) (*FleetHelmOptions, error) {
+func setupAPIFrontendDependencies(ctx context.Context, clusterName, kubeconfigPath, namespace string, images map[string]string, options apiFrontendE2EOptions, writer io.Writer) (*FleetDeployOptions, error) {
 	// PHASE 4: Deploy kubernaut stack (DS + KA + dependencies)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 4: Deploying kubernaut stack...")
@@ -634,7 +634,7 @@ func setupAPIFrontendDependencies(ctx context.Context, clusterName, kubeconfigPa
 	return fleetOptions, nil
 }
 
-func provisionAPIFrontendFleet(ctx context.Context, clusterName, kubeconfigPath, namespace string, options apiFrontendE2EOptions, writer io.Writer) (*FleetHelmOptions, error) {
+func provisionAPIFrontendFleet(ctx context.Context, clusterName, kubeconfigPath, namespace string, options apiFrontendE2EOptions, writer io.Writer) (*FleetDeployOptions, error) {
 	if !options.FleetEnabled {
 		return nil, nil
 	}
@@ -650,7 +650,7 @@ func provisionAPIFrontendFleet(ctx context.Context, clusterName, kubeconfigPath,
 }
 
 // deployAPIFrontendService applies the APIFrontend E2E config and deployment fixture.
-func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, enableCoverage bool, fleetOptions *FleetHelmOptions, writer io.Writer) error {
+func deployAPIFrontendService(ctx context.Context, kubeconfigPath, namespace, afImage string, enableCoverage bool, fleetOptions *FleetDeployOptions, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	configData, err := os.ReadFile(filepath.Join(projectRoot, "test", "fixtures", "kubernetes", "apifrontend", "e2e", "config.yaml")) //nolint:gosec // G304
 	if err != nil {
@@ -851,7 +851,7 @@ spec:
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
-func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptions *FleetHelmOptions) ([]byte, error) {
+func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptions *FleetDeployOptions) ([]byte, error) {
 	if fleetOptions == nil {
 		return baseConfig, nil
 	}
@@ -875,10 +875,20 @@ func buildAPIFrontendFleetConfig(baseConfig []byte, namespace string, fleetOptio
 	if fmcNamespace == "" {
 		fmcNamespace = namespace
 	}
+	fmcServiceURL := fmt.Sprintf("https://fleetmetadatacache-service.%s.svc.cluster.local:8080", fmcNamespace)
+	// The rendered fleet block is written wholesale, never merged: any
+	// fleet.* key added to config.yaml is dropped here.
 	config["fleet"] = map[string]any{
-		"enabled":            true,
-		"backend":            string(fleet.BackendFMC),
-		"endpoint":           fmt.Sprintf("https://fleetmetadatacache-service.%s.svc.cluster.local:8080", fmcNamespace),
+		"enabled": true,
+		"backend": string(fleet.BackendFMC),
+		// fleet.endpoint is the scope adapter's key; fleet.fmc.endpoint is the
+		// Console inventory key (DD-FLEET-017 D2.1a). Both point at the FMC
+		// service here, but the reader is built only from the latter and never
+		// inherits the former.
+		"endpoint": fmcServiceURL,
+		"fmc": map[string]any{
+			"endpoint": fmcServiceURL,
+		},
 		"mcpGatewayEndpoint": fleetOptions.MCPGatewayEndpoint,
 		"mcpGatewayType":     fleetOptions.MCPGatewayType,
 		"namespace":          namespace,
@@ -907,17 +917,19 @@ var personaOrder = []string{
 
 // PersonaToolClusterRolesYAML generates the 6 per-persona ClusterRoles (with
 // kubernaut.ai/tools verb=use resourceNames) and 6 ClusterRoleBindings
-// (mapping DEX OIDC groups to the ClusterRoles).
+// (mapping OIDC groups to the ClusterRoles).
 //
-// Tool lists are kept in one test-infrastructure source of truth rather than
-// read from the retired application Helm chart. This prevents the AF-only E2E
-// lane from depending on a deployment artifact that is no longer shipped.
+// #2702 (kubernaut-operator#682): the operator no longer renders persona
+// ClusterRoles or user-facing ClusterRoleBindings, so this generator is the
+// single source of persona tool RBAC for every E2E lane -- the AF-only
+// deployment (afDeployE2ERBAC), the operator-managed fullpipeline paths
+// (BindAFPersonaRBAC), and the operator demo.
 //
-// Used by AF-only E2E deployments (see afDeployE2ERBAC). Full-pipeline E2E
-// uses the operator-managed persona ClusterRoles and only adds the
-// deployment-specific ClusterRoleBindings (see bindAFPersonaToolClusterRoles,
-// fullpipeline_e2e_helm.go), so it does not depend on the retired application
-// chart.
+// Tool lists are kept in one test-infrastructure source of truth
+// (LoadPersonaTools) rather than read from any deployment artifact: they
+// duplicate the operator's former persona lists and are pinned as test
+// contracts by UT-INFRA-RBAC-002 and UT-2492-RBAC-001, so any drift fails CI
+// instead of silently breaking the persona ACL matrix (TC-E2E-ACL-001).
 func PersonaToolClusterRolesYAML() (string, error) {
 	personaTools, err := LoadPersonaTools()
 	if err != nil {
@@ -966,8 +978,11 @@ subjects:
 	return b.String(), nil
 }
 
-// LoadPersonaTools returns the AF persona tool contract used by the operator
-// qualification harness and the persona ACL-matrix test. The map is copied so
+// LoadPersonaTools returns the AF persona tool contract used by the E2E
+// harness and the persona ACL-matrix test. #2702: these lists duplicate the
+// operator's former persona lists (kubernaut-operator#682 removed the
+// operator-side rendering) and are pinned as test contracts by
+// UT-INFRA-RBAC-002 and UT-2492-RBAC-001. The map is copied so
 // callers cannot mutate the shared contract between parallel Ginkgo specs.
 func LoadPersonaTools() (map[string][]string, error) {
 	tools := map[string][]string{
@@ -980,6 +995,12 @@ func LoadPersonaTools() (map[string][]string, error) {
 			"kubernaut_complete", "kubernaut_cancel", "kubernaut_status", "kubernaut_reconnect",
 			"kubectl_get", "kubectl_list", "kubectl_list_events", "kubernaut_check_existing_remediation",
 			"kubernaut_remediate", "list_alerts", "get_alert_details", "kubernaut_investigate_alert",
+			// both-names rule (kubernaut-operator#682/#683, DD-636 row 4d):
+			// the raw MCP bridge registers the alert-list tool as
+			// kubernaut_list_alerts (mcp_bridge.go), so alert-capable
+			// personas carry that name too or the Console's /mcp surface
+			// denies the capability the chat surface grants.
+			"kubernaut_list_alerts",
 			"kubernaut_get_approval_request", "kubernaut_complete_no_action", "kubernaut_list_approval_requests",
 			"list_clusters",
 		},
@@ -990,6 +1011,7 @@ func LoadPersonaTools() (map[string][]string, error) {
 			"kubernaut_complete", "kubernaut_cancel", "kubernaut_status", "kubernaut_reconnect",
 			"kubectl_get", "kubectl_list", "kubectl_list_events", "kubernaut_check_existing_remediation",
 			"kubernaut_remediate", "list_alerts", "get_alert_details", "kubernaut_investigate_alert",
+			"kubernaut_list_alerts", // both-names rule, see sre above
 			"list_clusters", "kubernaut_list_approval_requests", "kubernaut_get_approval_request",
 		},
 		"cicd":                 {"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch", "kubernaut_await_session"},
@@ -1099,7 +1121,7 @@ func afPatchKAJWTAudience(ctx context.Context, kubeconfigPath, namespace string,
 	return nil
 }
 
-func afPatchKubernautAgentFleetConfig(ctx context.Context, kubeconfigPath, namespace string, fleetOptions *FleetHelmOptions, writer io.Writer) error {
+func afPatchKubernautAgentFleetConfig(ctx context.Context, kubeconfigPath, namespace string, fleetOptions *FleetDeployOptions, writer io.Writer) error {
 	if fleetOptions == nil || fleetOptions.OAuth2CredentialsSecret == "" {
 		return fmt.Errorf("fleet gateway options and OAuth2 secret are required for Kubernaut Agent")
 	}
@@ -1154,7 +1176,7 @@ func afPatchKubernautAgentFleetConfig(ctx context.Context, kubeconfigPath, names
 	return nil
 }
 
-func buildKubernautAgentFleetDeploymentPatch(fleetOptions *FleetHelmOptions) ([]byte, error) {
+func buildKubernautAgentFleetDeploymentPatch(fleetOptions *FleetDeployOptions) ([]byte, error) {
 	if fleetOptions == nil || fleetOptions.OAuth2CredentialsSecret == "" {
 		return nil, fmt.Errorf("fleet OAuth2 credentials secret is required for Kubernaut Agent")
 	}
@@ -1180,7 +1202,7 @@ func buildKubernautAgentFleetDeploymentPatch(fleetOptions *FleetHelmOptions) ([]
 	})
 }
 
-func buildKubernautAgentFleetConfig(currentConfig []byte, namespace string, fleetOptions *FleetHelmOptions) ([]byte, error) {
+func buildKubernautAgentFleetConfig(currentConfig []byte, namespace string, fleetOptions *FleetDeployOptions) ([]byte, error) {
 	if fleetOptions == nil || fleetOptions.OAuth2CredentialsSecret == "" || fleetOptions.MCPGatewayEndpoint == "" || fleetOptions.OAuth2TokenURL == "" {
 		return nil, fmt.Errorf("fleet gateway endpoint, OAuth2 token URL, and secret are required for Kubernaut Agent")
 	}

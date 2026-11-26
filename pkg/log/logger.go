@@ -55,6 +55,7 @@ limitations under the License.
 package log
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/go-logr/logr"
@@ -261,8 +262,21 @@ func newZapLogger(opts Options) *zap.Logger {
 }
 
 // newZapLoggerWithLevel creates the underlying zap logger with an externally
-// supplied AtomicLevel. Shared by both NewLogger and NewLoggerWithAtomicLevel.
+// supplied AtomicLevel. Shared by NewLogger, NewLoggerWithAtomicLevel and the
+// security-event logger construction.
 func newZapLoggerWithLevel(opts Options, level zap.AtomicLevel) *zap.Logger {
+	return buildZapLogger(baseZapConfig(opts, level))
+}
+
+// baseZapConfig returns the zap configuration assembled from the given
+// options, shared by NewLogger, NewLoggerWithAtomicLevel and the
+// security-event logger construction so they share one assembly path. The
+// security-event logger is built from caller-supplied Options (not the
+// host's), so a service running Development-mode console logging still gets
+// JSON security_event records with ISO8601 timestamps -- a deliberate,
+// audit-friendly difference (FMC's zap.NewProduction host in particular
+// uses epoch timestamps on its own lines).
+func baseZapConfig(opts Options, level zap.AtomicLevel) zap.Config {
 	var config zap.Config
 
 	if opts.Development {
@@ -280,10 +294,83 @@ func newZapLoggerWithLevel(opts Options, level zap.AtomicLevel) *zap.Logger {
 	config.EncoderConfig.TimeKey = "ts"
 	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
+	return config
+}
+
+func buildZapLogger(config zap.Config) *zap.Logger {
 	logger, err := config.Build()
 	if err != nil {
 		return zap.NewNop()
 	}
 
 	return logger
+}
+
+// NewSecurityEventLogger returns a logger for ADR-034 security_event records
+// (Issue #2694, BR-SECURITY-016, FedRAMP AU-2) that is not sampled and not
+// gated by the host service's configured log level.
+//
+// When host is zap-backed (every production service logger built by this
+// package, and FleetMetadataCache's zapr-wrapped zap.NewProduction), the
+// returned logger is a fresh zap logger using the same production JSON
+// envelope as NewLogger but with zap's sampler disabled and a fixed Info
+// level. It is deliberately NOT tied to the host's AtomicLevel: hot-reloading
+// the service level to WARN/ERROR (#875) must never suppress security events,
+// and zap's production sampler (100 entries then every 100th per
+// message+level) must never drop a burst of grant records sharing one
+// message key.
+//
+// When host is not zap-backed (Ginkgo capture sinks, controller-runtime
+// loggers), host is returned unchanged: such sinks apply no zap sampling or
+// level gating, and passing them through keeps security-event capture in
+// wiring tests working through the production construction paths.
+//
+// Note: opts.Level, opts.DisableCaller and opts.DisableStacktrace are
+// ignored here -- the level is fixed at Info by design -- and output always
+// goes to stderr (zap resolves output paths at Build time), matching every
+// current production host logger's destination.
+//
+// Example:
+//
+//	securityLogger := log.NewSecurityEventLogger(logger, log.Options{ServiceName: "gateway"})
+//	mw := auth.NewMiddleware(authenticator, authorizer, auth.MiddlewareConfig{
+//	    // ...
+//	    SecurityEventLogger: securityLogger,
+//	}, logger)
+func NewSecurityEventLogger(host logr.Logger, opts Options) logr.Logger {
+	if GetZapLogger(host) == nil {
+		return host
+	}
+	logger, err := buildSecurityEventLogger(opts, []string{"stderr"})
+	if err != nil {
+		// A fixed valid config cannot fail to build; if it ever does, fall
+		// back to the host logger so events are still delivered (sampled)
+		// rather than silently discarded (fail-open safety: no silent loss).
+		return host
+	}
+	return logger
+}
+
+// buildSecurityEventLogger constructs the unsampled, fixed-Info zap-backed
+// logr logger for security_event records. outputPaths is injectable so tests
+// can capture the log stream; zap resolves output paths at Build time, so
+// the production "stderr" destination cannot be redirected afterwards.
+func buildSecurityEventLogger(opts Options, outputPaths []string) (logr.Logger, error) {
+	config := baseZapConfig(opts, zap.NewAtomicLevelAt(zap.InfoLevel))
+	// Issue #2694 (AU-2): no sampler, and a level fixed at Info so the host
+	// service's level (including hot-reload) cannot gate security events.
+	config.Sampling = nil
+	config.OutputPaths = outputPaths
+	config.ErrorOutputPaths = outputPaths
+
+	zapLogger, err := config.Build()
+	if err != nil {
+		return logr.Logger{}, fmt.Errorf("build security event logger: %w", err)
+	}
+
+	logger := zapr.NewLogger(zapLogger)
+	if opts.ServiceName != "" {
+		logger = logger.WithName(opts.ServiceName)
+	}
+	return logger, nil
 }
