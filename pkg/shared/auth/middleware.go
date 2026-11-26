@@ -83,10 +83,11 @@ func WithFailureReasonCapture(ctx context.Context) (context.Context, func() stri
 //
 // Used by: DataStorage service (BR-DS-*), Gateway service (BR-GATEWAY-036/037)
 type Middleware struct {
-	authenticator Authenticator
-	authorizer    Authorizer
-	config        MiddlewareConfig
-	logger        logr.Logger
+	authenticator       Authenticator
+	authorizer          Authorizer
+	config              MiddlewareConfig
+	logger              logr.Logger
+	securityEventLogger logr.Logger
 }
 
 // MiddlewareConfig contains the SAR configuration for authorization checks.
@@ -103,6 +104,16 @@ type MiddlewareConfig struct {
 	// Verb is the RBAC verb to check (e.g., "create", "get", "list", "update", "delete")
 	// Authority: DD-AUTH-011 (Granular RBAC with SAR verb mapping)
 	Verb string
+
+	// SecurityEventLogger optionally routes the ADR-034 security_event
+	// records (grant, denial, outage, authentication failure) onto a
+	// dedicated logger that is not sampled and not gated by the host
+	// service's configured log level (Issue #2694, BR-SECURITY-016,
+	// FedRAMP AU-2). Production consumers derive it from their host logger
+	// via log.NewSecurityEventLogger. Zero value: security events share the
+	// host logger (pre-#2694 behavior, kept for direct NewMiddleware
+	// callers and tests that capture through the host sink).
+	SecurityEventLogger logr.Logger
 }
 
 // NewMiddleware creates a new authentication middleware with dependency injection.
@@ -129,11 +140,20 @@ func NewMiddleware(
 	config MiddlewareConfig,
 	logger logr.Logger,
 ) *Middleware {
+	// Issue #2694 (BR-SECURITY-016, FedRAMP AU-2): security_event records
+	// go to the dedicated unsampled logger when one is configured, and to
+	// the host logger otherwise. IsZero (not a nil-sink assumption) is the
+	// explicit fallback check: a zero logr.Logger silently discards.
+	securityEventLogger := config.SecurityEventLogger
+	if securityEventLogger.IsZero() {
+		securityEventLogger = logger
+	}
 	return &Middleware{
-		authenticator: authenticator,
-		authorizer:    authorizer,
-		config:        config,
-		logger:        logger.WithName("auth-middleware"),
+		authenticator:       authenticator,
+		authorizer:          authorizer,
+		config:              config,
+		logger:              logger.WithName("auth-middleware"),
+		securityEventLogger: securityEventLogger.WithName("auth-middleware"),
 	}
 }
 
@@ -404,13 +424,13 @@ func (m *Middleware) logAuthorizationOutage(r *http.Request, user string, cause 
 // middleware. That roughly doubles the per-request log line count of a service
 // that already writes an access-log line per request.
 //
-// This method applies no sampling and no level gate of its own, but it logs
-// through the host service's logger: that logger's configured level and zap
-// sampling still apply (zap's production config samples repeated message keys).
-// Guaranteeing delivery under that configuration requires a dedicated
-// unsampled security-event logger in the service wiring -- a host-logger
-// change outside this middleware, tracked in issue #2694 rather than done here.
-// What this middleware guarantees is that every decision calls the emitter.
+// This method applies no sampling and no level gate of its own, and since
+// #2694 it emits through the middleware's dedicated security-event logger:
+// production consumers configure MiddlewareConfig.SecurityEventLogger with
+// log.NewSecurityEventLogger, a zap logger with the sampler disabled and a
+// fixed Info level that is not tied to the host service's log level or
+// hot-reload AtomicLevel. Unrelated request logging still goes through the
+// host logger, sampling and level gating included.
 //
 // The event is emitted as soon as the SAR check allows the request, before the
 // downstream handler runs: status_code=200 records the authorization decision
@@ -513,7 +533,7 @@ func (m *Middleware) emitSecurityEvent(r *http.Request, evt securityEvent) {
 		Verb:          m.config.Verb,
 		ErrorDetails:  evt.errorDetails,
 	}
-	m.logger.Info("security_event", record.logFields()...)
+	m.securityEventLogger.Info("security_event", record.logFields()...)
 }
 
 // ParseSecurityEventRecord decodes a captured security_event log payload

@@ -102,8 +102,9 @@ application Helm deployment path. No temporary values-file override is permitted
 - `test/infrastructure/demo_operator.go`: operator CR construction and demo
   Console callback/issuer/audience wiring.
 - `test/infrastructure/oidc_helm.go`: demo Console OIDC Secret provisioning.
-- `test/infrastructure/fullpipeline_e2e_helm.go`: AF persona ClusterRole
-  binding and `sre/kubectl_get` SAR verification.
+- `test/infrastructure/fullpipeline_e2e_helm.go`: harness-owned AF persona
+  ClusterRole/ClusterRoleBinding provisioning (`BindAFPersonaRBAC`) and
+  `sre/kubectl_get` SAR verification (#2702 operator RBAC decoupling).
 - `kubernaut-operator` source `7b1b6b10e7fb4521120e59609e5f79adef5a108d`:
   published `charts/kubernaut-development-dependencies` ownership correction.
 - `kubernaut-console` live E2E:
@@ -320,7 +321,7 @@ remediation-side effect.
 |---|---|---|
 | `IT-INFRA-2574-001` | A fresh operator demo bootstrap creates the application-owned `kubernaut-console-oidc` Secret, LLM Secret, and policy ConfigMaps separately from the dependency chart, with realm values, expected keys, owner labels, and no stale `e2e-client` value. | Pending |
 | `IT-CONSOLE-2574-001` | The reconciled Console Deployment retains provider CA/system trust, `pass-access-token`, `skip-jwt-bearer-tokens`, and the expected HTTPS exposure; insecure OIDC verification is absent. | Pending |
-| `IT-INFRA-2574-002` | `BindAFPersonaRBAC` plus the operator-managed AF ClusterRoles produce an allowed `sre`/`kubectl_get` SubjectAccessReview before browser qualification. | Pending |
+| `IT-INFRA-2574-002` | `BindAFPersonaRBAC` applies the harness-owned AF persona ClusterRoles and group bindings (#2702: operator RBAC decoupling) and produces an allowed `sre`/`kubectl_get` SubjectAccessReview before browser qualification. | Pending |
 
 ### Tier 3: Browser E2E tests
 
@@ -428,7 +429,9 @@ forwarded access token.
 **Type**: Real Kubernetes SAR integration  
 **Entry point**: `BindAFPersonaRBAC`
 
-**Given** the operator-managed AF persona ClusterRoles exist  
+**Given** the harness-applied AF persona ClusterRoles exist (`BindAFPersonaRBAC`
+applies both the `kubernaut-tool-<persona>` ClusterRoles and their group
+ClusterRoleBindings itself -- #2702 operator RBAC decoupling)  
 **When** the test-owned `sre` group binding is applied and the preflight issues
 the existing SAR  
 **Then** `use kubernaut.ai/tools/kubectl_get` is allowed for user `sre-user` in
@@ -563,7 +566,7 @@ appears during the test, and no `kubernaut_investigate`, `af_create_rr`,
 | Operator CR Console contract | Demo setup | `buildDemoOperatorCROptions` → `BuildKubernautCRManifest` → operator reconcile | `UT-INFRA-2574-002`, `IT-CONSOLE-2574-001` | Pending |
 | Console oauth2-proxy callback | Browser Console URL | operator Console Deployment → Keycloak → `/oauth2/callback` | `E2E-CONSOLE-2574-001` | Pending |
 | Access-token forwarding | Browser `/mcp` request | oauth2-proxy → Console nginx → APIFrontend | `E2E-CONSOLE-2574-002` | Pending |
-| AF persona authorization | Post-reconciliation setup | `BindAFPersonaRBAC` → `sre` GroupBinding → AF SAR | `IT-INFRA-2574-002`, `E2E-CONSOLE-2574-002` | Pending |
+| AF persona authorization | Post-reconciliation setup | `BindAFPersonaRBAC` → harness persona ClusterRoles/bindings → AF SAR | `IT-INFRA-2574-002`, `E2E-CONSOLE-2574-002` | Pending |
 | Read-only journey boundary | Authenticated Console session | MCP `kubectl_get` only; no remediation tools | `E2E-CONSOLE-2574-003` | Pending |
 
 **Checkpoint W requirement**: every row must have a production/qualification

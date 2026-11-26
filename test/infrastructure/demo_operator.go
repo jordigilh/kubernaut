@@ -48,7 +48,7 @@ func demoKeycloakJWKSURL() string {
 // topologies. It deliberately leaves operator defaults out of the CR; only
 // demo-specific BYO references, endpoints, exposure, and credentials are
 // selected here (BR-PLATFORM-014, DD-TEST-015).
-func buildDemoOperatorCROptions(opts DemoHelmOptions, fleetOpts *FleetHelmOptions) OperatorCROptions {
+func buildDemoOperatorCROptions(opts DemoHelmOptions, fleetOpts *FleetDeployOptions) OperatorCROptions {
 	reasoningEnabled, reasoningEffort, reasoningCapabilityOverride := resolveDemoReasoning(opts)
 	var reasoning *OperatorLLMReasoning
 	if reasoningEnabled || reasoningCapabilityOverride != "" {
@@ -78,9 +78,15 @@ func buildDemoOperatorCROptions(opts DemoHelmOptions, fleetOpts *FleetHelmOption
 		ConsoleRedirectURL:       fmt.Sprintf("https://%s:%d/oauth2/callback", demoConsoleHost, DemoHostPort(demoConsolePort)),
 		ConsoleProviderLogoutURL: demoKeycloakConsoleLogoutURL,
 		IssuerURL:                demoKeycloakIssuerURL, JWKSURL: demoKeycloakJWKSURL(), Audience: "kubernaut-apifrontend",
+		// #2703: the operator no longer renders user-facing bindings
+		// (kubernaut-operator#682). The demo binds the operator-rendered
+		// console-access role externally (BindDemoConsoleRBAC), so the
+		// coarse-grained console gate's authorization check is enforced
+		// instead of auth-only.
+		ConsoleAccessAuthorizationCheckEnabled: pointerToBool(true),
 	}
 	if fleetOpts != nil {
-		crOptions.Fleet = operatorFleetOptionsFromHelm(fleetOpts)
+		crOptions.Fleet = operatorFleetOptionsFromDeploy(fleetOpts)
 		crOptions.DataStorage = OperatorDataStorageOptions{AuditSigningCertificateSecretName: operatorDataStorageSigningSecret}
 		crOptions.Monitoring.PrometheusURL = "https://thanos-querier-svc." + monitoringNamespace + ".svc.cluster.local:9090"
 	}
@@ -137,7 +143,7 @@ func prepareDemoOperatorFixtureFiles(opts DemoHelmOptions, fixtureDir string) (s
 	return spPolicyFile, aaPolicyFile, nil
 }
 
-func buildDemoOperatorDeploymentConfig(ctx context.Context, kubeconfigPath, kindClusterName string, fleetOpts *FleetHelmOptions, opts DemoHelmOptions, fixtureDir string) (OperatorDeploymentConfig, error) {
+func buildDemoOperatorDeploymentConfig(ctx context.Context, kubeconfigPath, kindClusterName string, fleetOpts *FleetDeployOptions, opts DemoHelmOptions, fixtureDir string) (OperatorDeploymentConfig, error) {
 	operatorChart, dependencyChart, operatorImage, version, operatorChartVersion, dependencyChartVersion, err := resolveDemoOperatorDeploymentInputs(ctx, opts)
 	if err != nil {
 		return OperatorDeploymentConfig{}, fmt.Errorf("resolve demo operator artifacts: %w", err)
@@ -226,6 +232,9 @@ func finalizeDemoOperatorApplication(ctx context.Context, config OperatorDeploym
 	if err := BindAFPersonaRBAC(ctx, config.KubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to bind AF persona RBAC: %w", err)
 	}
+	if err := BindDemoConsoleRBAC(ctx, config.KubeconfigPath, config.Namespace, "sre", writer); err != nil {
+		return fmt.Errorf("failed to bind demo console RBAC: %w", err)
+	}
 	return nil
 }
 
@@ -291,6 +300,8 @@ func printDemoOperatorApplicationReady(config OperatorDeploymentConfig, remoteKu
 	_, _ = fmt.Fprintln(writer, "  Teardown ownership:")
 	_, _ = fmt.Fprintf(writer, "    kubectl delete kubernaut %s -n %s --ignore-not-found\n", operatorCRName, config.Namespace)
 	_, _ = fmt.Fprintf(writer, "    kubectl delete ingress kubernaut-console -n %s --ignore-not-found\n", config.Namespace)
+	_, _ = fmt.Fprintf(writer, "    kubectl delete clusterrole,clusterrolebinding -l kubernaut.ai/demo-rbac=2703 --ignore-not-found\n")
+	_, _ = fmt.Fprint(writer, "    kubectl get clusterrole,clusterrolebinding -o name | grep kubernaut-tool- | xargs kubectl delete --ignore-not-found\n")
 	_, _ = fmt.Fprintf(writer, "    kubectl delete service console -n %s --ignore-not-found\n", config.Namespace)
 	_, _ = fmt.Fprintf(writer, "    helm uninstall kubernaut-development-dependencies -n %s --wait\n", config.Namespace)
 	_, _ = fmt.Fprintln(writer, "    helm uninstall kubernaut-operator -n kubernaut-operator-system --wait")
@@ -300,7 +311,7 @@ func printDemoOperatorApplicationReady(config OperatorDeploymentConfig, remoteKu
 // InstallDemoOperatorApplication deploys the demo through the operator
 // bootstrap chart and a user-owned Kubernaut CR. It never installs the
 // upstream application chart and does not build images on the normal path.
-func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteKubeconfigPath, kindClusterName string, fleetOpts *FleetHelmOptions, opts DemoHelmOptions, writer io.Writer) error {
+func InstallDemoOperatorApplication(ctx context.Context, kubeconfigPath, remoteKubeconfigPath, kindClusterName string, fleetOpts *FleetDeployOptions, opts DemoHelmOptions, writer io.Writer) error {
 	if err := opts.Validate(); err != nil {
 		return err
 	}

@@ -438,7 +438,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	return builtImages, seededUUIDs, afRemediateNS, nil
 }
 
-func provisionFullPipelineFleet(ctx context.Context, kubeconfigPath, namespace string, provisioner FleetProvisioner, writer io.Writer) (*FleetHelmOptions, error) {
+func provisionFullPipelineFleet(ctx context.Context, kubeconfigPath, namespace string, provisioner FleetProvisioner, writer io.Writer) (*FleetDeployOptions, error) {
 	if provisioner == nil {
 		return nil, nil
 	}
@@ -542,7 +542,7 @@ func seedFullPipelineWorkflowCatalog(ctx context.Context, namespace, kubeconfigP
 	return seededUUIDs, nil
 }
 
-func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig OperatorDeploymentConfig, fleetOpts *FleetHelmOptions, fleetProvisioner FleetProvisioner, kubeconfigPath, namespace string, writer io.Writer) error {
+func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig OperatorDeploymentConfig, fleetOpts *FleetDeployOptions, fleetProvisioner FleetProvisioner, kubeconfigPath, namespace string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 6: applying Kubernaut CR through the operator...")
 	phase6Start := time.Now()
 
@@ -553,7 +553,7 @@ func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig Operator
 	phase6Results := make(chan deployResult, 2)
 	go func() {
 		if fleetOpts != nil {
-			operatorConfig.CR.Fleet = operatorFleetOptionsFromHelm(fleetOpts)
+			operatorConfig.CR.Fleet = operatorFleetOptionsFromDeploy(fleetOpts)
 			operatorConfig.CR.IssuerURL = "https://keycloak:8443/realms/kubernaut-demo"
 			operatorConfig.CR.JWKSURL = "https://keycloak." + namespace + ".svc.cluster.local:8443/realms/kubernaut-demo/protocol/openid-connect/certs"
 			// Fleet uses Keycloak, not the Dex test persona mapping.
@@ -601,11 +601,11 @@ func applyFullPipelineOperatorPhase(ctx context.Context, operatorConfig Operator
 	if err := waitForDeployment(ctx, "apifrontend", namespace, kubeconfigPath, 3*time.Minute, writer); err != nil {
 		return fmt.Errorf("API Frontend session service restart failed: %w", err)
 	}
-	if fleetProvisioner != nil {
-		if err := waitForAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
-			return fmt.Errorf("AF persona RBAC verification failed: %w", err)
-		}
-	} else if err := BindAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
+	// #2702 (kubernaut-operator#682): the operator no longer renders persona
+	// ClusterRoles or user-facing ClusterRoleBindings, so every
+	// operator-managed AF path -- fleet and non-fleet -- applies the
+	// harness-owned persona RBAC (roles + bindings, then a real SAR wait).
+	if err := BindAFPersonaRBAC(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("AF persona RBAC binding failed: %w", err)
 	}
 
@@ -858,16 +858,14 @@ func runFullPipelineGoManagedInfrastructure(ctx context.Context, namespace, kube
 		}()
 	}
 
-	// AF persona-to-DEX-group RBAC bindings (Issue #1737 regression fix): the
-	// chart creates the kubernaut-tool-<persona> ClusterRoles (PHASE 6 helm
-	// install) but deliberately not their bindings (see
-	// bindAFPersonaToolClusterRoles doc comment). Only depends on those
-	// ClusterRoles existing, not on DEX itself being up yet.
+	// AF persona-to-DEX-group RBAC bindings (Issue #1737 regression fix):
+	// #2702 (kubernaut-operator#682): the operator no longer renders the
+	// kubernaut-tool-<persona> ClusterRoles, so the harness owns both halves
+	// -- these bindings plus the ClusterRoles that BindAFPersonaRBAC applies
+	// post-reconciliation (idempotent kubectl apply, so re-applying the
+	// bindings there is safe). Applied unconditionally: works for any IdP's
+	// "groups" claim, not just DEX's, and must not depend on DEX being up.
 	go func() {
-		if fleetProvisioner != nil {
-			allResults <- waveResult{"AF-Persona-RBAC-Bindings", nil}
-			return
-		}
 		err := bindAFPersonaToolClusterRoles(ctx, kubeconfigPath, writer)
 		allResults <- waveResult{"AF-Persona-RBAC-Bindings", err}
 	}()

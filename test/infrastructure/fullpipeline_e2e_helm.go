@@ -204,38 +204,41 @@ stringData:
 	return nil
 }
 
-// FleetHelmOptions carries the pre-provisioned fleet infrastructure
+// FleetDeployOptions carries the pre-provisioned fleet infrastructure
 // (MCP Gateway + OAuth2 IdP) endpoints and credentials needed to render
-// global.fleet.* correctly on the FIRST `operator reconciliation`, instead of patching
-// it in afterward via kubectl once the operator-managed pods are already
-// running (DD-TEST-015, "deploy correctly the first time" -- see
-// SetupFleetE2EInfrastructure). Nil (the FP suite's default, via
+// fleet configuration correctly on the FIRST `operator reconciliation`,
+// instead of patching it in afterward via kubectl once the operator-managed
+// pods are already running (DD-TEST-015, "deploy correctly the first time"
+// -- see SetupFleetE2EInfrastructure). Nil (the FP suite's default, via
 // SetupFullPipelineInfrastructure's fleetProvisioner=nil) leaves fleet
-// disabled, matching the chart's own global.fleet.enabled=false default.
+// disabled.
+//
+// The "Helm" heritage in some field docs refers to the retired application
+// chart's global.fleet.* values, which these fields mirrored. No consumer
+// passes this struct to Helm today: the fullpipeline/demo lanes convert it
+// to operator CR fields (operatorFleetOptionsFromDeploy) and the hub-only
+// lanes render raw manifests from it (buildAPIFrontendFleetConfig).
 //
 // Every referenced Secret (OAuth2CredentialsSecret/WEOAuth2CredentialsSecret)
 // MUST already exist in the target namespace before operator-backed deployment
 // runs, and the MCP Gateway (MCPGatewayEndpoint) MUST already be reachable
 // and AuthPolicy-converged -- see FleetProvisioner's doc comment for why.
-type FleetHelmOptions struct {
-	// MCPGatewayEndpoint is the shared Kuadrant/EAIGW MCP Gateway URL
-	// (global.fleet.mcpGatewayEndpoint), e.g.
-	// "https://mcp-gateway-istio.gateway-system.svc:8080/mcp".
+type FleetDeployOptions struct {
+	// MCPGatewayEndpoint is the shared Kuadrant/EAIGW MCP Gateway URL,
+	// e.g. "https://mcp-gateway-istio.gateway-system.svc:8080/mcp".
 	MCPGatewayEndpoint string
-	// MCPGatewayType is "kuadrant" or "eaigw" (global.fleet.mcpGatewayType).
+	// MCPGatewayType is "kuadrant" or "eaigw".
 	MCPGatewayType string
 	// MCPGatewayNamespace is the namespace where the MCP Gateway manages its
-	// registration/backend resources (global.fleet.mcpGatewayNamespace).
+	// registration/backend resources.
 	MCPGatewayNamespace string
-	// OAuth2TokenURL is the IdP's client_credentials token endpoint
-	// (global.fleet.oauth2.tokenURL).
+	// OAuth2TokenURL is the IdP's client_credentials token endpoint.
 	OAuth2TokenURL string
 	// OAuth2CredentialsSecret is the pre-created K8s Secret name (keys:
 	// client-id, client-secret) shared by every fleet-aware service except
-	// WorkflowExecution (global.fleet.oauth2.credentialsSecretRef).
+	// WorkflowExecution.
 	OAuth2CredentialsSecret string
-	// OAuth2Scopes is the OAuth2 scope list requested from the IdP
-	// (global.fleet.oauth2.scopes).
+	// OAuth2Scopes is the OAuth2 scope list requested from the IdP.
 	OAuth2Scopes []string
 	// WEOAuth2CredentialsSecret is WorkflowExecution's OWN required
 	// credentialsSecretRef (workflowexecution.fleet.oauth2.credentialsSecretRef)
@@ -248,13 +251,11 @@ type FleetHelmOptions struct {
 	// (signalprocessing.fleet.namespace) -- empty watches cluster-wide.
 	SignalProcessingNamespace string
 	// FleetMetadataCacheNamespace is the namespace where the MCP Gateway
-	// manages its MCPServerRegistration/Backend CRs
-	// (fleetmetadatacache.namespace) for operator-managed FMC. Issue #2298:
-	// unlike SignalProcessingNamespace above, this has no safe empty-string
-	// fallback -- pkg/fleet/fmc/config.Validate() refuses to start FMC
-	// without it, so chart callers MUST set it. Hub-only AF E2E reuses this
-	// field for the namespace of its raw-manifest FMC Service, because that
-	// path does not pass FleetHelmOptions to Helm.
+	// manages its MCPServerRegistration/Backend CRs for operator-managed FMC.
+	// Issue #2298: unlike SignalProcessingNamespace above, this has no safe
+	// empty-string fallback -- pkg/fleet/fmc/config.Validate() refuses to
+	// start FMC without it, so callers MUST set it. Hub-only AF E2E reuses
+	// this field for the namespace of its raw-manifest FMC Service.
 	FleetMetadataCacheNamespace string
 
 	ImageTag string
@@ -273,15 +274,15 @@ type FleetHelmOptions struct {
 // Gateway that doesn't exist yet, the exact race the old patch-after-deploy
 // design (kubectl-patching fleet config into already-running pods once
 // infra was ready) worked around instead of resolving. Returns the
-// global.fleet.* values operator-backed deployment should render with.
+// deployment should render with.
 //
-// Kept as a callback (not a pre-computed *FleetHelmOptions) specifically
+// Kept as a callback (not a pre-computed *FleetDeployOptions) specifically
 // because fleet infrastructure deployment needs a live Kind cluster + the
 // target namespace, both of which only exist partway through
 // SetupFullPipelineInfrastructure's own PHASE 1/2/5 -- this lets Fleet's
 // provisioning share that single cluster-creation path with FP instead of
 // duplicating it.
-type FleetProvisioner func(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*FleetHelmOptions, error)
+type FleetProvisioner func(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*FleetDeployOptions, error)
 
 // provisionInterServiceCA self-signs a fresh ECDSA P-256 CA and creates both
 // the authwebhook-tls Secret (tls.crt/tls.key/ca.crt/ca.key) AND the
@@ -580,42 +581,32 @@ func deployDexOIDCProviderForAF(ctx context.Context, kubeconfigPath string, writ
 
 // afPersonaGroupNames lists the persona names AF's SAR-based tool
 // authorization recognizes. The list is intentionally kept alongside the
-// operator qualification RBAC contract rather than read from the retired
-// application chart.
+// harness-owned persona RBAC contract (LoadPersonaTools, #2702) rather than
+// read from any deployment artifact.
 var afPersonaGroupNames = []string{
 	"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver",
 }
 
 // bindAFPersonaToolClusterRoles creates the ClusterRoleBindings that map each
-// DEX-issued OIDC "groups" claim (e.g. "sre") to the operator-managed
-// per-persona ClusterRoles (kubernaut-tool-<persona>).
+// OIDC "groups" claim (e.g. DEX's or Keycloak's "sre") to the per-persona
+// ClusterRoles (kubernaut-tool-<persona>).
 //
-// Issue #1737 gap found: the chart deliberately creates only the ClusterRoles
-// -- its own comment says "Bind these ClusterRoles to OIDC groups via
-// ClusterRoleBindings to grant tool access per persona", by design, since a
-// production chart cannot presume to know the deployer's real OIDC group
-// names. The old (now-removed) deployAPIFrontendInFP supplied this binding
-// step for E2E via afDeployE2ERBAC -> PersonaToolClusterRolesYAML (which
-// also duplicated the ClusterRoles themselves, now superseded by the chart).
-// That whole call was dropped when deployAPIFrontendInFP was replaced by
-// `operator reconciliation`, with nothing standing in for the ClusterRoleBinding half --
-// leaving every kubernaut-tool-<persona> ClusterRole with zero subjects
-// bound to it. AF's SAR checks (pkg/apifrontend/auth/sar.go) therefore denied
-// every tool call regardless of persona; the denial is only *observable* for
-// kubernaut_remediate (whose failure prevents RemediationRequest creation,
-// verified by a real K8s API assertion) because AF's own audit trail
-// (newAuditToolCallback/buildToolAuditDetail, pkg/apifrontend/agent/root.go)
-// misreports a nil-error-but-denied tool call as tool_outcome=success for
-// every other tool, masking the identical denial for
-// kubernaut_investigate/discover_workflows/select_workflow/watch.
+// #2702 (kubernaut-operator#682): the operator no longer renders persona
+// ClusterRoles or user-facing ClusterRoleBindings, and
+// spec.apiFrontend.rbac.roleBindings / consoleAccessGroups are gone from the
+// CRD. Both halves are now harness-owned: these bindings plus the
+// ClusterRoles that BindAFPersonaRBAC applies (PersonaToolClusterRolesYAML).
+// The binding shape works for any IdP's "groups" claim, not just DEX's.
 //
 // The persona name list is intentionally re-declared here (afPersonaGroupNames)
-// rather than parsed out of the retired application chart: this is Go test
-// infrastructure binding to operator-owned ClusterRoles by name/convention,
+// rather than parsed from any deployment artifact: this is Go test
+// infrastructure applying harness-owned ClusterRoles by name/convention,
 // not a second source of truth for which *tools* each persona can call --
-// that authorization content lives in the shared persona RBAC contract.
+// that authorization content lives in the shared persona RBAC contract
+// (LoadPersonaTools), pinned as a test contract by UT-INFRA-RBAC-002 and
+// UT-2492-RBAC-001.
 func bindAFPersonaToolClusterRoles(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  🔑 Binding AF persona ClusterRoles to DEX OIDC groups (Issue #1737 RBAC gap)...")
+	_, _ = fmt.Fprintln(writer, "  🔑 Binding AF persona ClusterRoles to OIDC groups (#2702 harness-owned persona RBAC)...")
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, BuildAFPersonaToolClusterRoleBindingsManifest()); err != nil {
 		return fmt.Errorf("failed to bind AF persona tool ClusterRoles: %w", err)
@@ -624,9 +615,10 @@ func bindAFPersonaToolClusterRoles(ctx context.Context, kubeconfigPath string, w
 }
 
 // BuildAFPersonaToolClusterRoleBindingsManifest returns the OIDC group bindings
-// required by AF's SAR-based A2A tool guard. The operator creates the persona
-// ClusterRoles, while this qualification wiring supplies the deployment-specific
-// identity-to-persona mapping.
+// required by AF's SAR-based A2A tool guard. #2702: both the persona
+// ClusterRoles and these bindings are harness-owned qualification wiring
+// (applied by bindAFPersonaToolClusterRoles / BindAFPersonaRBAC); the
+// operator no longer renders either.
 func BuildAFPersonaToolClusterRoleBindingsManifest() string {
 	var b strings.Builder
 	for _, persona := range afPersonaGroupNames {
@@ -649,19 +641,26 @@ subjects:
 }
 
 // BindAFPersonaRBAC is the exported, post-`operator reconciliation` entry point for
-// `make bind-fleet-af-rbac` (hack/bind-fleet-af-rbac): binds the operator-managed
-// kubernaut-tool-<persona> ClusterRoles to the OIDC
+// `make bind-fleet-af-rbac` (hack/bind-fleet-af-rbac): applies the harness-owned
+// kubernaut-tool-<persona> ClusterRoles and binds them to the OIDC
 // groups issued by the Keycloak realm's kubernaut-console client
 // (test/infrastructure/keycloak-realm-demo.json's "sre" group/user).
 //
-// Does NOT also bind kubernaut-console-access: the operator owns the
-// console-access bindings as part of the reconciled Kubernaut resource; unlike
-// the per-tool persona bindings above, no test-owned manual step is needed.
+// #2702 (kubernaut-operator#682): the operator no longer renders persona
+// ClusterRoles or user-facing ClusterRoleBindings, so this function now owns
+// the full provisioning path (roles + bindings + SAR verification) for every
+// operator-managed AF lane -- fullpipeline (fleet and non-fleet) and the
+// operator demo.
 //
-// Must run after operator reconciliation -- the ClusterRoles this
-// binds don't exist until the chart's apifrontend templates render them.
-// Reuses bindAFPersonaToolClusterRoles unchanged (same binding shape works
-// for any IdP's "groups" claim, not just DEX's) rather than duplicating it.
+// Does NOT also bind the operator-rendered console roles
+// (console-access/console-reader/console-inventory-reader): #2703's
+// BindDemoConsoleRBAC (demo_console_rbac.go) supplies those external
+// bindings for the demo, and the AF-only E2E lane uses the harness-owned
+// e2e-user-rbac.yaml fixture (e2e-*-console-access ClusterRoleBindings).
+//
+// Must run after operator reconciliation so the reconciled workload exists;
+// the persona RBAC itself is harness-owned and applied idempotently here
+// (PersonaToolClusterRolesYAML renders both ClusterRoles and bindings).
 func BindAFPersonaRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🔑 Creating and binding AF persona ClusterRoles for operator-managed AF...")
 	personaToolRBAC, err := PersonaToolClusterRolesYAML()
