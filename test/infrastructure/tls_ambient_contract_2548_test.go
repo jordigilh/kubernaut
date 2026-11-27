@@ -257,6 +257,37 @@ spec:
 		Expect(skipResult.Violations).To(HaveLen(1),
 			"the workload document after a skipped template document must still be scanned for BR-SECURITY-2548")
 		Expect(skipResult.Violations[0].String()).To(ContainSubstring("SSL_CERT_DIR"))
+
+		// CRLF streams must not silently drop documents after the
+		// first: every separator must split, and a violating workload
+		// in document 2 must still be found.
+		crlfStream := strings.ReplaceAll(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crlf-first
+data:
+  key: value
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crlf-bad-second
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          env:
+            - name: SSL_CERT_DIR
+              value: /etc/custom-ca
+`, "\n", "\r\n")
+		crlfResult, err := tlscontract.ScanManifestData("planted-crlf.yaml", []byte(crlfStream))
+		Expect(err).ToNot(HaveOccurred(),
+			"CRLF line endings must not break document splitting for BR-SECURITY-2548")
+		Expect(crlfResult.Violations).To(HaveLen(1),
+			"the second document of a CRLF stream must still be scanned for BR-SECURITY-2548")
+		Expect(crlfResult.Violations[0].String()).To(ContainSubstring("SSL_CERT_DIR"))
 	})
 
 	// UT-TLS-2548-007: envFrom references resolve across files of the
@@ -306,6 +337,26 @@ spec:
 		Expect(result.Violations).To(HaveLen(1),
 			"envFrom must resolve a same-corpus ConfigMap defined in a different file for BR-SECURITY-2548")
 		Expect(result.Violations[0].String()).To(ContainSubstring("envFrom"))
+
+		// Same-named sources in different files (e.g. different
+		// namespaces) must union-merge: a clean same-named ConfigMap in
+		// a later file must never shadow one carrying an ambient env
+		// key -- the error direction is a possible false positive,
+		// never a missed violation.
+		shadowSource := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cross-file-env
+  namespace: other
+data:
+  UNRELATED: value
+`
+		Expect(os.WriteFile(filepath.Join(envSourceDir, "configmap-shadow.yaml"), []byte(shadowSource), 0o640)).To(Succeed())
+		shadowResult, err := tlscontract.ScanManifestFiles(corpusRoot, []string{"envsource", "workloads"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(shadowResult.Violations).To(HaveLen(1),
+			"a same-named clean ConfigMap must not shadow one carrying SSL_CERT_DIR for BR-SECURITY-2548")
+		Expect(shadowResult.Violations[0].String()).To(ContainSubstring("envFrom"))
 	})
 
 	// UT-TLS-2548-004: the ambient CA owner package stays no-write

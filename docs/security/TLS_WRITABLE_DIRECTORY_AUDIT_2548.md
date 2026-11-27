@@ -104,7 +104,9 @@ envelope is:
 - **envFrom external sources.** `envFrom` references are resolved against
   a corpus-wide index of ConfigMap/Secret documents in all scanned files
   (`ScanManifestFiles`) or the same stream (`ScanManifestData` on a single
-  bundle). Sources defined outside the scanned manifests (e.g.
+  bundle). Same-named sources across files/namespaces are union-merged:
+  the error direction is a possible false positive, never a missed
+  violation. Sources defined outside the scanned manifests (e.g.
   cluster-user-created objects) cannot be statically verified.
 - **PVC/CSI mounts.** Read-only persistentVolumeClaim-backed certificate
   mounts are reported as violations by design (fail-closed): the supported
@@ -118,7 +120,10 @@ envelope is:
   scanned. Placeholders in one document never mask a syntax error or a
   violation in another. Genuine YAML syntax errors in non-template
   documents abort the scan with the offending file path (never silently
-  skipped, never retried in a loop).
+  skipped, never retried in a loop). CRLF line endings are normalized
+  before splitting, and a segment that still contains multiple documents
+  after splitting (an unrecognized separator form) aborts the scan
+  fail-closed rather than silently decoding only the first.
 - **kind: List and non-YAML files.** `kind: List` wrapper documents and
   `.json` manifest files are not unpacked/scanned (only `.yaml`/`.yml`
   files, top-level workload documents). No such documents exist in the

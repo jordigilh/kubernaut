@@ -28,10 +28,12 @@ package tlscontract
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -189,9 +191,13 @@ type manifestObject struct {
 }
 
 // splitYAMLDocuments splits a multi-document YAML stream into per-document
-// byte segments at "^---" separator lines. Empty segments are dropped.
+// byte segments at "^---" and "..." separator lines (optional trailing
+// comment allowed). CRLF line endings are normalized first so separators
+// are not missed. Empty segments are preserved so document numbering in
+// error messages matches the visible separator count.
 func splitYAMLDocuments(data []byte) [][]byte {
-	sep := regexp.MustCompile(`(?m)^---[ \t]*$`)
+	data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	sep := regexp.MustCompile(`(?m)^(?:---|\.\.\.)[ \t]*(?:#.*)?$`)
 	locs := sep.FindAllIndex(data, -1)
 	if len(locs) == 0 {
 		return [][]byte{data}
@@ -203,13 +209,28 @@ func splitYAMLDocuments(data []byte) [][]byte {
 		prev = loc[1]
 	}
 	segments = append(segments, data[prev:])
-	filtered := segments[:0]
-	for _, seg := range segments {
-		if len(bytes.TrimSpace(seg)) > 0 {
-			filtered = append(filtered, seg)
+	return segments
+}
+
+// decodeSegment decodes exactly one YAML document from a pre-split
+// segment. It fails closed if the segment still contains more than one
+// document (an unrecognized separator form): yaml.Unmarshal would
+// silently decode only the first document and drop the rest, which would
+// hide violations, so residual documents are an error, never a skip.
+func decodeSegment(path string, docNum int, seg []byte) (any, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(seg))
+	var raw any
+	if err := decoder.Decode(&raw); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, nil // empty segment
 		}
+		return nil, err
 	}
-	return filtered
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("segment %d in %s contains multiple yaml documents after splitting (unrecognized document separator)", docNum, path)
+	}
+	return raw, nil
 }
 
 // decodeManifestDocs decodes every document of a multi-doc YAML stream,
@@ -223,8 +244,11 @@ func decodeManifestDocs(path string, data []byte) ([]manifestObject, error) {
 	segments := splitYAMLDocuments(data)
 	var docs []manifestObject
 	for i, seg := range segments {
-		var raw any
-		if err := yaml.Unmarshal(seg, &raw); err != nil {
+		if len(bytes.TrimSpace(seg)) == 0 {
+			continue
+		}
+		raw, err := decodeSegment(path, i+1, seg)
+		if err != nil {
 			if strings.Contains(string(seg), "{{") {
 				continue // template document: skip this document only
 			}
@@ -583,8 +607,20 @@ func collectCorpusDocs(repoRoot string, roots []string, excluded map[string]bool
 				return err
 			}
 			decoded = append(decoded, corpusFile{path: path, docs: docs})
+			// Union-merge same-named sources across files: Kubernetes
+			// allows the same ConfigMap/Secret name in different
+			// namespaces. Union (never overwrite) so a same-named clean
+			// source cannot shadow one carrying an ambient env key --
+			// the error direction is a possible false positive, never a
+			// missed violation.
 			for name, keys := range buildEnvSourceIndex(docs) {
-				corpusIndex[name] = keys
+				if existing, ok := corpusIndex[name]; ok {
+					for key := range keys {
+						existing[key] = true
+					}
+				} else {
+					corpusIndex[name] = keys
+				}
 			}
 			return nil
 		})
