@@ -74,33 +74,57 @@ var workloadKinds = map[string]bool{
 	"CronJob":     true,
 }
 
-// certPathSegments and certFileNames drive the CA/TLS-material heuristic.
-// Matching is segment/token based (whole path segment or whole file name),
-// never a substring: "replicas-cache" must NOT be treated as CA material.
-var certPathSegments = map[string]bool{
+// envSourceKinds are the object kinds whose data keys can inject env vars
+// through envFrom references.
+var envSourceKinds = map[string]bool{
+	"ConfigMap": true,
+	"Secret":    true,
+}
+
+// certPathTokens drive the CA/TLS-material heuristic. Matching is
+// token-based (whole path segment, whole file name, or '-'/'_'/'.'-separated
+// token within a segment): "replicas-cache" must NOT be treated as CA
+// material, while "signing-cert", "webhook-certs", and "tls-ca" must.
+var certPathTokens = map[string]bool{
 	"ca":    true,
+	"cert":  true,
 	"certs": true,
 	"pki":   true,
 	"tls":   true,
+	"x509":  true,
 }
 
-var certFileNames = map[string]bool{
-	"ca.crt":  true,
-	"ca.pem":  true,
-	"tls.crt": true,
-	"tls.key": true,
-	"ca-bundle.crt": true,
-	"ca-bundle.pem": true,
+// certFileSuffixes mark file names that are certificate/key material
+// regardless of their stem.
+var certFileSuffixes = []string{
+	".crt",
+	".pem",
+	".key",
 }
 
-// IsCertMaterialPath reports whether a mount path or volume name indicates
-// CA/TLS certificate material, using whole-segment matching.
+// IsCertMaterialPath reports whether a mount path, subPath, volume name, or
+// volume source name indicates CA/TLS certificate material. Detection is a
+// documented heuristic; the residual under-detection envelope (arbitrary
+// names like a secret "cache" mounted at /var/lib/app) is recorded as an
+// accepted risk in docs/security/TLS_WRITABLE_DIRECTORY_AUDIT_2548.md.
 func IsCertMaterialPath(path string) bool {
 	cleaned := filepath.ToSlash(filepath.Clean(path))
 	for _, segment := range strings.Split(cleaned, "/") {
 		lower := strings.ToLower(segment)
-		if certPathSegments[lower] || certFileNames[lower] {
+		if certPathTokens[lower] {
 			return true
+		}
+		for _, suffix := range certFileSuffixes {
+			if strings.HasSuffix(lower, suffix) {
+				return true
+			}
+		}
+		for _, token := range strings.FieldsFunc(lower, func(r rune) bool {
+			return r == '-' || r == '_' || r == '.'
+		}) {
+			if certPathTokens[token] {
+				return true
+			}
 		}
 	}
 	return false
@@ -109,6 +133,9 @@ func IsCertMaterialPath(path string) bool {
 // readOnlyVolumeSources are the volume sources acceptable for CA/TLS
 // material. emptyDir and hostPath are rejected (writable, persistent
 // staging locations after compromise -- the threat model of issue #2548).
+// Read-only PVC/CSI mounts are also rejected by design (fail-closed): the
+// supported contract mounts trust material from secret/configMap/projected
+// sources only.
 var readOnlyVolumeSources = map[string]bool{
 	"secret":    true,
 	"configMap": true,
@@ -153,15 +180,23 @@ func (r ScanResult) SortedViolations() []string {
 	return out
 }
 
-// ScanManifestData scans one multi-document YAML manifest file (the
-// rendered operator bundles and repo fixtures use multi-doc layout) for
-// ambient-CA contract violations. Non-workload documents (ConfigMaps, CRDs,
-// Services, ...) are skipped entirely, which also prevents ConfigMap-embedded
-// `kind: Deployment` text from being misparsed.
-func ScanManifestData(path string, data []byte) (ScanResult, error) {
-	result := ScanResult{}
+// manifestObject is one decoded top-level YAML document.
+type manifestObject struct {
+	kind    string
+	name    string
+	doc     map[string]any
+	dataKey map[string]bool
+}
+
+// decodeManifestDocs decodes every document of a multi-doc YAML stream.
+// Documents whose decode fails abort the scan with the file path, EXCEPT
+// streams containing Go-template placeholders ("{{"), which are runtime-
+// substituted templates that cannot be applied by kubectl/helm as-is and
+// are skipped entirely. (yaml.v3 keeps returning the same parse error once
+// a stream is broken, so parse errors must never be retried in a loop.)
+func decodeManifestDocs(path string, data []byte) ([]manifestObject, error) {
+	var docs []manifestObject
 	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
-	docIndex := 0
 	for {
 		var raw any
 		err := decoder.Decode(&raw)
@@ -169,67 +204,139 @@ func ScanManifestData(path string, data []byte) (ScanResult, error) {
 			break
 		}
 		if err != nil {
-			// Runtime-substituted templates (e.g. {{POSTGRES_PORT}}) are
-			// not valid YAML and cannot be applied by kubectl/helm, so
-			// they cannot violate the deployment contract. Skip them.
-			continue
+			if strings.Contains(string(data), "{{") {
+				break // runtime-substituted template file: skip whole stream
+			}
+			return nil, fmt.Errorf("failed to parse yaml in %s: %w", path, err)
 		}
-		docIndex++
-
 		docMap, ok := raw.(map[string]any)
 		if !ok {
 			continue // empty or list document
 		}
-		kind, _ := docMap["kind"].(string)
-		if !workloadKinds[kind] {
+		obj := manifestObject{doc: docMap}
+		obj.kind, _ = docMap["kind"].(string)
+		if meta, ok := docMap["metadata"].(map[string]any); ok {
+			obj.name, _ = meta["name"].(string)
+		}
+		if envSourceKinds[obj.kind] {
+			obj.dataKey = decodeDataKeys(docMap)
+		}
+		docs = append(docs, obj)
+	}
+	return docs, nil
+}
+
+func decodeDataKeys(docMap map[string]any) map[string]bool {
+	keys := map[string]bool{}
+	data, _ := docMap["data"].(map[string]any)
+	for key := range data {
+		keys[key] = true
+	}
+	stringData, _ := docMap["stringData"].(map[string]any)
+	for key := range stringData {
+		keys[key] = true
+	}
+	return keys
+}
+
+// buildEnvSourceIndex maps object name -> data keys for ConfigMap/Secret
+// documents, so envFrom references can be checked for ambient env keys.
+func buildEnvSourceIndex(docs []manifestObject) map[string]map[string]bool {
+	index := map[string]map[string]bool{}
+	for _, doc := range docs {
+		if envSourceKinds[doc.kind] && doc.name != "" {
+			index[doc.name] = doc.dataKey
+		}
+	}
+	return index
+}
+
+// ScanManifestData scans one multi-document YAML manifest file (the
+// rendered operator bundles and repo fixtures use multi-doc layout) for
+// ambient-CA contract violations. Non-workload documents (CRDs, Services,
+// ...) are skipped, which also prevents ConfigMap-embedded
+// `kind: Deployment` text from being misparsed. envFrom references are
+// resolved against ConfigMap/Secret documents in the same stream; sources
+// not present in the stream are not verifiable here (documented envelope).
+func ScanManifestData(path string, data []byte) (ScanResult, error) {
+	result := ScanResult{}
+	docs, err := decodeManifestDocs(path, data)
+	if err != nil {
+		return result, err
+	}
+	envSourceIndex := buildEnvSourceIndex(docs)
+
+	for _, doc := range docs {
+		if !workloadKinds[doc.kind] {
 			continue
 		}
 		result.WorkloadDocCount++
 
-		podSpec := extractPodSpec(docMap)
-		if podSpec == nil {
+		podSpec, ok := extractPodSpec(doc.kind, doc.doc)
+		if !ok {
+			result.Violations = append(result.Violations, Violation{
+				File:    path,
+				Kind:    doc.kind,
+				Message: fmt.Sprintf("workload %q has no pod spec/template to scan (fail-closed for malformed workloads)", doc.name),
+			})
 			continue
 		}
-		scanPodSpec(path, kind, podSpec, &result)
+		scanPodSpec(path, doc.kind, podSpec, envSourceIndex, &result)
 	}
 	return result, nil
 }
 
 // extractPodSpec navigates the workload-kind-specific path to the pod spec.
-func extractPodSpec(doc map[string]any) map[string]any {
-	spec, _ := doc["spec"].(map[string]any)
+// Template-bearing kinds without a template are reported as malformed
+// (ok=false), never silently skipped.
+func extractPodSpec(kind string, docMap map[string]any) (map[string]any, bool) {
+	spec, _ := docMap["spec"].(map[string]any)
 	if spec == nil {
-		return nil
+		return nil, false
 	}
 	// CronJob: spec.jobTemplate.spec.template.spec
-	if jobTemplate, ok := spec["jobTemplate"].(map[string]any); ok {
-		if jtSpec, ok := jobTemplate["spec"].(map[string]any); ok {
-			if tpl, ok := jtSpec["template"].(map[string]any); ok {
-				if tplSpec, ok := tpl["spec"].(map[string]any); ok {
-					return tplSpec
-				}
-			}
+	if kind == "CronJob" {
+		jobTemplate, ok := spec["jobTemplate"].(map[string]any)
+		if !ok {
+			return nil, false
 		}
-		return nil
+		jtSpec, ok := jobTemplate["spec"].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		tpl, ok := jtSpec["template"].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		tplSpec, ok := tpl["spec"].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		return tplSpec, true
 	}
 	// Pod: spec itself
-	if _, hasTemplate := spec["template"]; !hasTemplate {
-		return spec
+	if kind == "Pod" {
+		return spec, true
 	}
 	// Deployment/StatefulSet/DaemonSet/ReplicaSet/Job: spec.template.spec
-	if tpl, ok := spec["template"].(map[string]any); ok {
-		if tplSpec, ok := tpl["spec"].(map[string]any); ok {
-			return tplSpec
-		}
+	tpl, ok := spec["template"].(map[string]any)
+	if !ok {
+		return nil, false
 	}
-	return nil
+	tplSpec, ok := tpl["spec"].(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	return tplSpec, true
 }
 
-func scanPodSpec(path, kind string, podSpec map[string]any, result *ScanResult) {
+func scanPodSpec(path, kind string, podSpec map[string]any, envSourceIndex map[string]map[string]bool, result *ScanResult) {
 	volumes := mapSlice(podSpec, "volumes")
-	containers := append(
+	certVolumes := certMaterialVolumes(volumes)
+	containers := append(append(
 		mapSlice(podSpec, "containers"),
-		mapSlice(podSpec, "initContainers")...,
+		mapSlice(podSpec, "initContainers")...),
+		mapSlice(podSpec, "ephemeralContainers")...,
 	)
 
 	for _, container := range containers {
@@ -244,9 +351,15 @@ func scanPodSpec(path, kind string, podSpec map[string]any, result *ScanResult) 
 				})
 			}
 		}
+		for _, envFrom := range mapSlice(container, "envFrom") {
+			scanEnvFrom(path, kind, containerName, envFrom, envSourceIndex, result)
+		}
 		for _, mount := range mapSlice(container, "volumeMounts") {
 			mountPath, _ := mount["mountPath"].(string)
-			if !IsCertMaterialPath(mountPath) && !IsCertMaterialPath(volumeNameFor(mount)) {
+			subPath, _ := mount["subPath"].(string)
+			volumeName := volumeNameFor(mount)
+			if !IsCertMaterialPath(mountPath) && !IsCertMaterialPath(subPath) &&
+				!IsCertMaterialPath(volumeName) && !certVolumes[volumeName] {
 				continue
 			}
 			result.CertMountCount++
@@ -257,7 +370,6 @@ func scanPodSpec(path, kind string, podSpec map[string]any, result *ScanResult) 
 					Message: fmt.Sprintf("container %q mounts CA/TLS material at %q without readOnly: true", containerName, mountPath),
 				})
 			}
-			volumeName := volumeNameFor(mount)
 			if !hasReadOnlyVolumeSource(volumes, volumeName) {
 				result.Violations = append(result.Violations, Violation{
 					File:    path,
@@ -267,6 +379,79 @@ func scanPodSpec(path, kind string, podSpec map[string]any, result *ScanResult) 
 			}
 		}
 	}
+}
+
+// scanEnvFrom checks that a configMapRef/secretRef source does not carry
+// ambient CA env keys. Sources not present in the scanned stream cannot be
+// verified and are skipped (documented detection envelope).
+func scanEnvFrom(path, kind, containerName string, envFrom map[string]any, envSourceIndex map[string]map[string]bool, result *ScanResult) {
+	for _, refField := range []string{"configMapRef", "secretRef"} {
+		ref, ok := envFrom[refField].(map[string]any)
+		if !ok {
+			continue
+		}
+		refName, _ := ref["name"].(string)
+		dataKeys, found := envSourceIndex[refName]
+		if !found {
+			continue
+		}
+		for _, envVar := range AmbientEnvVars {
+			if dataKeys[envVar] {
+				result.Violations = append(result.Violations, Violation{
+					File:    path,
+					Kind:    kind,
+					Message: fmt.Sprintf("container %q envFrom source %q carries ambient CA env key %q (runtime-owned per DD-TLS-001)", containerName, refName, envVar),
+				})
+			}
+		}
+	}
+}
+
+// certMaterialVolumes returns the set of volume names whose source name
+// (secret.secretName, configMap.name, or a projected source) indicates
+// CA/TLS material.
+func certMaterialVolumes(volumes []map[string]any) map[string]bool {
+	certVolumes := map[string]bool{}
+	for _, volume := range volumes {
+		name, _ := volume["name"].(string)
+		sourceNames := volumeSourceNames(volume)
+		for _, sourceName := range sourceNames {
+			if IsCertMaterialPath(sourceName) {
+				certVolumes[name] = true
+				break
+			}
+		}
+	}
+	return certVolumes
+}
+
+func volumeSourceNames(volume map[string]any) []string {
+	var names []string
+	if secret, ok := volume["secret"].(map[string]any); ok {
+		if n, _ := secret["secretName"].(string); n != "" {
+			names = append(names, n)
+		}
+	}
+	if configMap, ok := volume["configMap"].(map[string]any); ok {
+		if n, _ := configMap["name"].(string); n != "" {
+			names = append(names, n)
+		}
+	}
+	if projected, ok := volume["projected"].(map[string]any); ok {
+		for _, source := range mapSlice(projected, "sources") {
+			if secret, ok := source["secret"].(map[string]any); ok {
+				if n, _ := secret["name"].(string); n != "" {
+					names = append(names, n)
+				}
+			}
+			if configMap, ok := source["configMap"].(map[string]any); ok {
+				if n, _ := configMap["name"].(string); n != "" {
+					names = append(names, n)
+				}
+			}
+		}
+	}
+	return names
 }
 
 func volumeNameFor(mount map[string]any) string {
@@ -433,9 +618,12 @@ func (v SourceViolation) String() string {
 
 // ScanTLSSourceWrites verifies pkg/shared/tls non-test sources contain no
 // file-creation/mutation APIs: the ambient CA trust path must stay no-write
-// (DD-TLS-001). Comment mentions are immune because this is AST-based.
+// (DD-TLS-001). Comment mentions are immune because this is AST-based, and
+// aliased imports (e.g. `ose "os"`) are resolved through the file's import
+// list.
 func ScanTLSSourceWrites(tlsPkgDir string) ([]SourceViolation, error) {
 	return scanGoSources(tlsPkgDir, func(file *ast.File, fset *token.FileSet, path string) []SourceViolation {
+		writePackageAliases := importAliases(file, "os", "io/ioutil")
 		var found []SourceViolation
 		ast.Inspect(file, func(n ast.Node) bool {
 			selector, ok := n.(*ast.SelectorExpr)
@@ -446,20 +634,37 @@ func ScanTLSSourceWrites(tlsPkgDir string) ([]SourceViolation, error) {
 			if !ok {
 				return true
 			}
-			package_ := ident.Name
-			if package_ == "os" || package_ == "ioutil" {
-				if bannedWriteAPIs[selector.Sel.Name] {
-					found = append(found, SourceViolation{
-						File:    path,
-						Line:    fset.Position(selector.Pos()).Line,
-						Message: fmt.Sprintf("%s.%s is forbidden in the no-write ambient CA package", package_, selector.Sel.Name),
-					})
-				}
+			if writePackageAliases[ident.Name] && bannedWriteAPIs[selector.Sel.Name] {
+				found = append(found, SourceViolation{
+					File:    path,
+					Line:    fset.Position(selector.Pos()).Line,
+					Message: fmt.Sprintf("%s is forbidden in the no-write ambient CA package (aliased import of os/ioutil)", ident.Name),
+				})
 			}
 			return true
 		})
 		return found
 	})
+}
+
+// importAliases returns the identifiers a file uses for the given import
+// paths: the explicit alias if present, otherwise the package's base name.
+func importAliases(file *ast.File, paths ...string) map[string]bool {
+	aliases := map[string]bool{}
+	for _, imp := range file.Imports {
+		importPath := strings.Trim(imp.Path.Value, "\"")
+		for _, want := range paths {
+			if importPath != want {
+				continue
+			}
+			if imp.Name != nil {
+				aliases[imp.Name.Name] = true
+			} else {
+				aliases[filepath.Base(importPath)] = true
+			}
+		}
+	}
+	return aliases
 }
 
 // ScanAmbientEnvOwnership verifies that no Go source outside the ambient CA

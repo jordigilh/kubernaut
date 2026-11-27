@@ -80,14 +80,50 @@ future addition cannot silently escape the contract.
 
 | ID | Tier | Proof |
 |---|---|---|
-| UT-TLS-2548-001 | UT (static manifest) | No static ambient CA env injection in repo workload manifests |
+| UT-TLS-2548-001 | UT (static manifest) | No static ambient CA env injection in repo workload manifests, including `envFrom` sources carrying ambient env keys |
 | UT-TLS-2548-002 | UT (static manifest) | CA/TLS mounts are read-only secret/configMap/projected, never emptyDir/hostPath; minimum-match anchor on the DataStorage `/etc/certs` mount |
-| UT-TLS-2548-003 | UT (detector self-test) | Planted violations are caught; `replicas-cache` lookalike and ConfigMap-embedded workload text are not |
-| UT-TLS-2548-004 | UT (source guard) | `pkg/shared/tls` non-test sources contain no write/temp APIs (AST-based, comment-immune) |
+| UT-TLS-2548-003 | UT (detector self-test) | Planted violations are caught (static env, writable/emptyDir CA mount, envFrom key injection); `replicas-cache` lookalike and ConfigMap-embedded workload text are not |
+| UT-TLS-2548-004 | UT (source guard) | `pkg/shared/tls` non-test sources contain no write/temp APIs (AST-based, comment-immune, import-alias aware) |
 | UT-TLS-2548-005 | UT (source guard) | `SSL_CERT_FILE`/`SSL_CERT_DIR` literals confined to `pkg/shared/tls` across `pkg/`, `cmd/`, `internal/` |
-| IT-TLS-2548-001 | IT (CI) | Rendered operator bundles satisfy the same contract (`tls-rendered-contract` job) |
+| IT-TLS-2548-001 | IT (CI) | Rendered operator bundles satisfy the same contract (`tls-rendered-contract` job, gated by the `summary` job) |
 | IT-TLS-2545-001 | IT | Read-only UBI private+public CA bootstrap (pre-existing from #2545) |
-| IT-TLS-2545-002 | IT | `TLS_CA_FILE` hot-reload with last-known-good retention, proven in a read-only Linux container via the `rotatechild` podman child (implemented in this issue; the #2545 test plan had specified it but it was never implemented) |
+| IT-TLS-2545-002 | IT | `TLS_CA_FILE` hot-reload with last-known-good retention, proven in a read-only Linux container via the `rotatechild` podman child (implemented in this issue; the #2545 test plan had specified it but it was never implemented). A second valid rotation after the invalid one proves the watcher kept processing events (non-vacuous rejection) |
+
+## Detection envelope (accepted risks)
+
+The manifest detector is deliberately fail-closed but heuristic; its known
+envelope is:
+
+- **CA-material naming.** Mount paths, subPaths, volume names, and volume
+  source names (secret/configMap/projected) are matched by whole-segment
+  or token matching (`ca`, `cert`, `certs`, `pki`, `tls`, `x509`, `.crt`,
+  `.pem`, `.key` suffixes). An arbitrarily-named CA volume (e.g. a secret
+  named `cache` mounted at `/var/lib/app`) is not detected. Token matching
+  accepts compound names like `signing-cert`, `webhook-certs`, and
+  `tls-ca` while rejecting lookalikes like `replicas-cache`.
+- **envFrom external sources.** `envFrom` references are resolved against
+  ConfigMap/Secret documents present in the scanned stream. Sources
+  defined outside the scanned manifests (e.g. cluster-user-created
+  objects) cannot be statically verified.
+- **PVC/CSI mounts.** Read-only persistentVolumeClaim-backed certificate
+  mounts are reported as violations by design (fail-closed): the supported
+  contract mounts trust material from secret/configMap/projected sources
+  only. A future legitimate PVC mount must be a documented contract
+  change, not a quiet weakening of the check.
+- **Template files.** YAML streams containing Go-template placeholders
+  (`{{`) are skipped entirely: runtime-substituted templates cannot be
+  applied by kubectl/helm as-is. Genuine YAML syntax errors abort the
+  scan with the offending file path (never silently skipped, never
+  retried in a loop).
+- **Malformed workloads.** A workload document without a pod
+  spec/template is reported as a violation (fail-closed) rather than
+  silently skipped.
+- **ephemeralContainers** are scanned like init containers.
+- **Source guards.** The AST scans exclude `_test.go`, `testdata`, and
+  hidden directories; import aliases are resolved through each file's
+  import list. Dot-imports of `os` are not resolved (none exist in the
+  repository; a dot-import would fail lint anyway).
+
 
 ## Residual risks
 

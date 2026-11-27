@@ -119,6 +119,32 @@ spec:
 		Expect(joined).To(ContainSubstring("readOnly"))
 		Expect(joined).To(ContainSubstring("emptyDir"))
 
+		envFromFixture := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bad-env-source
+data:
+  SSL_CERT_DIR: /etc/custom-ca
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-envfrom
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          envFrom:
+            - configMapRef:
+                name: bad-env-source
+`
+		envFromResult, err := tlscontract.ScanManifestData("planted-envfrom.yaml", []byte(envFromFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(envFromResult.Violations).To(HaveLen(1))
+		Expect(envFromResult.Violations[0].String()).To(ContainSubstring("envFrom"))
+
 		lookalikeFixture := `apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -140,6 +166,12 @@ spec:
 		Expect(err).ToNot(HaveOccurred())
 		Expect(lookalikeResult.HasViolations()).To(BeFalse(),
 			"segment-based heuristic must not flag replicas-cache for BR-SECURITY-2548")
+
+		malformedFixture := "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: broken\nspec:\n  template:\n    spec:\n      containers:\n        - name: app\n          image: [unclosed\n"
+		_, err = tlscontract.ScanManifestData("planted-malformed.yaml", []byte(malformedFixture))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("planted-malformed.yaml"),
+			"a YAML syntax error must abort the scan naming the file, never loop or silently pass, for BR-SECURITY-2548")
 
 		configMapEmbeddedFixture := `apiVersion: v1
 kind: ConfigMap

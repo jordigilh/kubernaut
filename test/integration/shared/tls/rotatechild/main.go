@@ -73,6 +73,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	thirdCA, err := generateCA("IT-TLS-2545-002 third CA")
+	if err != nil {
+		return err
+	}
 
 	serverOld, urlOld, err := startServer(dir, "old", oldCA)
 	if err != nil {
@@ -84,6 +88,11 @@ func run() error {
 		return fmt.Errorf("start new-CA server: %w", err)
 	}
 	defer func() { _ = serverNew.Close() }()
+	serverThird, urlThird, err := startServer(dir, "third", thirdCA)
+	if err != nil {
+		return fmt.Errorf("start third-CA server: %w", err)
+	}
+	defer func() { _ = serverThird.Close() }()
 
 	caPath := filepath.Join(dir, "ca.crt")
 	if err := os.WriteFile(caPath, oldCA.pem, 0644); err != nil {
@@ -107,8 +116,18 @@ func run() error {
 		return errors.New("new-CA server must not be trusted before rotation")
 	}
 
+	return verifyRotationLifecycle(ctx, client, caPath, newCA.pem, urlNew, thirdCA.pem, urlThird)
+}
+
+// verifyRotationLifecycle proves, through real HTTPS round trips, that a
+// valid CA rotation hot-reloads, an invalid rotation retains the
+// last-known-good transport, and the watcher keeps processing events after
+// rejecting the garbage PEM (the second valid rotation makes the rejection
+// check non-vacuous).
+func verifyRotationLifecycle(ctx context.Context, client *http.Client, caPath string,
+	newCAPEM []byte, urlNew string, thirdCAPEM []byte, urlThird string) error {
 	// Valid rotation via atomic rename (the ConfigMap update pattern).
-	if err := rotate(caPath, newCA.pem); err != nil {
+	if err := rotate(caPath, newCAPEM); err != nil {
 		return err
 	}
 	if err := waitForTrust(ctx, client, urlNew); err != nil {
@@ -123,6 +142,14 @@ func run() error {
 	time.Sleep(1500 * time.Millisecond)
 	if err := get(ctx, client, urlNew); err != nil {
 		return fmt.Errorf("last-known-good trust lost after invalid rotation: %w", err)
+	}
+
+	// Second valid rotation (to a third CA).
+	if err := rotate(caPath, thirdCAPEM); err != nil {
+		return err
+	}
+	if err := waitForTrust(ctx, client, urlThird); err != nil {
+		return fmt.Errorf("watcher stopped processing events after invalid rotation: %w", err)
 	}
 	return nil
 }

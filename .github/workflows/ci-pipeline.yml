@@ -901,6 +901,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.11'
+
       - name: Download operator qualification artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -1959,8 +1963,10 @@ jobs:
           echo "  Distribution: workflow artifacts (no registry push, 2-day retention)"
           echo ""
           echo "STAGE 3 - Integration Tests (Parallel Matrix):"
-          echo "  All Services (12 services): ${{ needs.integration-tests.result }}"
+          echo "  All Services (13 services incl. shared): ${{ needs.integration-tests.result }}"
           echo "  Image Strategy: Load from workflow artifacts (DataStorage, KA, Mock LLM)"
+          echo ""
+          echo "TLS rendered deployment contract (Issue #2548): ${{ needs.tls-rendered-contract.result }}"
           echo ""
           echo "STAGE 4 - E2E Tests (Parallel Matrix):"
           echo "  All Services (13 services): ${{ needs.e2e-tests.result }}"
@@ -1978,7 +1984,7 @@ jobs:
           echo "  ✅ No redundant builds (code compiled once in image builds)"
           echo "  ✅ Parallel image builds, handed off as artifacts (matrix: 12 services × 2 arches + 2 infra)"
           echo "  ✅ Integration tests reuse artifact-loaded images (saves ~60% disk, ~30% time)"
-          echo "  ✅ Parallel integration tests (matrix: 12 services)"
+          echo "  ✅ Parallel integration tests (matrix: 13 services incl. shared)"
           echo "  ✅ E2E tests reuse artifact-loaded images (saves ~60% disk, ~30% time)"
           echo "  ✅ Parallel E2E tests (matrix: 13 services)"
           echo "  ✅ Automatic fallback to local build if an image artifact is missing"
@@ -2021,7 +2027,7 @@ jobs:
             echo "❌ Integration tests failed - check individual service logs in the matrix"
             echo "   Services tested: signalprocessing, aianalysis, workflowexecution,"
             echo "                    remediationorchestrator, gateway, datastorage,"
-            echo "                    notification, kubernautagent, authwebhook"
+            echo "                    notification, kubernautagent, authwebhook, shared"
             exit 1
           elif [ "${{ needs.integration-tests.result }}" == "skipped" ]; then
             echo ""
@@ -2043,6 +2049,20 @@ jobs:
           elif [ "${{ needs.cel-immutability-regression.result }}" == "cancelled" ]; then
             echo ""
             echo "⚠️  CEL immutability regression guard cancelled"
+            exit 1
+          fi
+
+          # Check TLS rendered deployment contract (BR-SECURITY-2548 / Issue #2548)
+          if [ "${{ needs.tls-rendered-contract.result }}" == "failure" ]; then
+            echo ""
+            echo "❌ TLS rendered deployment contract failed (Issue #2548) - rendered operator bundles violate the ambient CA contract"
+            exit 1
+          elif [ "${{ needs.tls-rendered-contract.result }}" == "skipped" ]; then
+            echo ""
+            echo "⏭️  TLS rendered deployment contract skipped (dependencies failed)"
+          elif [ "${{ needs.tls-rendered-contract.result }}" == "cancelled" ]; then
+            echo ""
+            echo "⚠️  TLS rendered deployment contract cancelled"
             exit 1
           fi
 
@@ -2068,7 +2088,8 @@ jobs:
           if [ "${{ needs.integration-tests.result }}" == "success" ] && \
              [ "${{ needs.cel-immutability-regression.result }}" == "success" ] && \
              [ "${{ needs.e2e-tests.result }}" == "success" ] && \
-             [ "${{ needs.e2e-tests.result }}" == "success" ]; then
+             [ "${{ needs.e2e-tests.result }}" == "success" ] && \
+             [ "${{ needs.tls-rendered-contract.result }}" == "success" ]; then
             echo "✅ All tests passed!"
             exit 0
           else
