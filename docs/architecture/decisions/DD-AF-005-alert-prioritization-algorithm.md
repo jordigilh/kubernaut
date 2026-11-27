@@ -46,6 +46,12 @@ Unknown or empty severity labels rank 0, ensuring they always sort below info.
 
 ### Response Contract
 
+> **Historical shape** — the full-object `prioritized.selected`/`tied`/`also_active`
+> fields below were superseded by [DD-AF-008](DD-AF-008-priority-event-channel.md),
+> which replaced them with index references (`selected_index`, `tied_indices`,
+> `also_active_start`) to fit the tool-result byte budget. The current contract
+> is DD-AF-008's; do not implement against the fields shown here.
+
 The `kubernaut_list_alerts` tool returns a `ListAlertsResult` with an optional `prioritized` field:
 
 ```json

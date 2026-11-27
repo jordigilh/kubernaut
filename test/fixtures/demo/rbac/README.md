@@ -29,11 +29,12 @@ and the user `sre-user` in `sre`.
 
 ## Alert bundles: single canonical name
 
-Since #2713 unified the alert tool name, the alert capability has one
-authorization identity — `kubernaut_list_alerts` (and `kubernaut_get_alert_details`
-for detail lookups) on both the chat/A2A surface and the raw MCP bridge (which
-the Console proxies). Bundles that grant alert access carry those canonical
-names and the capability works on both surfaces.
+Since #2713 unified the alert tool name, `kubernaut_list_alerts` has one
+authorization identity that works on both the chat/A2A surface and the raw MCP
+bridge (which the Console proxies). `kubernaut_get_alert_details` follows the
+same naming convention but is a chat/A2A-only capability — it is not registered
+on the raw MCP bridge, so granting it does not make detail lookup available
+through `/mcp`. Bundles that grant alert access carry the canonical names.
 
 ## Applying
 
