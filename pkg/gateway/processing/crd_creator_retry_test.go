@@ -559,6 +559,7 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 			Expect(rr).To(BeNil())
 			Expect(errors.Is(err, context.Canceled)).To(BeTrue(), "error should report the cancellation")
+			Expect(err.Error()).To(ContainSubstring("fetch abandoned after 1 attempts"), "a cancelled wait is not a failed fetch")
 			Expect(getCount.Load()).To(Equal(int32(1)), "no further fetch attempts after cancellation")
 		})
 	})

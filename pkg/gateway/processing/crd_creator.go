@@ -282,21 +282,11 @@ func (c *CRDCreator) buildRemediationRequestCRD(crdName string, signal *types.No
 	}
 }
 
-// fetchExistingCRDBackoff is the delay between attempts to fetch an existing
-// CRD after AlreadyExists: ~50ms, then ~100ms (±10% jitter, capped at 200ms),
-// consistent with waitWithBackoff (BR-GATEWAY-113).
-var fetchExistingCRDBackoff = backoff.Config{
-	BasePeriod:    50 * time.Millisecond,
-	MaxPeriod:     200 * time.Millisecond,
-	Multiplier:    2.0,
-	JitterPercent: 10,
-}
-
 // recoverExistingCRDOnConflict handles the AlreadyExists race (e.g., Redis TTL
 // expired but the K8s CRD still exists — normal behavior since Redis TTL is
 // shorter than CRD lifecycle): fetch and return the existing CRD instead of
-// treating this as a failure. Retries the fetch up to 3 times with
-// fetchExistingCRDBackoff between attempts to absorb any residual
+// treating this as a failure. Retries the fetch up to 3 times with the shared
+// backoff (~50ms, then ~100ms, ±10% jitter) to absorb any residual
 // read-after-write lag; the wait is context-aware. Extracted from
 // CreateRemediationRequest (funlen).
 func (c *CRDCreator) recoverExistingCRDOnConflict(
@@ -314,7 +304,17 @@ func (c *CRDCreator) recoverExistingCRDOnConflict(
 	var existing *remediationv1alpha1.RemediationRequest
 	var fetchErr error
 	const maxFetchAttempts = 3
+	// Fixed short delays instead of c.retryConfig (BR-GATEWAY-113): this only
+	// absorbs read-after-write lag on a Get, while retryConfig is the create
+	// retry profile (100ms initial, up to 5s).
+	fetchBackoff := backoff.Config{
+		BasePeriod:    50 * time.Millisecond,
+		MaxPeriod:     200 * time.Millisecond,
+		Multiplier:    2.0,
+		JitterPercent: 10,
+	}
 	attempts := 0
+	abandoned := false
 fetchLoop:
 	for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
 		attempts = attempt
@@ -325,7 +325,7 @@ fetchLoop:
 
 		if attempt < maxFetchAttempts {
 			// Shared exponential backoff with jitter: ~50ms, then ~100ms
-			backoffDelay := fetchExistingCRDBackoff.Calculate(int32(attempt))
+			backoffDelay := fetchBackoff.Calculate(int32(attempt))
 			c.logger.V(1).Info("CRD fetch failed, retrying after backoff",
 				"name", crdName,
 				"attempt", attempt,
@@ -336,12 +336,17 @@ fetchLoop:
 			case <-time.After(backoffDelay):
 			case <-ctx.Done():
 				fetchErr = fmt.Errorf("%w (last fetch error: %w)", ctx.Err(), fetchErr)
+				abandoned = true
 				break fetchLoop
 			}
 		}
 	}
 
 	if fetchErr != nil {
+		err := fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", attempts, fetchErr)
+		if abandoned {
+			err = fmt.Errorf("CRD exists but fetch abandoned after %d attempts: %w", attempts, fetchErr)
+		}
 		c.metrics.CRDCreationErrors.WithLabelValues("fetch_existing_failed").Inc()
 		return nil, NewCRDCreationError(CRDCreationErrorParams{
 			Fingerprint: signal.Fingerprint,
@@ -351,7 +356,7 @@ fetchLoop:
 			SignalName:  signal.SignalName,
 			Attempts:    attempts,
 			StartTime:   startTime,
-			Err:         fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", attempts, fetchErr),
+			Err:         err,
 		})
 	}
 
