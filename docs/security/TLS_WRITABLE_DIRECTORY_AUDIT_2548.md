@@ -85,6 +85,9 @@ future addition cannot silently escape the contract.
 | UT-TLS-2548-003 | UT (detector self-test) | Planted violations are caught (static env, writable/emptyDir CA mount, envFrom key injection); `replicas-cache` lookalike and ConfigMap-embedded workload text are not |
 | UT-TLS-2548-004 | UT (source guard) | `pkg/shared/tls` non-test sources contain no write/temp APIs (AST-based, comment-immune, import-alias aware) |
 | UT-TLS-2548-005 | UT (source guard) | `SSL_CERT_FILE`/`SSL_CERT_DIR` literals confined to `pkg/shared/tls` across `pkg/`, `cmd/`, `internal/` |
+| UT-TLS-2548-006 | UT (detector self-test) | Template placeholders in one document never mask a syntax error or a violation in another; CRLF streams split correctly; malformed template documents skip individually |
+| UT-TLS-2548-007 | UT (detector self-test) | `envFrom` sources resolve across corpus files and union-merge same-named sources (cross-file and in-stream shadowing both closed) |
+| UT-TLS-2548-008 | UT (detector self-test) | `ScanManifestCorpus` resolves `envFrom` across rendered-bundle streams and aborts fail-closed on any malformed stream |
 | IT-TLS-2548-001 | IT (CI) | Rendered operator bundles satisfy the same contract (`tls-rendered-contract` job, gated by the `summary` job) |
 | IT-TLS-2545-001 | IT | Read-only UBI private+public CA bootstrap (pre-existing from #2545) |
 | IT-TLS-2545-002 | IT | `TLS_CA_FILE` hot-reload with last-known-good retention, proven in a read-only Linux container via the `rotatechild` podman child (implemented in this issue; the #2545 test plan had specified it but it was never implemented). A second valid rotation after the invalid one proves the watcher kept processing events (non-vacuous rejection) |
@@ -102,9 +105,10 @@ envelope is:
   accepts compound names like `signing-cert`, `webhook-certs`, and
   `tls-ca` while rejecting lookalikes like `replicas-cache`.
 - **envFrom external sources.** `envFrom` references are resolved against
-  a corpus-wide index of ConfigMap/Secret documents in all scanned files
-  (`ScanManifestFiles`) or the same stream (`ScanManifestData` on a single
-  bundle). Same-named sources across files/namespaces are union-merged:
+  a corpus-wide index of ConfigMap/Secret documents: across all scanned
+  files (`ScanManifestFiles`), across the streams of a rendered
+  deployment surface (`ScanManifestCorpus`, used by the operator-bundle
+  gate), or within a single stream (`ScanManifestData`). Same-named sources across files/namespaces are union-merged:
   the error direction is a possible false positive, never a missed
   violation. Sources defined outside the scanned manifests (e.g.
   cluster-user-created objects) cannot be statically verified.
