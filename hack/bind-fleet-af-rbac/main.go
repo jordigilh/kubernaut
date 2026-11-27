@@ -1,5 +1,5 @@
 // Command bind-fleet-af-rbac provisions demo RBAC on a fleet-core cluster:
-// the persona tool ClusterRoles and their group ClusterRoleBindings
+// the demo example capability-role ClusterRoles and their group ClusterRoleBindings
 // (infrastructure.BindAFPersonaRBAC), and the external bindings for the
 // operator-rendered console roles (infrastructure.BindDemoConsoleRBAC,
 // bound to the Keycloak realm's "sre" group/user,
@@ -54,5 +54,5 @@ func main() {
 		fmt.Fprintf(os.Stderr, "\n❌ bind-fleet-af-rbac failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Println("\n✅ Demo persona tool roles (per-persona groups) and console-access/console-reader/console-inventory-reader (sre group) bound.")
+	fmt.Println("\n✅ Demo example capability-role bundles (per-group) and console-access/console-reader/console-inventory-reader (sre group) bound.")
 }
