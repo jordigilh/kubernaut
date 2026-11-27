@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -197,6 +198,114 @@ data:
 		Expect(err).ToNot(HaveOccurred())
 		Expect(trapResult.HasViolations()).To(BeFalse(),
 			"ConfigMap-embedded workload text must be skipped by document-level kind filtering for BR-SECURITY-2548")
+	})
+
+	// UT-TLS-2548-006: Go-template placeholders in one document of a
+	// multi-doc stream must never mask a YAML syntax error or a planted
+	// violation in another document of the same stream (fail-closed
+	// decode: template documents are skipped individually, by their own
+	// bytes, and every other document is still decoded and scanned).
+	It("UT-TLS-2548-006: template placeholders in one doc do not mask errors or violations in others", func() {
+		mixedStream := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: template-bearing
+data:
+  notice: "{{ .Values.something }}"
+---
+bad: [unclosed
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-after-template
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          env:
+            - name: SSL_CERT_DIR
+              value: /etc/custom-ca
+`
+		_, err := tlscontract.ScanManifestData("planted-mixed-template.yaml", []byte(mixedStream))
+		Expect(err).To(HaveOccurred(),
+			"a genuine YAML syntax error must abort the scan even when another document carries template placeholders, for BR-SECURITY-2548")
+		Expect(err.Error()).To(ContainSubstring("planted-mixed-template.yaml"))
+
+		templateDocSkipped := `values: "{{ .Values.render-time }}"
+extra: [unclosed
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-after-template-doc
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          env:
+            - name: SSL_CERT_DIR
+              value: /etc/custom-ca
+`
+		skipResult, err := tlscontract.ScanManifestData("planted-template-doc.yaml", []byte(templateDocSkipped))
+		Expect(err).ToNot(HaveOccurred(),
+			"a malformed template document is skipped individually without failing the whole stream, for BR-SECURITY-2548")
+		Expect(skipResult.Violations).To(HaveLen(1),
+			"the workload document after a skipped template document must still be scanned for BR-SECURITY-2548")
+		Expect(skipResult.Violations[0].String()).To(ContainSubstring("SSL_CERT_DIR"))
+	})
+
+	// UT-TLS-2548-007: envFrom references resolve across files of the
+	// scanned corpus, not just within one stream: a ConfigMap carrying
+	// SSL_CERT_DIR in file A and a Deployment envFrom-ing it in file B
+	// must be flagged.
+	It("UT-TLS-2548-007: envFrom ambient env sources are resolved across corpus files", func() {
+		corpusRoot := GinkgoT().TempDir()
+		// The pinned Tekton exclusion directory must exist for the
+		// exclusion pin check; recreate the pinned marker so the scan
+		// runs against a self-contained corpus.
+		tektonDir := filepath.Join(corpusRoot, "test", "fixtures", "tekton", "releases")
+		Expect(os.MkdirAll(tektonDir, 0o750)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(tektonDir, "tekton-v0.59.0.yaml"), []byte("# pinned upstream fixture\n"), 0o640)).To(Succeed())
+
+		envSourceDir := filepath.Join(corpusRoot, "envsource")
+		workloadDir := filepath.Join(corpusRoot, "workloads")
+		Expect(os.MkdirAll(envSourceDir, 0o750)).To(Succeed())
+		Expect(os.MkdirAll(workloadDir, 0o750)).To(Succeed())
+
+		envSource := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cross-file-env
+data:
+  SSL_CERT_DIR: /etc/custom-ca
+`
+		workload := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cross-file-envfrom
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          envFrom:
+            - configMapRef:
+                name: cross-file-env
+`
+		Expect(os.WriteFile(filepath.Join(envSourceDir, "configmap.yaml"), []byte(envSource), 0o640)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(workloadDir, "deployment.yaml"), []byte(workload), 0o640)).To(Succeed())
+
+		result, err := tlscontract.ScanManifestFiles(corpusRoot, []string{"envsource", "workloads"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.Violations).To(HaveLen(1),
+			"envFrom must resolve a same-corpus ConfigMap defined in a different file for BR-SECURITY-2548")
+		Expect(result.Violations[0].String()).To(ContainSubstring("envFrom"))
 	})
 
 	// UT-TLS-2548-004: the ambient CA owner package stays no-write

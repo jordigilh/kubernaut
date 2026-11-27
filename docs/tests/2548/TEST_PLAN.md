@@ -46,11 +46,13 @@
 | UT-TLS-2548-003 | UT | Detector catches planted violations; ignores `replicas-cache` lookalikes and ConfigMap-embedded workload text | BR-SECURITY-2548; SI-10; CC8.1; V16.5.3 |
 | UT-TLS-2548-004 | UT | `pkg/shared/tls` non-test sources contain no write/temp-file APIs | BR-SECURITY-2548/BR-SECURITY-2545; AC-6/CM-7; CC8.1; V15.2.5 |
 | UT-TLS-2548-005 | UT | Ambient env ownership stays in `pkg/shared/tls` across `pkg/`, `cmd/`, `internal/` | BR-SECURITY-2548; AC-6/CM-7, SI-10; CC8.1; V12.3.4 |
+| UT-TLS-2548-006 | UT | Go-template placeholders in one document never mask a YAML syntax error or a violation in another document of the same stream (per-document fail-closed decode) | BR-SECURITY-2548; SI-10; CC8.1; V16.5.3 |
+| UT-TLS-2548-007 | UT | `envFrom` ambient env sources resolve across files of the scanned corpus, not just within one stream | BR-SECURITY-2548; SI-10; CC8.1; V12.3.4 |
 | IT-TLS-2548-001 | IT | CI-rendered operator bundles satisfy the ambient CA deployment contract (fail-closed on missing input) | BR-SECURITY-2548; SC-8/SC-13, AC-6/CM-7; CC8.1; V12.3.1–V12.3.4, V15.2.5 |
 | IT-TLS-2545-001 | IT | Read-only UBI ambient bootstrap with private+public CA trust (pre-existing) | BR-SECURITY-2545; SC-8/AC-6/CM-7; CC7.2; V12.3.1–V12.3.4/V15.2.5 |
 | IT-TLS-2545-002 | IT | `TLS_CA_FILE` hot-reload on valid rotation; last-known-good retained after invalid rotation, proven by HTTPS round trips in a read-only Linux container | BR-SECURITY-2545/2548; SC-12/SC-13/CM-6; CC7.2; V12.3.4, V13.1.3 |
 
-Target: 5/5 in-scope UT scenarios and 100% of critical security scenarios
+Target: 7/7 in-scope UT scenarios and 100% of critical security scenarios
 (all are critical), 3/3 in-repository IT rows.
 
 ## 3. Pyramid invariant
@@ -63,9 +65,11 @@ Target: 5/5 in-scope UT scenarios and 100% of critical security scenarios
   (`rotatechild` under podman; macOS kqueue directory watches cannot
   attribute events to file names, so the proof must run on Linux
   fsnotify).
-- **E2E / CI**: the `tls-rendered-contract` job and the `shared`
-  integration matrix entry are the deployment-journey gates; the operator
-  repository owns operand qualification.
+- **E2E / CI**: the `tls-rendered-contract` job runs both the
+  repository-corpus UT specs (`-ginkgo.focus='TLS-2548'`) and the
+  rendered-bundle IT suite, so neither guardrail can be silently
+  unwired; the `shared` integration matrix entry and the operator
+  repository own the remaining deployment journeys.
 
 ## 4. Vacuity controls
 

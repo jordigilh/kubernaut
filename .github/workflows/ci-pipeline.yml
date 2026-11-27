@@ -911,6 +911,11 @@ jobs:
           name: operator-qualification-${{ github.run_id }}
           path: operator-qualification
 
+      - name: Run repository-corpus TLS contract specs
+        run: |
+          set -euo pipefail
+          go test ./test/infrastructure -ginkgo.focus='TLS-2548' -count=1 -v
+
       - name: Run rendered TLS deployment contract tests
         env:
           TLS_2548_RENDERED_DIR: ${{ github.workspace }}/operator-qualification

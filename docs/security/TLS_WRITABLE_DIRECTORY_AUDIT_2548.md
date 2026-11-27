@@ -102,19 +102,28 @@ envelope is:
   accepts compound names like `signing-cert`, `webhook-certs`, and
   `tls-ca` while rejecting lookalikes like `replicas-cache`.
 - **envFrom external sources.** `envFrom` references are resolved against
-  ConfigMap/Secret documents present in the scanned stream. Sources
-  defined outside the scanned manifests (e.g. cluster-user-created
-  objects) cannot be statically verified.
+  a corpus-wide index of ConfigMap/Secret documents in all scanned files
+  (`ScanManifestFiles`) or the same stream (`ScanManifestData` on a single
+  bundle). Sources defined outside the scanned manifests (e.g.
+  cluster-user-created objects) cannot be statically verified.
 - **PVC/CSI mounts.** Read-only persistentVolumeClaim-backed certificate
   mounts are reported as violations by design (fail-closed): the supported
   contract mounts trust material from secret/configMap/projected sources
   only. A future legitimate PVC mount must be a documented contract
   change, not a quiet weakening of the check.
-- **Template files.** YAML streams containing Go-template placeholders
-  (`{{`) are skipped entirely: runtime-substituted templates cannot be
-  applied by kubectl/helm as-is. Genuine YAML syntax errors abort the
-  scan with the offending file path (never silently skipped, never
-  retried in a loop).
+- **Template documents.** A YAML document whose own bytes fail to parse
+  and contain Go-template placeholders (`{{`) is skipped as a
+  runtime-substituted template (it cannot be applied by kubectl/helm
+  as-is); every other document of the same stream is still decoded and
+  scanned. Placeholders in one document never mask a syntax error or a
+  violation in another. Genuine YAML syntax errors in non-template
+  documents abort the scan with the offending file path (never silently
+  skipped, never retried in a loop).
+- **kind: List and non-YAML files.** `kind: List` wrapper documents and
+  `.json` manifest files are not unpacked/scanned (only `.yaml`/`.yml`
+  files, top-level workload documents). No such documents exist in the
+  scanned corpus today; introducing one is a detected-by-review contract
+  change, not a silent bypass.
 - **Malformed workloads.** A workload document without a pod
   spec/template is reported as a violation (fail-closed) rather than
   silently skipped.

@@ -27,15 +27,15 @@ limitations under the License.
 package tlscontract
 
 import (
-	"errors"
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -188,30 +188,54 @@ type manifestObject struct {
 	dataKey map[string]bool
 }
 
-// decodeManifestDocs decodes every document of a multi-doc YAML stream.
-// Documents whose decode fails abort the scan with the file path, EXCEPT
-// streams containing Go-template placeholders ("{{"), which are runtime-
-// substituted templates that cannot be applied by kubectl/helm as-is and
-// are skipped entirely. (yaml.v3 keeps returning the same parse error once
-// a stream is broken, so parse errors must never be retried in a loop.)
-func decodeManifestDocs(path string, data []byte) ([]manifestObject, error) {
-	var docs []manifestObject
-	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
-	for {
-		var raw any
-		err := decoder.Decode(&raw)
-		if errors.Is(err, io.EOF) {
-			break
+// splitYAMLDocuments splits a multi-document YAML stream into per-document
+// byte segments at "^---" separator lines. Empty segments are dropped.
+func splitYAMLDocuments(data []byte) [][]byte {
+	sep := regexp.MustCompile(`(?m)^---[ \t]*$`)
+	locs := sep.FindAllIndex(data, -1)
+	if len(locs) == 0 {
+		return [][]byte{data}
+	}
+	var segments [][]byte
+	prev := 0
+	for _, loc := range locs {
+		segments = append(segments, data[prev:loc[0]])
+		prev = loc[1]
+	}
+	segments = append(segments, data[prev:])
+	filtered := segments[:0]
+	for _, seg := range segments {
+		if len(bytes.TrimSpace(seg)) > 0 {
+			filtered = append(filtered, seg)
 		}
-		if err != nil {
-			if strings.Contains(string(data), "{{") {
-				break // runtime-substituted template file: skip whole stream
+	}
+	return filtered
+}
+
+// decodeManifestDocs decodes every document of a multi-doc YAML stream,
+// one document at a time. A document that fails to parse aborts the scan
+// with the file path, EXCEPT when that document's own bytes contain
+// Go-template placeholders ("{{"): a runtime-substituted template document
+// cannot be applied by kubectl/helm as-is and only that document is
+// skipped. Template placeholders in one document never mask a parse error
+// or a violation in any other document of the same stream.
+func decodeManifestDocs(path string, data []byte) ([]manifestObject, error) {
+	segments := splitYAMLDocuments(data)
+	var docs []manifestObject
+	for i, seg := range segments {
+		var raw any
+		if err := yaml.Unmarshal(seg, &raw); err != nil {
+			if strings.Contains(string(seg), "{{") {
+				continue // template document: skip this document only
 			}
-			return nil, fmt.Errorf("failed to parse yaml in %s: %w", path, err)
+			return nil, fmt.Errorf("failed to parse yaml document %d in %s: %w", i+1, path, err)
+		}
+		if raw == nil {
+			continue
 		}
 		docMap, ok := raw.(map[string]any)
 		if !ok {
-			continue // empty or list document
+			continue // empty or non-mapping document
 		}
 		obj := manifestObject{doc: docMap}
 		obj.kind, _ = docMap["kind"].(string)
@@ -264,8 +288,14 @@ func ScanManifestData(path string, data []byte) (ScanResult, error) {
 	if err != nil {
 		return result, err
 	}
-	envSourceIndex := buildEnvSourceIndex(docs)
+	return scanDocs(path, docs, buildEnvSourceIndex(docs)), nil
+}
 
+// scanDocs inspects decoded workload documents of one file for contract
+// violations, resolving envFrom references against envSourceIndex (which
+// may span the whole scanned corpus, not just this file).
+func scanDocs(path string, docs []manifestObject, envSourceIndex map[string]map[string]bool) ScanResult {
+	result := ScanResult{}
 	for _, doc := range docs {
 		if !workloadKinds[doc.kind] {
 			continue
@@ -283,7 +313,7 @@ func ScanManifestData(path string, data []byte) (ScanResult, error) {
 		}
 		scanPodSpec(path, doc.kind, podSpec, envSourceIndex, &result)
 	}
-	return result, nil
+	return result
 }
 
 // extractPodSpec navigates the workload-kind-specific path to the pod spec.
@@ -513,30 +543,22 @@ var ManifestExclusions = []Exclusion{
 	},
 }
 
-// ScanManifestFiles scans every YAML file under roots (repository-relative,
-// resolved against repoRoot) for ambient-CA deployment-contract violations,
-// applying the pinned exclusion list.
-func ScanManifestFiles(repoRoot string, roots []string) (ScanResult, error) {
-	result := ScanResult{}
-	excluded := map[string]bool{}
-	for _, ex := range ManifestExclusions {
-		exDir := filepath.Join(repoRoot, ex.Path)
-		excluded[exDir] = true
-		// Pin check: the excluded directory must exist and contain the
-		// pinned version, so a future fixture move fails loudly here.
-		pinned, err := containsPinnedVersion(exDir, ex.PinnedVersion)
-		if err != nil {
-			return result, fmt.Errorf("exclusion pin check failed for %s: %w", ex.Path, err)
-		}
-		if !pinned {
-			return result, fmt.Errorf("exclusion pin %s no longer matches any file under %s", ex.PinnedVersion, ex.Path)
-		}
-	}
+// corpusFile is one decoded manifest file of a scanned corpus.
+type corpusFile struct {
+	path string
+	docs []manifestObject
+}
 
+// collectCorpusDocs walks roots, decoding every scanned YAML file and
+// building a corpus-wide envFrom source index (ConfigMap/Secret name ->
+// data keys) across all files.
+func collectCorpusDocs(repoRoot string, roots []string, excluded map[string]bool) ([]corpusFile, map[string]map[string]bool, error) {
+	corpusIndex := map[string]map[string]bool{}
+	var decoded []corpusFile
 	for _, root := range roots {
 		absRoot := filepath.Join(repoRoot, root)
 		if _, err := os.Stat(absRoot); err != nil {
-			return result, fmt.Errorf("scan root %s is missing: %w", root, err)
+			return nil, nil, fmt.Errorf("scan root %s is missing: %w", root, err)
 		}
 		err := filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -556,18 +578,55 @@ func ScanManifestFiles(repoRoot string, roots []string) (ScanResult, error) {
 			if err != nil {
 				return fmt.Errorf("failed to read manifest %s: %w", path, err)
 			}
-			fileResult, err := ScanManifestData(path, data)
+			docs, err := decodeManifestDocs(path, data)
 			if err != nil {
 				return err
 			}
-			result.Violations = append(result.Violations, fileResult.Violations...)
-			result.WorkloadDocCount += fileResult.WorkloadDocCount
-			result.CertMountCount += fileResult.CertMountCount
+			decoded = append(decoded, corpusFile{path: path, docs: docs})
+			for name, keys := range buildEnvSourceIndex(docs) {
+				corpusIndex[name] = keys
+			}
 			return nil
 		})
 		if err != nil {
-			return result, fmt.Errorf("failed to walk scan root %s: %w", root, err)
+			return nil, nil, fmt.Errorf("failed to walk scan root %s: %w", root, err)
 		}
+	}
+	return decoded, corpusIndex, nil
+}
+
+// ScanManifestFiles scans every YAML file under roots (repository-relative,
+// resolved against repoRoot) for ambient-CA deployment-contract violations,
+// applying the pinned exclusion list. envFrom references are resolved
+// against a corpus-wide index of ConfigMap/Secret documents, so a source
+// defined in a different file of the same corpus is still verified.
+func ScanManifestFiles(repoRoot string, roots []string) (ScanResult, error) {
+	result := ScanResult{}
+	excluded := map[string]bool{}
+	for _, ex := range ManifestExclusions {
+		exDir := filepath.Join(repoRoot, ex.Path)
+		excluded[exDir] = true
+		// Pin check: the excluded directory must exist and contain the
+		// pinned version, so a future fixture move fails loudly here.
+		pinned, err := containsPinnedVersion(exDir, ex.PinnedVersion)
+		if err != nil {
+			return result, fmt.Errorf("exclusion pin check failed for %s: %w", ex.Path, err)
+		}
+		if !pinned {
+			return result, fmt.Errorf("exclusion pin %s no longer matches any file under %s", ex.PinnedVersion, ex.Path)
+		}
+	}
+
+	decoded, corpusIndex, err := collectCorpusDocs(repoRoot, roots, excluded)
+	if err != nil {
+		return result, err
+	}
+
+	for _, fd := range decoded {
+		fileResult := scanDocs(fd.path, fd.docs, corpusIndex)
+		result.Violations = append(result.Violations, fileResult.Violations...)
+		result.WorkloadDocCount += fileResult.WorkloadDocCount
+		result.CertMountCount += fileResult.CertMountCount
 	}
 	return result, nil
 }
