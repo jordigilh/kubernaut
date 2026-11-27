@@ -33,6 +33,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
@@ -281,12 +282,23 @@ func (c *CRDCreator) buildRemediationRequestCRD(crdName string, signal *types.No
 	}
 }
 
+// fetchExistingCRDBackoff is the delay between attempts to fetch an existing
+// CRD after AlreadyExists: ~50ms, then ~100ms (±10% jitter, capped at 200ms),
+// consistent with waitWithBackoff (BR-GATEWAY-113).
+var fetchExistingCRDBackoff = backoff.Config{
+	BasePeriod:    50 * time.Millisecond,
+	MaxPeriod:     200 * time.Millisecond,
+	Multiplier:    2.0,
+	JitterPercent: 10,
+}
+
 // recoverExistingCRDOnConflict handles the AlreadyExists race (e.g., Redis TTL
 // expired but the K8s CRD still exists — normal behavior since Redis TTL is
 // shorter than CRD lifecycle): fetch and return the existing CRD instead of
-// treating this as a failure. Retries the fetch up to 3 times with linear
-// backoff (50ms/100ms/200ms) to absorb any residual read-after-write lag.
-// Extracted from CreateRemediationRequest (funlen).
+// treating this as a failure. Retries the fetch up to 3 times with
+// fetchExistingCRDBackoff between attempts to absorb any residual
+// read-after-write lag; the wait is context-aware. Extracted from
+// CreateRemediationRequest (funlen).
 func (c *CRDCreator) recoverExistingCRDOnConflict(
 	ctx context.Context,
 	crdName string,
@@ -302,21 +314,30 @@ func (c *CRDCreator) recoverExistingCRDOnConflict(
 	var existing *remediationv1alpha1.RemediationRequest
 	var fetchErr error
 	const maxFetchAttempts = 3
+	attempts := 0
+fetchLoop:
 	for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
+		attempts = attempt
 		existing, fetchErr = c.k8sClient.GetRemediationRequest(ctx, c.controllerNamespace, crdName)
 		if fetchErr == nil {
 			break // Successfully fetched
 		}
 
 		if attempt < maxFetchAttempts {
-			// Exponential backoff: 50ms, 100ms, 200ms
-			backoffDelay := time.Duration(50*attempt) * time.Millisecond
+			// Shared exponential backoff with jitter: ~50ms, then ~100ms
+			backoffDelay := fetchExistingCRDBackoff.Calculate(int32(attempt))
 			c.logger.V(1).Info("CRD fetch failed, retrying after backoff",
 				"name", crdName,
 				"attempt", attempt,
 				"backoff_ms", backoffDelay.Milliseconds(),
 				"error", fetchErr)
-			time.Sleep(backoffDelay)
+			// Context-aware wait (graceful shutdown), as in waitWithBackoff
+			select {
+			case <-time.After(backoffDelay):
+			case <-ctx.Done():
+				fetchErr = fmt.Errorf("%w (last fetch error: %w)", ctx.Err(), fetchErr)
+				break fetchLoop
+			}
 		}
 	}
 
@@ -328,9 +349,9 @@ func (c *CRDCreator) recoverExistingCRDOnConflict(
 			CRDName:     crdName,
 			SignalType:  signal.SourceType,
 			SignalName:  signal.SignalName,
-			Attempts:    maxFetchAttempts,
+			Attempts:    attempts,
 			StartTime:   startTime,
-			Err:         fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", maxFetchAttempts, fetchErr),
+			Err:         fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", attempts, fetchErr),
 		})
 	}
 

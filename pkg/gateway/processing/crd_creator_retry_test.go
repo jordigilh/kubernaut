@@ -507,6 +507,62 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 		})
 	})
 
+	// #1523: fetch-retry in recoverExistingCRDOnConflict uses the shared
+	// backoff (with jitter) and is context-aware, like waitWithBackoff.
+	Context("Existing CRD fetch retry", func() {
+		It("should retry fetching the existing CRD and return it", func() {
+			// BR-GATEWAY-113: transient Get failures are retried with backoff
+			getCount := &atomic.Int32{}
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if getCount.Add(1) < 3 {
+							return apierrors.NewServiceUnavailable("apiserver catching up")
+						}
+						obj.SetName(key.Name)
+						obj.SetNamespace(key.Namespace)
+						return nil
+					},
+				}).
+				Build()
+			creator = processing.NewCRDCreator(k8s.NewClient(fakeClient), logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
+			signal := newTestSignal("test-fingerprint-fetch-retry", "TestAlertFetchRetry")
+
+			rr, err := creator.RecoverExistingCRDOnConflictForTest(ctx, "rr-existing", signal, time.Now())
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr.Name).To(Equal("rr-existing"))
+			Expect(getCount.Load()).To(Equal(int32(3)), "should fetch until the 3rd attempt succeeds")
+		})
+
+		It("should stop retrying the fetch when the context is cancelled", func() {
+			// BR-GATEWAY-113: backoff wait is context-aware (graceful shutdown)
+			fetchCtx, cancelFetch := context.WithCancel(context.Background())
+			defer cancelFetch()
+
+			getCount := &atomic.Int32{}
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						getCount.Add(1)
+						cancelFetch() // shutdown starts while the fetch is failing
+						return apierrors.NewServiceUnavailable("apiserver unavailable")
+					},
+				}).
+				Build()
+			creator = processing.NewCRDCreator(k8s.NewClient(fakeClient), logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
+			signal := newTestSignal("test-fingerprint-fetch-cancel", "TestAlertFetchCancel")
+
+			rr, err := creator.RecoverExistingCRDOnConflictForTest(fetchCtx, "rr-existing", signal, time.Now())
+
+			Expect(rr).To(BeNil())
+			Expect(errors.Is(err, context.Canceled)).To(BeTrue(), "error should report the cancellation")
+			Expect(getCount.Load()).To(Equal(int32(1)), "no further fetch attempts after cancellation")
+		})
+	})
+
 	Context("Network Errors", func() {
 		It("should retry on connection refused", func() {
 			// BR-GATEWAY-112: Error Classification (network errors are retryable)
