@@ -95,7 +95,7 @@ if cfg.PromClient != nil {
 
 When `PromClient` is nil (Prometheus not configured), the tool is not available via MCP.
 
-In the A2A agent (ADK path), the tool is registered as `kubernaut_list_alerts` (unified with the bridge name by #2713; formerly the bare `list_alerts`).
+In the A2A agent (ADK path), the tool is registered as `kubernaut_list_alerts`.
 
 ### RBAC
 
