@@ -83,6 +83,8 @@ var _ = Describe("Rego Selected Workflow Integration — #2714, BR-AI-085", Labe
 			Expect(result.ApprovalRequired).To(BeFalse(),
 				"trusted workflow identity should auto-approve via selected_workflow_approval.rego")
 			Expect(result.Reason).To(ContainSubstring("trusted workflow identity"))
+			Expect(result.Degraded).To(BeFalse(),
+				"must be a genuine policy decision, not the BR-AI-014 degraded fallback")
 		})
 	})
 
@@ -108,6 +110,8 @@ var _ = Describe("Rego Selected Workflow Integration — #2714, BR-AI-085", Labe
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.ApprovalRequired).To(BeTrue(),
 				"non-trusted workflow identity should require approval")
+			Expect(result.Degraded).To(BeFalse(),
+				"must be a genuine policy decision, not the BR-AI-014 degraded fallback")
 		})
 	})
 

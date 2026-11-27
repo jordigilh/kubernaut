@@ -79,6 +79,8 @@ var _ = Describe("Rego Selected Workflow Input — #2714, BR-AI-085 FR-AI-085-00
 			Expect(result.ApprovalRequired).To(BeFalse(),
 				"trusted workflow identity should auto-approve per selected_workflow_approval.rego")
 			Expect(result.Reason).To(ContainSubstring("trusted workflow identity"))
+			Expect(result.Degraded).To(BeFalse(),
+				"must be a genuine policy decision, not the BR-AI-014 degraded fallback")
 		})
 	})
 
@@ -99,6 +101,8 @@ var _ = Describe("Rego Selected Workflow Input — #2714, BR-AI-085 FR-AI-085-00
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.ApprovalRequired).To(BeTrue(),
 				"untrusted workflow name should require approval")
+			Expect(result.Degraded).To(BeFalse(),
+				"must be a genuine policy decision, not the BR-AI-014 degraded fallback")
 		})
 
 		It("should require approval when the workflow version is not trusted", func() {
@@ -117,6 +121,8 @@ var _ = Describe("Rego Selected Workflow Input — #2714, BR-AI-085 FR-AI-085-00
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.ApprovalRequired).To(BeTrue(),
 				"untrusted workflow version should require approval — selective autonomy is version-scoped")
+			Expect(result.Degraded).To(BeFalse(),
+				"must be a genuine policy decision, not the BR-AI-014 degraded fallback")
 		})
 	})
 
