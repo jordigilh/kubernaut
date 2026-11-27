@@ -56,20 +56,21 @@ breaking existing policies when the field is absent.
 |----|------|--------|-------------|----------------|------------|
 | R1 | Policy input shape drift between `PolicyInput` JSON tags and `buildRegoInputMap` manual map | Rego reads wrong/missing keys | Medium | UT-AA-2714-001..003, IT-AA-2714-001..003 | UT asserts the input-map key set via real OPA evaluation; IT evaluates a policy using `input.selected_workflow` |
 | R2 | Field sourced from LLM output instead of catalog snapshot | Trust-ladder guarantee broken (autonomy granted on unreviewed identity) | Low | UT-AA-2714-002 | UT asserts population comes from `Status.RCAResult.SelectedWorkflow` (WorkflowSnapshot embed) — that struct is catalog-resolved by construction (DD-WORKFLOW-018) |
-| R3 | Existing policies break when field absent | Regression in approval decisions | Low | UT-AA-2714-004, IT-AA-2714-004 | `omitempty`/nil-guard: key omitted from input map when nil; nil-input test against existing default policy fixture |
+| R3 | Existing policies break when field absent | Regression in approval decisions | Low | UT-AA-2714-004, IT-AA-2714-003 | `omitempty`/nil-guard: key omitted from input map when nil; nil-input test against existing default policy fixture |
 
 ---
 
 ## 4. Test Scenarios
 
-### 4.1 Unit (Ginkgo/Gomega, `pkg/aianalysis/rego_selected_workflow_test.go` + `analyzing_handler_test.go` additions)
+### 4.1 Unit (Ginkgo/Gomega, `pkg/aianalysis/rego_selected_workflow_test.go` + `pkg/aianalysis/rego/build_input_map_selected_workflow_test.go`)
 
 | ID | Scenario | Priority | Outcome |
 |----|----------|----------|---------|
 | UT-AA-2714-001 | Policy using `input.selected_workflow.name`/`.version` auto-approves for trusted workflow (real OPA eval) | P0 | Pass |
 | UT-AA-2714-002 | `buildPolicyInput` (via `Handle` + spy evaluator, production dispatch path) populates `SelectedWorkflow{ID,Name,Version}` from `RCAResult.SelectedWorkflow` snapshot | P0 | Pass |
 | UT-AA-2714-003 | Untrusted workflow name/version requires approval | P1 | Pass |
-| UT-AA-2714-004 | Nil `SelectedWorkflow` input: `selected_workflow` key absent from Rego input; existing policy behavior unchanged (no panic, default-approve path) | P0 | Pass |
+| UT-AA-2714-004 | Nil `SelectedWorkflow` input: `selected_workflow` key absent from Rego input; existing policy behavior unchanged (no panic, default-deny path) | P0 | Pass |
+| UT-AA-2714-005 | Wire-shape pin: `buildRegoInputMap` omits `selected_workflow` key entirely (absent, not null) when nil; emits `id`/`name`/`version` object when present | P0 | Pass |
 
 ### 4.2 Integration (`test/integration/aianalysis/rego_selected_workflow_integration_test.go`)
 

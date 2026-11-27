@@ -434,7 +434,9 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		input.ActionType = rca.SelectedWorkflow.ActionType
 		// #2714: Expose the catalog-authoritative workflow identity (never
 		// LLM-suppliable — DD-WORKFLOW-018 WorkflowSnapshot) for per-workflow
-		// selective autonomy (BR-AI-085 FR-AI-085-007).
+		// selective autonomy (BR-AI-085 FR-AI-085-007). Empty-identity
+		// snapshots are not filtered here: fail-closed is a policy-authoring
+		// convention (guard on id != "", see the BR-AI-085-007 example).
 		input.SelectedWorkflow = &rego.SelectedWorkflowInput{
 			ID:      rca.SelectedWorkflow.WorkflowID,
 			Name:    rca.SelectedWorkflow.WorkflowName,

@@ -406,10 +406,16 @@ trusted_workflows := {
 
 require_approval := false if {
     input.selected_workflow
+    input.selected_workflow.id != ""
     trusted_workflows[input.selected_workflow.name]
     input.selected_workflow.version in trusted_workflows[input.selected_workflow.name]
 }
 ```
+
+Note the `id != ""` guard: `buildPolicyInput` does not itself reject an
+empty snapshot identity, so the fail-closed convention for per-workflow
+autonomy rules is that a policy author guards against empty `id` (an empty
+name/version can never match a populated trusted set anyway).
 
 **Correction (Issue #2714)**: earlier trust-ladder documentation suggested reading the workflow name from `input.detected_labels["workflow_name"]`. That example never worked — `detected_labels` is populated exclusively from `PostRCAContext.DetectedLabels` (ADR-056: infrastructure labels like `git_ops_managed`, `stateful`), which never carries a workflow name. Use `input.selected_workflow.name` instead.
 
