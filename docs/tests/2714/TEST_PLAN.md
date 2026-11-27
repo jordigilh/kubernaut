@@ -34,7 +34,7 @@ breaking existing policies when the field is absent.
 | Metric | Target | Measurement |
 |--------|--------|-------------|
 | Unit test pass rate | 100% | `go test ./pkg/aianalysis/...` |
-| Integration test pass rate | 100% | `go test ./test/integration/aianalysis/ -ginkgo.label-filter=selected-workflow` (or full suite via `make test-integration-aianalysis`) |
+| Integration test pass rate | 100% | `make test-integration-aianalysis GINKGO_FOCUS=<focus>` (supplies envtest assets); or `KUBEBUILDER_ASSETS=$(setup-envtest use 1.31.0 -p path) go test ./test/integration/aianalysis/ -ginkgo.label-filter=selected-workflow` |
 | Backward compatibility | 0 regressions | Existing suites pass unmodified |
 | Scenario coverage (UT) | 100% of in-scope scenarios | Matrix below |
 

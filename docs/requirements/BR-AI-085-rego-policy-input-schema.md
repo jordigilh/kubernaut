@@ -603,8 +603,8 @@ name/version can never match a populated trusted set anyway).
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-07-07
-- **Version**: 1.4
+- **Last Updated**: 2026-11-27
+- **Version**: 1.5
 - **Status**: ✅ Approved
 - **Changes in 1.1**: Added FR-AI-085-005 (default-deny for missing `affected_resource`), added ADR-055 reference, documented `target_in_owner_chain` supersession, added Example 5 (default-deny safety pattern).
 - **Changes in 1.2**: Added `ConfidenceThreshold *float64` to PolicyInput schema (#225). Confidence threshold is now configurable via `input.confidence_threshold` in the Rego policy, with a built-in default of 0.8. Stepping stone toward [BR-AI-088](BR-AI-088-configurable-confidence-thresholds.md) (renamed from `BR-HAPI-198`).
