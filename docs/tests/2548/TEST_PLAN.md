@@ -7,6 +7,7 @@
 **Author**: Kubernaut development team
 **Status**: Active
 **Branch**: `security/2548-tls-writable-dirs`
+**Controls**: FedRAMP SC-8/SC-12/SC-13/AC-6/CM-6/CM-7/SI-10; SOC 2 CC7.2/CC8.1; OWASP ASVS 5.0.0 V12.3.1–V12.3.4, V13.1.3, V15.2.5, V16.5.3 (same baseline as BR-SECURITY-2548)
 
 ## 1. Scope and objectives
 

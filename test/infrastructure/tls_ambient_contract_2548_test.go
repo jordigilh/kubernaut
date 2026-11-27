@@ -198,6 +198,97 @@ data:
 		Expect(err).ToNot(HaveOccurred())
 		Expect(trapResult.HasViolations()).To(BeFalse(),
 			"ConfigMap-embedded workload text must be skipped by document-level kind filtering for BR-SECURITY-2548")
+
+		// envFrom via secretRef with an ambient key must be flagged
+		// (same contract as configMapRef).
+		secretEnvFromFixture := `apiVersion: v1
+kind: Secret
+metadata:
+  name: bad-secret-env
+stringData:
+  SSL_CERT_FILE: /etc/ssl/custom.pem
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-secret-envfrom
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          envFrom:
+            - secretRef:
+                name: bad-secret-env
+`
+		secretEnvFromResult, err := tlscontract.ScanManifestData("planted-secret-envfrom.yaml", []byte(secretEnvFromFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(secretEnvFromResult.Violations).To(HaveLen(1),
+			"envFrom secretRef carrying SSL_CERT_FILE via stringData must be flagged for BR-SECURITY-2548")
+		Expect(secretEnvFromResult.Violations[0].String()).To(ContainSubstring("envFrom"))
+		Expect(secretEnvFromResult.Violations[0].String()).To(ContainSubstring("SSL_CERT_FILE"))
+
+		// Violations planted in initContainers and ephemeralContainers
+		// must be caught: the container scan chain covers all three
+		// lists, not just main containers.
+		initContainerFixture := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-init-ephemeral
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: bootstrap
+          image: registry.example/init:1
+          env:
+            - name: SSL_CERT_DIR
+              value: /etc/custom-ca
+      containers:
+        - name: app
+          image: registry.example/app:1
+      ephemeralContainers:
+        - name: debug
+          image: registry.example/debug:1
+          env:
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/custom.pem
+`
+		initContainerResult, err := tlscontract.ScanManifestData("planted-init-ephemeral.yaml", []byte(initContainerFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(initContainerResult.Violations).To(HaveLen(2),
+			"ambient CA env in initContainers and ephemeralContainers must both be flagged for BR-SECURITY-2548")
+		joinedInit := strings.Join(initContainerResult.SortedViolations(), "\n")
+		Expect(joinedInit).To(ContainSubstring("bootstrap"))
+		Expect(joinedInit).To(ContainSubstring("debug"))
+
+		// A mount whose only CA-material signal is a .pem-suffixed
+		// name must be matched by the suffix heuristic.
+		suffixOnlyFixture := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-suffix-only
+spec:
+  template:
+    spec:
+      volumes:
+        - name: leaf.pem
+          emptyDir: {}
+      containers:
+        - name: app
+          image: registry.example/app:1
+          volumeMounts:
+            - name: leaf.pem
+              mountPath: /data
+`
+		suffixOnlyResult, err := tlscontract.ScanManifestData("planted-suffix-only.yaml", []byte(suffixOnlyFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(suffixOnlyResult.Violations).To(HaveLen(2),
+			"a .pem-suffixed volume name alone must trigger the CA-material heuristic for BR-SECURITY-2548")
+		joinedSuffix := strings.Join(suffixOnlyResult.SortedViolations(), "\n")
+		Expect(joinedSuffix).To(ContainSubstring("readOnly"))
+		Expect(joinedSuffix).To(ContainSubstring("emptyDir"))
 	})
 
 	// UT-TLS-2548-006: Go-template placeholders in one document of a

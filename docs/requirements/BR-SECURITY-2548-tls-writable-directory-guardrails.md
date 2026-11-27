@@ -65,7 +65,7 @@ audit-evidence/monitoring aspects of CA rotation.
 
 ## Acceptance criteria
 
-- Static manifest contract tests (UT-TLS-2548-001..005) pass over the
+- Static manifest contract tests (UT-TLS-2548-001..008) pass over the
   repository corpus with anti-vacuity anchors.
 - The CI `tls-rendered-contract` job proves the rendered operator bundles
   (operator-bootstrap-rendered.yaml, operator-dependencies-rendered.yaml)
