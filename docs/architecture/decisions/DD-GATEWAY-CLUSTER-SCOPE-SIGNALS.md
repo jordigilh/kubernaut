@@ -326,7 +326,7 @@ RO WFE-creation gate: workflow-schema-aware guard      [defense-in-depth layer 2
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | Custom alerting rule with no resource labels, not in the allowlist | Low | Alert dropped by GW (expected -- deny-by-default) | Documentation: recommend including at least one resource label in custom rules; explicit allowlist entry if intentional |
-| AF/LLM cannot determine target for cluster-scoped alert | Low | LLM falls back to broader investigation | `list_alerts` provides context; prompt instructs use of kubectl to find affected resources |
+| AF/LLM cannot determine target for cluster-scoped alert | Low | LLM falls back to broader investigation | `kubernaut_list_alerts` provides context; prompt instructs use of kubectl to find affected resources |
 | Operator sets wildcard (`"*"`) without understanding the WFE-reachability implication | Medium | Broader-than-intended automated remediation eligibility | Documentation must explicitly call out that `"*"` can reach real `WorkflowExecution`s, not just notifications; recommend explicit per-alert lists |
 
 ---

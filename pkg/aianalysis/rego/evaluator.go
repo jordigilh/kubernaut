@@ -134,6 +134,27 @@ type PolicyInput struct {
 	// actions regardless of which resource the LLM reports as the
 	// remediation target (BR-AI-085 FR-AI-085-006, #247).
 	ActionType string `json:"action_type"`
+
+	// SelectedWorkflow is the catalog-authoritative identity (id, name,
+	// version) of the workflow selected for remediation, enabling per-workflow
+	// selective autonomy in approval policies (Issue #2714, BR-AI-085
+	// FR-AI-085-007). nil when no workflow was selected — Rego policies
+	// handle absence with their default (deny) rules.
+	SelectedWorkflow *SelectedWorkflowInput `json:"selected_workflow,omitempty"`
+}
+
+// SelectedWorkflowInput carries the catalog-authoritative identity of the
+// workflow the agent selected, for Rego policies implementing per-workflow
+// selective autonomy (Issue #2714, BR-AI-085 FR-AI-085-007, trust ladder
+// Stage 3). Values are copied from the WorkflowSnapshot embedded in
+// AIAnalysis.Status.RCAResult.SelectedWorkflow (DD-WORKFLOW-018), which is
+// DataStorage-resolved at selection time and never LLM-suppliable — enabling
+// policies like "auto-approve increase-memory-limits-gitops-v1 at 1.4.1"
+// without auto-approving every other workflow of the same action type.
+type SelectedWorkflowInput struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 // TargetResourceInput contains target resource identification
@@ -307,6 +328,16 @@ func buildRegoInputMap(input *PolicyInput) map[string]interface{} {
 		"failed_detections": input.KAResponse.FailedDetections,
 		// #247: Catalog-authoritative action type for infrastructure-action gating
 		"action_type": input.ActionType,
+	}
+
+	// #2714: Include the selected workflow identity only when present, so
+	// pre-#2714 policies and inputs are unaffected by the absent key.
+	if input.SelectedWorkflow != nil {
+		inputMap["selected_workflow"] = map[string]interface{}{
+			"id":      input.SelectedWorkflow.ID,
+			"name":    input.SelectedWorkflow.Name,
+			"version": input.SelectedWorkflow.Version,
+		}
 	}
 	if input.KAResponse.RCAConfidence != nil {
 		inputMap["rca_confidence"] = *input.KAResponse.RCAConfidence

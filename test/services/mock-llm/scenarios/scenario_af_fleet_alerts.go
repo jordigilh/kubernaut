@@ -40,12 +40,12 @@ const (
 )
 
 // afFleetAlertsScenario drives AF's real ADK agent (via a real A2A call) to
-// call its own list_alerts(cluster_id=remote-cluster, namespace=...) tool,
+// call its own kubernaut_list_alerts(cluster_id=remote-cluster, namespace=...) tool,
 // closing E2E-FLEET-020 (Issue #2274): no existing test proves AF's
-// list_alerts/get_alert_details tools are cluster-scoped against a real
+// kubernaut_list_alerts/kubernaut_get_alert_details tools are cluster-scoped against a real
 // fleet AlertManager with a genuine cross-cluster alertname collision.
 //
-// Turn 1 (no function results yet): emits list_alerts as a single-entry
+// Turn 1 (no function results yet): emits kubernaut_list_alerts as a single-entry
 // MultiToolCalls batch, scoped to both cluster_id and namespace so
 // concurrently-running fleet E2E specs' own alerts (shared AlertManager
 // instance, test/infrastructure/prometheus_alertmanager_e2e.go) can't dilute
@@ -53,7 +53,7 @@ const (
 // injects.
 //
 // Turn 2 (function results present): mirrors afFleetKubectlScenario --
-// AF's ADK loop has, by this point, already executed list_alerts for real
+// AF's ADK loop has, by this point, already executed kubernaut_list_alerts for real
 // against the Fleet E2E suite's real AlertManager and appended its
 // FunctionResponse payload (including each alert's redacted
 // labels/annotations) to the conversation. Echoing ctx.AllText back
@@ -72,7 +72,7 @@ func (s *afFleetAlertsScenario) Name() string { return "af_fleet_alerts_e2e" }
 func (s *afFleetAlertsScenario) Metadata() ScenarioMetadata {
 	return ScenarioMetadata{
 		Name:        "af_fleet_alerts_e2e",
-		Description: "E2E-FLEET-020: real AF binary calls list_alerts(cluster_id) via real A2A (Issue #2274)",
+		Description: "E2E-FLEET-020: real AF binary calls kubernaut_list_alerts(cluster_id) via real A2A (Issue #2274)",
 	}
 }
 
@@ -91,7 +91,7 @@ func (s *afFleetAlertsScenario) ConfigForContext(ctx *DetectionContext) MockScen
 		ScenarioName: s.Name(),
 		ForceText:    BoolPtr(false),
 		MultiToolCalls: []MultiToolCallEntry{
-			{Name: "list_alerts", Arguments: map[string]interface{}{
+			{Name: "kubernaut_list_alerts", Arguments: map[string]interface{}{
 				"namespace":  afFleetAlertsE2ENamespace,
 				"cluster_id": afFleetAlertsRemoteClusterID,
 			}},

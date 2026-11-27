@@ -123,9 +123,9 @@ All 37 Kubernaut demo scenarios and 97 golden transcripts confirm this taxonomy.
 The proposal to split `kubernaut_investigate` into `kubernaut_investigate_workload`, `kubernaut_investigate_namespace`, and `kubernaut_investigate_cluster` is **not needed** because:
 
 - Every real-world Prometheus alert carries at least one resource-identifying label that GW can resolve to a K8s kind
-- The AF path (`kubernaut_investigate`) requires `namespace/kind/name` from the LLM, which the LLM can always determine by calling `list_alerts` + `kubectl_list` to identify affected resources
+- The AF path (`kubernaut_investigate`) requires `namespace/kind/name` from the LLM, which the LLM can always determine by calling `kubernaut_list_alerts` + `kubectl_list` to identify affected resources
 - The severity triage pipeline (#1369) already correlates namespace-scoped and cluster-scoped alerts as lower-priority fallback tiers, providing alert context even when the investigation target is a specific workload
-- The `list_alerts` and `get_alert_details` tools (#1367) provide the LLM with ad-hoc alert visibility independent of the investigation flow
+- The `kubernaut_list_alerts` and `kubernaut_get_alert_details` tools (#1367) provide the LLM with ad-hoc alert visibility independent of the investigation flow
 
 ### 2. GW Cluster-Scope Fix: REQUIRED
 
@@ -192,13 +192,13 @@ var PrometheusReservedLabels = map[string]bool{
 |------|-----------|--------|------------|
 | Custom alerting rule with no resource labels | Low | Alert dropped by GW | Documentation: recommend including at least one resource label in custom rules |
 | GW cluster-scope fix breaks existing RR fingerprints | Low | Dedup mismatches during rollout | Fingerprint includes kind+name; namespace change from "default" to "" affects existing dedup keys. Mitigate with a one-time fingerprint migration or accept brief dedup window |
-| AF LLM cannot determine target for cluster-scoped alert | Low | LLM falls back to broader investigation | `list_alerts` provides context; LLM prompt instructs use of kubectl to find affected resources |
+| AF LLM cannot determine target for cluster-scoped alert | Low | LLM falls back to broader investigation | `kubernaut_list_alerts` provides context; LLM prompt instructs use of kubectl to find affected resources |
 
 ---
 
 ## Related
 
-- **#1367** -- AF Alertmanager/Thanos alerts toolset (list_alerts, get_alert_details)
+- **#1367** -- AF Alertmanager/Thanos alerts toolset (kubernaut_list_alerts, kubernaut_get_alert_details — names unified by #2713)
 - **#1369** -- Severity triager namespace-scoped and cluster-scoped alert correlation
 - **DD-AF-001** -- Pod-based alert correlation for severity triage
 - **GW extractNamespace** -- `pkg/gateway/adapters/prometheus_adapter.go:457-474`

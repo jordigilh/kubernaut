@@ -6,13 +6,13 @@
 
 ## Business Need
 
-The AF agent's `list_alerts` tool must return at least 5 realistic Prometheus alerts
+The AF agent's `kubernaut_list_alerts` tool must return at least 5 realistic Prometheus alerts
 within the 4KB tool result budget so the LLM can present a meaningful prioritized
 catalog to the user without entering a retry loop.
 
 ## Requirements
 
-- **BR-AF-STREAM-001-R1**: `list_alerts` MUST return at least 5 alerts with full
+- **BR-AF-STREAM-001-R1**: `kubernaut_list_alerts` MUST return at least 5 alerts with full
   detail (labels, annotations, state, active_at) within the 4096-byte tool output
   limit when 5 or more alerts are firing.
 
@@ -33,7 +33,7 @@ catalog to the user without entering a retry loop.
 
 ## Acceptance Criteria
 
-1. A `list_alerts` call with 5 typical Prometheus alerts (10 labels, 3 annotations
+1. A `kubernaut_list_alerts` call with 5 typical Prometheus alerts (10 labels, 3 annotations
    each) produces a JSON response under 4096 bytes.
 2. The LLM does not enter a retry loop when `truncated: true` is returned.
 3. The agent prompt instructs the LLM to use filters (namespace, severity, state)

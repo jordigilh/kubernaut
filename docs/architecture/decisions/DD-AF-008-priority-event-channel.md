@@ -7,7 +7,7 @@
 
 ## Context & Problem
 
-The `list_alerts` tool returns a `ListAlertsResult` containing both an `alerts[]`
+The `kubernaut_list_alerts` tool returns a `ListAlertsResult` containing both an `alerts[]`
 array and a `prioritized` field. The `prioritized` field duplicates full alert
 objects (selected, tied, also_active), causing the serialized response to exceed
 the 4096-byte `MaxToolResultBytes` limit at just 4 alerts.

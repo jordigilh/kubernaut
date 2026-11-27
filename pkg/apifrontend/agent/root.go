@@ -208,10 +208,10 @@ func coreToolConstructors(cfg AgentConfig) []toolConstructor {
 //nolint:gocritic // hugeParam: value copy intentional; function is internal
 func alertToolConstructors(cfg AgentConfig) []toolConstructor {
 	return []toolConstructor{
-		{"list_alerts", func() (tool.Tool, error) {
+		{"kubernaut_list_alerts", func() (tool.Tool, error) {
 			return tools.NewListAlertsTool(cfg.PromClient)
 		}},
-		{"get_alert_details", func() (tool.Tool, error) {
+		{"kubernaut_get_alert_details", func() (tool.Tool, error) {
 			return tools.NewGetAlertDetailsTool(cfg.PromClient)
 		}},
 		{"kubernaut_investigate_alert", func() (tool.Tool, error) {

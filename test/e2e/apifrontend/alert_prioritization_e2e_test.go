@@ -33,7 +33,7 @@ import (
 // =============================================================================
 // E2E-AF-1412: Alert Severity Prioritization — Pyramid Invariant E2E tier
 //
-// Proves the user journey: user prompt → mock-LLM calls list_alerts →
+// Proves the user journey: user prompt → mock-LLM calls kubernaut_list_alerts →
 // HandleListAlerts returns prioritized result with highest-severity alert
 // as Selected, same-severity peers as Tied, and lower-severity as AlsoActive.
 //
@@ -79,7 +79,7 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 		Expect(err).NotTo(HaveOccurred(), "MCP session init required")
 	})
 
-	It("E2E-AF-1412-001: list_alerts returns prioritized result with critical as Selected over warning and info", func() {
+	It("E2E-AF-1412-001: kubernaut_list_alerts returns prioritized result with critical as Selected over warning and info", func() {
 		callBody := buildJSONRPC("e2e-1412-001", "tools/call", map[string]interface{}{
 			"name":      "kubernaut_list_alerts",
 			"arguments": map[string]interface{}{"namespace": "sev-tier1-ns"},
@@ -93,7 +93,7 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 
 		var rpcResp map[string]interface{}
 		Expect(json.Unmarshal([]byte(payload), &rpcResp)).To(Succeed())
-		Expect(rpcResp).NotTo(HaveKey("error"), "list_alerts should not return error: %s", payload)
+		Expect(rpcResp).NotTo(HaveKey("error"), "kubernaut_list_alerts should not return error: %s", payload)
 
 		result, ok := rpcResp["result"].(map[string]interface{})
 		Expect(ok).To(BeTrue(), "JSON-RPC result must be present")
