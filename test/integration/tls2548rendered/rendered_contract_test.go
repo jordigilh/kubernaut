@@ -48,19 +48,20 @@ var _ = Describe("rendered operator TLS contract [BR-SECURITY-2548]", func() {
 			"operator-bootstrap-rendered.yaml",
 			"operator-dependencies-rendered.yaml",
 		}
-		result := tlscontract.ScanResult{}
+		streams := map[string][]byte{}
 		for _, bundle := range expectedBundles {
 			path := filepath.Join(renderedDir, bundle)
 			data, err := os.ReadFile(path) //nolint:gosec // G304: CI-provided artifact path
 			ExpectWithOffset(1, err).ToNot(HaveOccurred(),
 				fmt.Sprintf("rendered bundle %s must exist in %s", bundle, renderedDir))
-
-			bundleResult, err := tlscontract.ScanManifestData(path, data)
-			ExpectWithOffset(1, err).ToNot(HaveOccurred())
-			result.Violations = append(result.Violations, bundleResult.Violations...)
-			result.WorkloadDocCount += bundleResult.WorkloadDocCount
-			result.CertMountCount += bundleResult.CertMountCount
+			streams[path] = data
 		}
+
+		// Scan both bundles as one corpus: envFrom references must
+		// resolve across the rendered deployment surface, not just
+		// within a single bundle.
+		result, err := tlscontract.ScanManifestCorpus(streams)
+		ExpectWithOffset(1, err).ToNot(HaveOccurred())
 
 		ExpectWithOffset(1, result.HasViolations()).To(BeFalse(),
 			"rendered operator contract violated for BR-SECURITY-2548:\n"+strings.Join(result.SortedViolations(), "\n"))

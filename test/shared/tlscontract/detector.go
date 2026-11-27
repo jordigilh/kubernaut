@@ -289,14 +289,29 @@ func decodeDataKeys(docMap map[string]any) map[string]bool {
 
 // buildEnvSourceIndex maps object name -> data keys for ConfigMap/Secret
 // documents, so envFrom references can be checked for ambient env keys.
+// Same-named sources within one stream union-merge: a clean source can
+// never shadow one carrying an ambient env key (possible false positive,
+// never a missed violation).
 func buildEnvSourceIndex(docs []manifestObject) map[string]map[string]bool {
 	index := map[string]map[string]bool{}
 	for _, doc := range docs {
 		if envSourceKinds[doc.kind] && doc.name != "" {
-			index[doc.name] = doc.dataKey
+			mergeEnvSource(index, doc.name, doc.dataKey)
 		}
 	}
 	return index
+}
+
+// mergeEnvSource union-merges data keys for one named envFrom source
+// into an index, never overwriting existing keys.
+func mergeEnvSource(index map[string]map[string]bool, name string, keys map[string]bool) {
+	if existing, ok := index[name]; ok {
+		for key := range keys {
+			existing[key] = true
+		}
+		return
+	}
+	index[name] = keys
 }
 
 // ScanManifestData scans one multi-document YAML manifest file (the
@@ -313,6 +328,44 @@ func ScanManifestData(path string, data []byte) (ScanResult, error) {
 		return result, err
 	}
 	return scanDocs(path, docs, buildEnvSourceIndex(docs)), nil
+}
+
+// ScanManifestCorpus scans a set of named manifest streams as one corpus:
+// envFrom references resolve across every stream (union-merged index), and
+// a parse failure in any stream aborts the whole scan (fail-closed). This
+// is the entry point for multi-file rendered deployment surfaces such as
+// the CI-rendered operator bundles.
+func ScanManifestCorpus(streams map[string][]byte) (ScanResult, error) {
+	result := ScanResult{}
+	names := make([]string, 0, len(streams))
+	for name := range streams {
+		names = append(names, name)
+	}
+	sort.Strings(names) // deterministic order for stable violation output
+
+	type decodedStream struct {
+		path string
+		docs []manifestObject
+	}
+	var all []decodedStream
+	corpusIndex := map[string]map[string]bool{}
+	for _, name := range names {
+		docs, err := decodeManifestDocs(name, streams[name])
+		if err != nil {
+			return result, err
+		}
+		all = append(all, decodedStream{path: name, docs: docs})
+		for source, keys := range buildEnvSourceIndex(docs) {
+			mergeEnvSource(corpusIndex, source, keys)
+		}
+	}
+	for _, ds := range all {
+		fileResult := scanDocs(ds.path, ds.docs, corpusIndex)
+		result.Violations = append(result.Violations, fileResult.Violations...)
+		result.WorkloadDocCount += fileResult.WorkloadDocCount
+		result.CertMountCount += fileResult.CertMountCount
+	}
+	return result, nil
 }
 
 // scanDocs inspects decoded workload documents of one file for contract
@@ -607,20 +660,15 @@ func collectCorpusDocs(repoRoot string, roots []string, excluded map[string]bool
 				return err
 			}
 			decoded = append(decoded, corpusFile{path: path, docs: docs})
-			// Union-merge same-named sources across files: Kubernetes
+			// Union-merge same-named sources across files (and, via
+			// buildEnvSourceIndex, within each stream): Kubernetes
 			// allows the same ConfigMap/Secret name in different
-			// namespaces. Union (never overwrite) so a same-named clean
-			// source cannot shadow one carrying an ambient env key --
-			// the error direction is a possible false positive, never a
-			// missed violation.
+			// namespaces. Union (never overwrite) so a same-named
+			// clean source cannot shadow one carrying an ambient env
+			// key -- the error direction is a possible false
+			// positive, never a missed violation.
 			for name, keys := range buildEnvSourceIndex(docs) {
-				if existing, ok := corpusIndex[name]; ok {
-					for key := range keys {
-						existing[key] = true
-					}
-				} else {
-					corpusIndex[name] = keys
-				}
+				mergeEnvSource(corpusIndex, name, keys)
 			}
 			return nil
 		})

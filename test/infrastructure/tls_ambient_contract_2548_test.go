@@ -357,6 +357,87 @@ data:
 		Expect(shadowResult.Violations).To(HaveLen(1),
 			"a same-named clean ConfigMap must not shadow one carrying SSL_CERT_DIR for BR-SECURITY-2548")
 		Expect(shadowResult.Violations[0].String()).To(ContainSubstring("envFrom"))
+
+		// Same-name shadowing within a single stream must also
+		// union-merge: a clean same-named ConfigMap later in the same
+		// stream must never shadow one carrying an ambient env key.
+		inStreamShadow := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: in-stream-env
+data:
+  SSL_CERT_DIR: /etc/custom-ca
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: in-stream-env
+  namespace: other
+data:
+  UNRELATED: value
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: in-stream-envfrom
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          envFrom:
+            - configMapRef:
+                name: in-stream-env
+`
+		inStreamResult, err := tlscontract.ScanManifestData("planted-instream-shadow.yaml", []byte(inStreamShadow))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(inStreamResult.Violations).To(HaveLen(1),
+			"a same-named clean ConfigMap in the same stream must not shadow one carrying SSL_CERT_DIR for BR-SECURITY-2548")
+		Expect(inStreamResult.Violations[0].String()).To(ContainSubstring("envFrom"))
+	})
+
+	// UT-TLS-2548-008: the rendered-bundle entry point
+	// (ScanManifestCorpus) resolves envFrom sources across separate
+	// streams of one deployment surface, and aborts fail-closed when any
+	// stream is malformed.
+	It("UT-TLS-2548-008: rendered corpus scan resolves envFrom across streams and fails closed", func() {
+		bundleA := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cross-bundle-env
+data:
+  SSL_CERT_DIR: /etc/custom-ca
+`
+		bundleB := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cross-bundle-envfrom
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          envFrom:
+            - configMapRef:
+                name: cross-bundle-env
+`
+		result, err := tlscontract.ScanManifestCorpus(map[string][]byte{
+			"operator-dependencies-rendered.yaml": []byte(bundleA),
+			"operator-bootstrap-rendered.yaml":    []byte(bundleB),
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.Violations).To(HaveLen(1),
+			"envFrom must resolve a ConfigMap defined in a different stream of the same rendered corpus for BR-SECURITY-2548")
+		Expect(result.Violations[0].String()).To(ContainSubstring("envFrom"))
+
+		_, err = tlscontract.ScanManifestCorpus(map[string][]byte{
+			"operator-bootstrap-rendered.yaml": []byte("bad: [unclosed\n"),
+		})
+		Expect(err).To(HaveOccurred(),
+			"a malformed stream must abort the whole rendered-corpus scan for BR-SECURITY-2548")
+		Expect(err.Error()).To(ContainSubstring("operator-bootstrap-rendered.yaml"))
 	})
 
 	// UT-TLS-2548-004: the ambient CA owner package stays no-write
