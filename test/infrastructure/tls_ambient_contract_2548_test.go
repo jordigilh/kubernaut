@@ -531,6 +531,54 @@ spec:
 		Expect(err.Error()).To(ContainSubstring("operator-bootstrap-rendered.yaml"))
 	})
 
+	// UT-TLS-2548-009: the documented init-only certificate-generation
+	// exception (issue #2548 acceptance criterion 3): a Job may stage
+	// CA material in a memory-backed emptyDir (bounded tmpfs) when its
+	// root filesystem is read-only; disk-backed staging and long-running
+	// kinds never qualify.
+	It("UT-TLS-2548-009: init-only Job cert staging allows memory-backed emptyDir only", func() {
+		jobMemoryBacked := `apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cert-bootstrap-memory
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: cert-bootstrap-tmp
+          emptyDir:
+            medium: Memory
+      containers:
+        - name: certificate-bootstrap
+          image: registry.example/bootstrap:1
+          securityContext:
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: cert-bootstrap-tmp
+              mountPath: /tmp
+`
+		memoryResult, err := tlscontract.ScanManifestData("job-memory-backed.yaml", []byte(jobMemoryBacked))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(memoryResult.HasViolations()).To(BeFalse(),
+			"a memory-backed emptyDir cert staging volume in an init-only Job is the documented exception for BR-SECURITY-2548")
+		Expect(memoryResult.CertMountCount).To(BeNumerically(">", 0),
+			"the exception fixture must still be counted as a CA-material mount for BR-SECURITY-2548")
+
+		jobDiskBacked := strings.Replace(jobMemoryBacked, "name: cert-bootstrap-memory", "name: cert-bootstrap-disk", 1)
+		jobDiskBacked = strings.Replace(jobDiskBacked, "            medium: Memory\n", "", 1)
+		diskResult, err := tlscontract.ScanManifestData("job-disk-backed.yaml", []byte(jobDiskBacked))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(diskResult.Violations).To(HaveLen(2),
+			"disk-backed emptyDir cert staging must remain a violation even in an init-only Job for BR-SECURITY-2548")
+
+		deploymentMemoryBacked := strings.Replace(jobMemoryBacked, "kind: Job", "kind: Deployment", 1)
+		deployResult, err := tlscontract.ScanManifestData("deployment-memory-backed.yaml", []byte(deploymentMemoryBacked))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployResult.Violations).To(HaveLen(2),
+			"memory-backed cert staging must remain a violation in long-running workload kinds for BR-SECURITY-2548")
+	})
+
 	// UT-TLS-2548-004: the ambient CA owner package stays no-write
 	// (DD-TLS-001): no file creation or mutation APIs in non-test sources.
 	It("UT-TLS-2548-004: pkg/shared/tls sources contain no write or temp-file APIs", func() {

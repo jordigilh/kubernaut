@@ -30,7 +30,12 @@ shared runtime behavior and the upstream deployment-contract guardrails.
    available where explicit reloadable transports require it.
 3. CA/TLS certificate material in workload manifests MUST be mounted
    read-only from `secret`, `configMap`, or `projected` volumes; `emptyDir`
-   and `hostPath` MUST NOT back certificate material.
+   and `hostPath` MUST NOT back certificate material. Documented
+   exception: an init-only `kind: Job` may stage certificate material in
+   a memory-backed `emptyDir` (`medium: Memory`, bounded tmpfs) when its
+   root filesystem is otherwise read-only (acceptance criterion 3 of
+   issue #2548); disk-backed staging and long-running workload kinds
+   never qualify.
 4. Repository-owned workload manifests and the CI-rendered operator
    deployment bundles MUST be mechanically guarded against regressions of
    requirements 2 and 3 (static manifest contract tests plus a CI job over
@@ -65,7 +70,7 @@ audit-evidence/monitoring aspects of CA rotation.
 
 ## Acceptance criteria
 
-- Static manifest contract tests (UT-TLS-2548-001..008) pass over the
+- Static manifest contract tests (UT-TLS-2548-001..009) pass over the
   repository corpus with anti-vacuity anchors.
 - The CI `tls-rendered-contract` job proves the rendered operator bundles
   (operator-bootstrap-rendered.yaml, operator-dependencies-rendered.yaml)

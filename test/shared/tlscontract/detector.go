@@ -470,14 +470,24 @@ func scanPodSpec(path, kind string, podSpec map[string]any, envSourceIndex map[s
 				continue
 			}
 			result.CertMountCount++
-			if readOnly, ok := mount["readOnly"].(bool); !ok || !readOnly {
+			// Documented exception (issue #2548 acceptance criterion 3,
+			// BR-SECURITY-2548): an init-only Job may generate
+			// certificates into a memory-backed emptyDir (bounded
+			// tmpfs, never reaching disk) when its root filesystem is
+			// not otherwise writable. Long-running workload kinds
+			// (Deployment/StatefulSet/DaemonSet/ReplicaSet/CronJob/Pod)
+			// never qualify: a writable CA directory in a
+			// long-running container is a post-compromise staging
+			// location, which this contract exists to eliminate.
+			initOnlyMemoryBacked := initOnlyMemoryBackedCertStaging(kind, volumes, volumeName)
+			if readOnly, ok := mount["readOnly"].(bool); (!ok || !readOnly) && !initOnlyMemoryBacked {
 				result.Violations = append(result.Violations, Violation{
 					File:    path,
 					Kind:    kind,
 					Message: fmt.Sprintf("container %q mounts CA/TLS material at %q without readOnly: true", containerName, mountPath),
 				})
 			}
-			if !hasReadOnlyVolumeSource(volumes, volumeName) {
+			if !hasReadOnlyVolumeSource(volumes, volumeName) && !initOnlyMemoryBacked {
 				result.Violations = append(result.Violations, Violation{
 					File:    path,
 					Kind:    kind,
@@ -559,6 +569,31 @@ func volumeSourceNames(volume map[string]any) []string {
 		}
 	}
 	return names
+}
+
+// initOnlyMemoryBackedCertStaging reports whether the documented
+// init-only certificate-generation exception applies: the workload is a
+// Job (runs to completion, never long-running) and the named volume is an
+// emptyDir explicitly backed by memory (medium: Memory, i.e. bounded
+// tmpfs). Everything else -- disk-backed emptyDir, hostPath, long-running
+// kinds -- stays a violation.
+func initOnlyMemoryBackedCertStaging(kind string, volumes []map[string]any, volumeName string) bool {
+	if kind != "Job" {
+		return false
+	}
+	for _, volume := range volumes {
+		name, _ := volume["name"].(string)
+		if name != volumeName {
+			continue
+		}
+		emptyDir, ok := volume["emptyDir"].(map[string]any)
+		if !ok {
+			return false
+		}
+		medium, _ := emptyDir["medium"].(string)
+		return medium == "Memory"
+	}
+	return false
 }
 
 func volumeNameFor(mount map[string]any) string {

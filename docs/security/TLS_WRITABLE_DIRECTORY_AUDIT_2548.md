@@ -133,6 +133,14 @@ envelope is:
   files, top-level workload documents). No such documents exist in the
   scanned corpus today; introducing one is a detected-by-review contract
   change, not a silent bypass.
+- **Init-only certificate-generation exception.** A `kind: Job`
+  workload (runs to completion) may mount writable CA/TLS material when
+  the volume is a memory-backed emptyDir (`medium: Memory`, bounded
+  tmpfs) and its root filesystem is otherwise read-only -- the operator
+  chart's `certificate-bootstrap` Job pattern (issue #2548 acceptance
+  criterion 3). Disk-backed staging and every long-running kind
+  (Deployment/StatefulSet/DaemonSet/ReplicaSet/CronJob/Pod) remain
+  violations. Verified in UT-TLS-2548-009.
 - **Malformed workloads.** A workload document without a pod
   spec/template is reported as a violation (fail-closed) rather than
   silently skipped.
