@@ -16,16 +16,19 @@ trusted_workflows := {
 	"increase-memory-limits-gitops-v1": {"1.4.1"},
 }
 
-require_approval := false if {
+# trusted_workflow_identity holds when the catalog-authoritative selected
+# workflow is one an operator has explicitly reviewed (name + version).
+trusted_workflow_identity if {
 	input.selected_workflow
 	input.selected_workflow.id != ""
 	trusted_workflows[input.selected_workflow.name]
 	input.selected_workflow.version in trusted_workflows[input.selected_workflow.name]
 }
 
+require_approval := false if {
+	trusted_workflow_identity
+}
+
 reason := "Auto-approved: trusted workflow identity" if {
-	input.selected_workflow
-	input.selected_workflow.id != ""
-	trusted_workflows[input.selected_workflow.name]
-	input.selected_workflow.version in trusted_workflows[input.selected_workflow.name]
+	trusted_workflow_identity
 }

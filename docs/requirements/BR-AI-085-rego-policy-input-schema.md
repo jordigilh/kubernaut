@@ -361,6 +361,66 @@ require_approval if {
 
 ---
 
+### FR-AI-085-007: `selected_workflow`-Based Per-Workflow Selective Autonomy
+
+**Requirement**: AIAnalysis MUST expose the selected workflow's catalog-authoritative identity (`id`, `name`, `version`) in the Rego policy input as a single `selected_workflow` object, so approval policies can express trust-ladder Stage 3 selective autonomy ("auto-approve this reviewed workflow at this reviewed version") without auto-approving every other workflow of the same action type.
+
+**Rationale (Issue #2714)**: `action_type` gating (FR-AI-085-006) is the coarsest autonomy grant; before this FR, a policy could only auto-approve a whole action type or target kind. The workflow identity is copied from the `WorkflowSnapshot` embedded in `Status.RCAResult.SelectedWorkflow` (DD-WORKFLOW-018), which is DataStorage-resolved at selection time and **never LLM-suppliable** — the same catalog-authoritative guarantee as `action_type`.
+
+**PolicyInput Struct** (`pkg/aianalysis/rego/evaluator.go`):
+```go
+type PolicyInput struct {
+    // ... existing fields ...
+
+    // SelectedWorkflow is the catalog-authoritative identity (id, name,
+    // version) of the workflow selected for remediation. nil when no
+    // workflow was selected.
+    SelectedWorkflow *SelectedWorkflowInput `json:"selected_workflow,omitempty"`
+}
+
+type SelectedWorkflowInput struct {
+    ID      string `json:"id"`
+    Name    string `json:"name"`
+    Version string `json:"version"`
+}
+```
+
+**Input shape** (key omitted entirely when nil, so pre-#2714 policies are unaffected):
+```json
+"selected_workflow": {
+  "id": "a93e5f6a-d967-510d-8faa-9a83c5420e78",
+  "name": "increase-memory-limits-gitops-v1",
+  "version": "1.4.1"
+}
+```
+
+**Example Rego Rule** (trust-ladder Stage 3 — note that `in` over an object checks values, not keys, so key membership must use a lookup expression):
+```rego
+package aianalysis.approval
+
+default require_approval := true
+
+trusted_workflows := {
+    "increase-memory-limits-gitops-v1": {"1.4.1"},
+}
+
+require_approval := false if {
+    input.selected_workflow
+    trusted_workflows[input.selected_workflow.name]
+    input.selected_workflow.version in trusted_workflows[input.selected_workflow.name]
+}
+```
+
+**Correction (Issue #2714)**: earlier trust-ladder documentation suggested reading the workflow name from `input.detected_labels["workflow_name"]`. That example never worked — `detected_labels` is populated exclusively from `PostRCAContext.DetectedLabels` (ADR-056: infrastructure labels like `git_ops_managed`, `stateful`), which never carries a workflow name. Use `input.selected_workflow.name` instead.
+
+**Acceptance Criteria**:
+1. ✅ Rego can read `input.selected_workflow.id`, `.name` and `.version`
+2. ✅ Values come from the catalog-authoritative `WorkflowSnapshot`, never from LLM output
+3. ✅ Existing policies and tests are unaffected when the field is absent (key omitted)
+4. ✅ Unit tests for `buildPolicyInput` and integration tests evaluating a policy using the new fields (UT-AA-2714-001..004, IT-AA-2714-001..003)
+
+---
+
 ## 📊 **Non-Functional Requirements**
 
 ### **NFR-AI-085-001: Performance Impact**
@@ -544,6 +604,7 @@ require_approval if {
 - **Changes in 1.2**: Added `ConfidenceThreshold *float64` to PolicyInput schema (#225). Confidence threshold is now configurable via `input.confidence_threshold` in the Rego policy, with a built-in default of 0.8. Stepping stone toward [BR-AI-088](BR-AI-088-configurable-confidence-thresholds.md) (renamed from `BR-HAPI-198`).
 - **Changes in 1.3**: Added FR-AI-085-006 (`action_type`-based infrastructure-action approval, #247). `action_type` is now exposed in the Rego policy input alongside `remediation_target` (the ADR-055-ADDENDUM-001 rename of `affected_resource`), so infrastructure-provisioning workflows (e.g. `ProvisionNode`) require approval based on the catalog-authoritative action type rather than the (potentially LLM-misreported) remediation target kind.
 - **Changes in 1.4**: `#247` follow-up -- decomposed the Go `PolicyInput` struct into `SignalContext`/`Classification`/`KAResponse` sub-structs to keep the top-level field count below the AGENTS.md Go Anti-Pattern Checklist's "God struct" threshold (had reached 15 fields). Go-side organization only: `buildRegoInputMap` still flattens to the same top-level Rego input keys, so this is **not a Rego policy contract change** -- no `.rego` policy file needs updating.
+- **Changes in 1.5**: Added FR-AI-085-007 (`selected_workflow`-based per-workflow selective autonomy, Issue #2714). The Rego input now carries the catalog-authoritative workflow identity (`id`/`name`/`version`, from the DD-WORKFLOW-018 `WorkflowSnapshot`) as `input.selected_workflow`, omitted when no workflow was selected. Also corrects the earlier trust-ladder example that read `input.detected_labels["workflow_name"]` -- that key was never populated (ADR-056 detected labels are infrastructure-only); use `input.selected_workflow.name`.
 - **Next Review**: After [BR-AI-088](BR-AI-088-configurable-confidence-thresholds.md) V1.1 implementation
 
 **Note on field naming**: This document's earlier FRs (001-005) use the original `affected_resource` naming from when this BR was authored. Per [ADR-055-ADDENDUM-001](../architecture/decisions/ADR-055-ADDENDUM-001-remediation-target-rename.md) (#542), this field was subsequently renamed to `remediation_target` end-to-end (Go struct, JSON tag, Rego input key) to avoid LLM misinterpretation. FR-AI-085-006 uses the current `remediation_target` naming; the code examples in FR-AI-085-001 through 005 are retained as historical context and should be read as `remediation_target` in the current implementation. Likewise, "HAPI" in the historical FRs below refers to what is now Kubernaut Agent (KA) — the field is KA-injected, not LLM-provided verbatim (see DD-KA-006).
