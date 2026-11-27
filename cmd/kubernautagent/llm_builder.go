@@ -148,7 +148,13 @@ func buildGeminiNativeClient(cfg types.LLMConfig) (llm.Client, error) {
 	// pattern already production-wired in API Frontend's Gemini triager
 	// (cmd/apifrontend/backend_deps.go).
 	if cfg.Endpoint != "" {
-		opts = append(opts, geminifamily.WithHTTPOptions(genai.HTTPOptions{BaseURL: cfg.Endpoint}))
+		// genai >= v1.78 defaults the Gemini Developer API version to v1
+		// (was v1beta) — pin v1beta so operator-configured endpoints
+		// serving the Gemini-compat surface keep working (PR #2706).
+		opts = append(opts, geminifamily.WithHTTPOptions(genai.HTTPOptions{
+			BaseURL:    cfg.Endpoint,
+			APIVersion: "v1beta",
+		}))
 	}
 
 	chain, err := buildTransportChain(cfg)
