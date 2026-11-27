@@ -147,9 +147,9 @@ CR is reconciled. Ready-made example bundles — the six demo personas plus
 bindings for the three console roles — live in
 [`test/fixtures/demo/rbac/`](../../../test/fixtures/demo/rbac/).
 
-If a bundle grants alert access, it must carry both tool names
-(`list_alerts`/`get_alert_details` **and** `kubernaut_list_alerts`): the chat
-and raw-MCP surfaces authorize the alert capability under different names.
+If a bundle grants alert access, it carries the single canonical names
+(`kubernaut_list_alerts`, `kubernaut_get_alert_details`): since #2713 the chat
+and raw-MCP surfaces authorize the alert capability under the same name.
 
 `spec.apiFrontend.rbac` configures APIFrontend itself, not users:
 `consoleAccessAuthorizationCheckEnabled` (default `false` — auth-only gate)
