@@ -887,6 +887,33 @@ jobs:
           path: operator-artifacts
           retention-days: 2
 
+  # ========================================
+  # TLS RENDERED DEPLOYMENT CONTRACT (BR-SECURITY-2548 / issue #2548)
+  # ========================================
+
+  tls-rendered-contract:
+    name: TLS rendered deployment contract
+    needs: [detect-changes, build-operator]
+    if: needs.detect-changes.outputs.code_changed == 'true' && needs.build-operator.result == 'success'
+    runs-on: ${{ 'ubuntu-26.04' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Download operator qualification artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: operator-qualification-${{ github.run_id }}
+          path: operator-qualification
+
+      - name: Run rendered TLS deployment contract tests
+        env:
+          TLS_2548_RENDERED_DIR: ${{ github.workspace }}/operator-qualification
+        run: |
+          set -euo pipefail
+          go test ./test/integration/tls2548rendered -count=1 -v
+
   # STAGE 3: INTEGRATION TESTS
   # Waits for BOTH unit-tests AND build-images to complete
   # Matrix strategy: 10 services (all Go, same pattern: envtest + Podman)
@@ -916,11 +943,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fleetmetadatacache]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, effectivenessmonitor, kubernautagent, apifrontend, fleetmetadatacache, shared]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
             timeout: 10
+          - service: shared
+            service_name: "Shared (TLS ambient contract)"
+            timeout: 15
           - service: aianalysis
             service_name: "AI Analysis"
             timeout: 15
@@ -1750,7 +1780,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, build-operator, integration-tests, cel-immutability-regression, e2e-tests, must-gather-e2e-test]
+    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, build-operator, integration-tests, cel-immutability-regression, e2e-tests, must-gather-e2e-test, tls-rendered-contract]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ${{ 'ubuntu-26.04' }}
     permissions:
