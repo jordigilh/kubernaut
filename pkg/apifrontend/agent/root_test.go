@@ -1045,7 +1045,7 @@ var _ = Describe("Phase guard / SessionDependentTools consistency (#1366 F6)", f
 
 var _ = Describe("Alert tool wiring (#1367)", func() {
 
-	It("IT-AF-1367-001: list_alerts tool is registered and callable when PromClient is set", func() {
+	It("IT-AF-1367-001: kubernaut_list_alerts tool is registered and callable when PromClient is set", func() {
 		cfg := agentpkg.DefaultTestConfig()
 		cfg.PromClient = &stubPromClient{}
 		_, allTools, err := agentpkg.NewRootAgent(cfg)
@@ -1053,15 +1053,15 @@ var _ = Describe("Alert tool wiring (#1367)", func() {
 
 		var found tool.Tool
 		for _, t := range allTools {
-			if t.Name() == "list_alerts" {
+			if t.Name() == "kubernaut_list_alerts" {
 				found = t
 				break
 			}
 		}
-		Expect(found).NotTo(BeNil(), "list_alerts should be registered")
+		Expect(found).NotTo(BeNil(), "kubernaut_list_alerts should be registered")
 	})
 
-	It("IT-AF-1367-002: get_alert_details tool is registered and callable when PromClient is set", func() {
+	It("IT-AF-1367-002: kubernaut_get_alert_details tool is registered and callable when PromClient is set", func() {
 		cfg := agentpkg.DefaultTestConfig()
 		cfg.PromClient = &stubPromClient{}
 		_, allTools, err := agentpkg.NewRootAgent(cfg)
@@ -1069,12 +1069,12 @@ var _ = Describe("Alert tool wiring (#1367)", func() {
 
 		var found tool.Tool
 		for _, t := range allTools {
-			if t.Name() == "get_alert_details" {
+			if t.Name() == "kubernaut_get_alert_details" {
 				found = t
 				break
 			}
 		}
-		Expect(found).NotTo(BeNil(), "get_alert_details should be registered")
+		Expect(found).NotTo(BeNil(), "kubernaut_get_alert_details should be registered")
 	})
 
 	It("IT-AF-1367-003: NewRootAgent with PromClient=nil excludes alert tools", func() {
@@ -1084,8 +1084,8 @@ var _ = Describe("Alert tool wiring (#1367)", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, t := range allTools {
-			Expect(t.Name()).NotTo(Equal("list_alerts"), "list_alerts should not be registered when PromClient is nil")
-			Expect(t.Name()).NotTo(Equal("get_alert_details"), "get_alert_details should not be registered when PromClient is nil")
+			Expect(t.Name()).NotTo(Equal("kubernaut_list_alerts"), "kubernaut_list_alerts should not be registered when PromClient is nil")
+			Expect(t.Name()).NotTo(Equal("kubernaut_get_alert_details"), "kubernaut_get_alert_details should not be registered when PromClient is nil")
 		}
 	})
 })

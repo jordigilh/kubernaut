@@ -11,7 +11,7 @@
 ## 1. Purpose
 
 When `severityTriage.enabled: false` (`cfg.PromClient == nil`), API Frontend does not
-register `list_alerts`/`get_alert_details`/`kubernaut_investigate_alert` (gated in
+register `kubernaut_list_alerts`/`kubernaut_get_alert_details`/`kubernaut_investigate_alert` (gated in
 `pkg/apifrontend/agent/root.go`'s `buildToolList` on `cfg.PromClient != nil`). The system
 prompt (`pkg/apifrontend/agent/prompt.go`'s `BuildInstruction`), however, unconditionally
 advertised these tools regardless of whether they were actually registered. If a user then
@@ -53,8 +53,8 @@ text.
    and `NewInstructionProvider` take a new `alertToolsEnabled bool` parameter, threaded from
    the same `cfg.PromClient != nil` check used by `buildToolList` (wired at the single
    production call site, `cmd/apifrontend/mcp_a2a_handlers.go`'s `buildRootAgentConfig`).
-   When `false`, the appended "Tool Usage Rules" section omits `list_alerts`/
-   `get_alert_details`/`kubernaut_investigate_alert` from the tool list and observation
+   When `false`, the appended "Tool Usage Rules" section omits `kubernaut_list_alerts`/
+   `kubernaut_get_alert_details`/`kubernaut_investigate_alert` from the tool list and observation
    permission line, and instead explicitly states these tools are unavailable, that "Alert"
    is not a Kubernetes resource kind, and that the model should explain unavailability rather
    than guess. The immutable embedded `prompt.txt` base is untouched (SC-7) — this is
@@ -80,7 +80,7 @@ explain tool failures rather than echo them.
 
 | ID | Tier | Business-Level Behavior Description | BR | Test File |
 |---|---|---|---|---|
-| UT-AF-1658-001 | Unit | `alertToolsEnabled=true` preserves existing behavior: prompt advertises `list_alerts`/`get_alert_details`/`kubernaut_investigate_alert` | BR-AI-024 | `pkg/apifrontend/agent/prompt_test.go` |
+| UT-AF-1658-001 | Unit | `alertToolsEnabled=true` preserves existing behavior: prompt advertises `kubernaut_list_alerts`/`kubernaut_get_alert_details`/`kubernaut_investigate_alert` | BR-AI-024 | `pkg/apifrontend/agent/prompt_test.go` |
 | UT-AF-1658-002 | Unit | `alertToolsEnabled=false` omits alert tools from the observation-tool permission line and the Prometheus/Thanos usage guidance | BR-AI-024 | `pkg/apifrontend/agent/prompt_test.go` |
 | UT-AF-1658-003 | Unit | `alertToolsEnabled=false` explicitly states alert querying is unavailable in this deployment | BR-AI-024 | `pkg/apifrontend/agent/prompt_test.go` |
 | UT-AF-1658-004 | Unit | `alertToolsEnabled=false` instructs the model not to guess a `kubectl_list`/`kubectl_get` kind (e.g. `"Alert"`) for alert queries | BR-AI-023 | `pkg/apifrontend/agent/prompt_test.go` |

@@ -94,7 +94,7 @@ type AgentConfig struct {
 	// are excluded (#1366). DefaultTestConfig sets this to true.
 	InteractiveEnabled bool
 	// PromClient is the Prometheus/Thanos query client for alert tools (#1367).
-	// When non-nil, list_alerts and get_alert_details ADK tools are registered.
+	// When non-nil, kubernaut_list_alerts and kubernaut_get_alert_details ADK tools are registered.
 	// When nil, alert tools are not available (graceful degradation).
 	PromClient prom.Client
 	// AlertValidationFailures is the counter for kubernaut_investigate_alert

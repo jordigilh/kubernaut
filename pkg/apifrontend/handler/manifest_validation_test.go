@@ -174,10 +174,10 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"kubernaut_reconnect":               true,
 		"kubernaut_await_session":           true,
 		// Conditionally registered in the MCP bridge when cfg.PromClient !=
-		// nil (mcp_bridge.go, DD-AF-005); included so alert-capable personas
-		// can carry the raw-MCP alert name (both-names rule,
-		// kubernaut-operator#682/#683).
-		"kubernaut_list_alerts": true,
+		// nil (mcp_bridge.go, DD-AF-005). Since #2713 unified the alert tool
+		// name, this is also the A2A registration name -- one authorization
+		// identity per capability on both surfaces.
+		"kubernaut_list_alerts":             true,
 	}
 
 	// A2A-only internal tools registered in pkg/apifrontend/agent/root.go.
@@ -189,8 +189,7 @@ var _ = Describe("RBAC tool name alignment", func() {
 		"kubectl_list_events":                  true,
 		"kubernaut_check_existing_remediation": true,
 		"kubernaut_remediate":                  true,
-		"list_alerts":                          true,
-		"get_alert_details":                    true,
+		"kubernaut_get_alert_details":          true,
 		"kubernaut_investigate_alert":          true,
 		"list_clusters":                        true,
 	}

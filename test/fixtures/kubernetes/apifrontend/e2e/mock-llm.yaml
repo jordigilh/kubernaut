@@ -496,7 +496,7 @@ data:
         keywords: ["list alerts", "check active alerts", "what alerts are firing"]
         match_last_only: true
         tool_call:
-          name: "list_alerts"
+          name: "kubernaut_list_alerts"
           arguments:
             namespace: "default"
 
