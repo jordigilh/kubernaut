@@ -27,13 +27,14 @@ namespace. The demo Keycloak realm
 (`test/infrastructure/keycloak-realm-demo.json`) defines one group per persona
 and the user `sre-user` in `sre`.
 
-## Alert bundles: both names
+## Alert bundles: single canonical name
 
-The alert capability is authorized under different tool names on different
-surfaces — `list_alerts`/`get_alert_details` on the chat/A2A surface and
-`kubernaut_list_alerts` on the raw MCP bridge (which the Console proxies).
-Bundles that grant alert access must carry all three names or the capability
-works on one surface only. SAR on a never-invoked tool name is inert.
+Since #2713 unified the alert tool name, `kubernaut_list_alerts` has one
+authorization identity that works on both the chat/A2A surface and the raw MCP
+bridge (which the Console proxies). `kubernaut_get_alert_details` follows the
+same naming convention but is a chat/A2A-only capability — it is not registered
+on the raw MCP bridge, so granting it does not make detail lookup available
+through `/mcp`. Bundles that grant alert access carry the canonical names.
 
 ## Applying
 

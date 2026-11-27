@@ -144,11 +144,11 @@ var _ = Describe("Fleet CR fixture roles-only compatibility (UT-INFRA-2703-003)"
 // tool set: the manifest is parity-tested against the shared persona RBAC
 // contract (LoadPersonaTools, which the harness applies via
 // PersonaToolClusterRolesYAML/BindAFPersonaRBAC) AND against the rendered
-// harness output itself, so automated/manual drift fails CI. The contract
-// carries the operator #682/#683 both-names rule: alert-capable personas
-// hold list_alerts, get_alert_details AND kubernaut_list_alerts, because AF
-// authorizes the invoked tool name and the raw MCP bridge registers the
-// alert list tool under a different name than the A2A surface.
+// harness output itself, so automated/manual drift fails CI. Since #2713
+// unified the alert tool name, alert-capable personas hold the single
+// canonical names (kubernaut_list_alerts/kubernaut_get_alert_details):
+// one grant authorizes the capability on both the A2A and raw MCP
+// surfaces.
 var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", func() {
 	const manifestPath = "test/fixtures/demo/rbac/persona-tool-roles.yaml"
 
@@ -194,7 +194,9 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 			Expect(ok).To(BeTrue(), "demo manifest persona %q must exist in the shared persona contract", persona)
 			if alertCapablePersonas[persona] {
 				Expect(cr.Rules[0].ResourceNames).To(ContainElement("kubernaut_list_alerts"),
-					"demo-tool-%s must carry the raw-MCP alert name (both-names rule)", persona)
+					"demo-tool-%s must carry the canonical alert tool name (single-name contract since #2713)", persona)
+				Expect(cr.Rules[0].ResourceNames).To(ContainElement("kubernaut_get_alert_details"),
+					"demo-tool-%s must carry the canonical alert-detail tool name (single-name contract since #2713)", persona)
 			}
 			Expect(cr.Rules[0].ResourceNames).To(ConsistOf(toAnySlice(expected)...),
 				"demo-tool-%s drifted from the shared persona contract", persona)

@@ -28,7 +28,7 @@ import (
 )
 
 // E2E-FLEET-020 [AC-4, SI-10, AU-3, BR-FLEET-054]: real AF binary calls its
-// own cluster-scoped list_alerts tool via a real A2A request against a real
+// own cluster-scoped kubernaut_list_alerts tool via a real A2A request against a real
 // Prometheus, closing Issue #2274's AF gap.
 //
 // Authority: Issue #2274, ADR-068, DD-EM-005 v1.3
@@ -39,11 +39,11 @@ import (
 //     isolation (mock prom.Client), but never through AF's own compiled
 //     binary, its own ADK tool-registration wiring, or a real Prometheus.
 //   - E2E-FLEET-016 proved the analogous pattern for kubectl_get(cluster_id)
-//     but never touched list_alerts/get_alert_details.
+//     but never touched kubernaut_list_alerts/kubernaut_get_alert_details.
 //
 // CI RCA (PR #2286): the original design of this test injected alerts
 // directly into AlertManager (infrastructure.InjectAlerts) and polled its
-// /api/v2/alerts API. That can never work: AF's list_alerts/get_alert_details
+// /api/v2/alerts API. That can never work: AF's kubernaut_list_alerts/kubernaut_get_alert_details
 // tools call pkg/apifrontend/prometheus.Client.GetAlerts, which queries THIS
 // suite's Prometheus's own /api/v1/alerts (alerting-rule-derived active
 // alerts) -- confirmed at that client's baseURL, wired from
@@ -53,29 +53,29 @@ import (
 // prometheusURL). AF's alert tools never read AlertManager's alert store at
 // all. This mirrors the pre-existing, passing precedent
 // test/e2e/apifrontend/alert_prioritization_e2e_test.go, which grounds AF's
-// list_alerts via a real Prometheus alerting rule instead of AlertManager
+// kubernaut_list_alerts via a real Prometheus alerting rule instead of AlertManager
 // injection.
 //
 // Design: mirrors E2E-FLEET-016 (single-turn message/send, keyword-selected
 // mock-LLM scenario, MultiToolCalls, echoed final answer). The
 // "fleet-alerts-e2e-test" keyword selects scenario_af_fleet_alerts.go, which
-// emits list_alerts(cluster_id="remote-cluster", namespace="fleet-alerts-e2e-ns")
+// emits kubernaut_list_alerts(cluster_id="remote-cluster", namespace="fleet-alerts-e2e-ns")
 // as a single MultiToolCalls batch. AF's ADK loop executes the tool for real
 // against this suite's shared Prometheus instance
 // (test/infrastructure/prometheus_alertmanager_e2e.go's
 // fleet-alerts-cluster-scoped-2274.yml rule group), then the scenario echoes
 // the accumulated conversation text (which by then contains the real
-// list_alerts FunctionResponse) back as the final answer.
+// kubernaut_list_alerts FunctionResponse) back as the final answer.
 //
 // The two alerting rules (Fleet2274MatchingClusterAlert,
 // Fleet2274CollisionClusterAlert) share every label AF's query selects on
 // EXCEPT `cluster` -- same collision-simulation approach used by EM's
 // E2E-FLEET-019a/b (07_em_fleet_metrics_test.go) -- and assert AF's real
-// list_alerts tool call surfaces ONLY the matching-cluster alert's
+// kubernaut_list_alerts tool call surfaces ONLY the matching-cluster alert's
 // distinguishing marker text. Pre-#2274-fix (no cluster_id filtering in
 // af_alerts.go), both alerts would be returned, so the colliding cluster's
 // marker would incorrectly appear in the final answer too.
-var _ = Describe("E2E-FLEET-020 [AC-4, SI-10, AU-3]: AF real A2A cluster-scoped list_alerts (BR-FLEET-054, Issue #2274)", Label("fleet", "af", "a2a", "issue-2274"), func() {
+var _ = Describe("E2E-FLEET-020 [AC-4, SI-10, AU-3]: AF real A2A cluster-scoped kubernaut_list_alerts (BR-FLEET-054, Issue #2274)", Label("fleet", "af", "a2a", "issue-2274"), func() {
 
 	const (
 		// Markers are lowercase: the mock-LLM's ConfigForContext echoes back
@@ -92,7 +92,7 @@ var _ = Describe("E2E-FLEET-020 [AC-4, SI-10, AU-3]: AF real A2A cluster-scoped 
 		collisionRuleName = "Fleet2274CollisionClusterAlert"
 	)
 
-	It("should call list_alerts(cluster_id=remote-cluster) via a real A2A request and surface ONLY the matching cluster's alert", func() {
+	It("should call kubernaut_list_alerts(cluster_id=remote-cluster) via a real A2A request and surface ONLY the matching cluster's alert", func() {
 		prometheusURL := fmt.Sprintf("https://127.0.0.1:%d", infrastructure.PrometheusHostPort)
 		monitoringCAPath := infrastructure.MonitoringCAPath(kubeconfigPath)
 		By("Verifying AF is reachable")
@@ -114,7 +114,7 @@ var _ = Describe("E2E-FLEET-020 [AC-4, SI-10, AU-3]: AF real A2A cluster-scoped 
 				infrastructure.RuleStateFiring, 5*time.Second, monitoringCAPath)
 		}, 60*time.Second, 2*time.Second).Should(Succeed(), "colliding-cluster alert must be firing before driving AF")
 
-		By("Sending A2A message: fleet-alerts-e2e-test (selects list_alerts scenario)")
+		By("Sending A2A message: fleet-alerts-e2e-test (selects kubernaut_list_alerts scenario)")
 		body := afA2ATasksSend("fleet-020-1", "fleet-alerts-e2e-test: list alerts on remote-cluster")
 		resp, err = afA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
@@ -130,16 +130,16 @@ var _ = Describe("E2E-FLEET-020 [AC-4, SI-10, AU-3]: AF real A2A cluster-scoped 
 		Expect(task.ID).NotTo(BeEmpty(), "A2A task ID must not be empty")
 		GinkgoWriter.Printf("  E2E-FLEET-020 task: %s (state: %s)\n", task.ID, task.Status.State)
 
-		By("Verifying AF's real list_alerts tool call was cluster-scoped (BR-FLEET-054)")
+		By("Verifying AF's real kubernaut_list_alerts tool call was cluster-scoped (BR-FLEET-054)")
 		msgStr := afArtifactText(task)
 		Expect(msgStr).NotTo(BeEmpty(),
 			"completed task must carry accumulated artifact text with the echoed tool results")
 		Expect(msgStr).To(ContainSubstring(matchingMarker),
-			"AC-4, AU-3: the matching cluster's alert must surface in AF's real list_alerts response")
+			"AC-4, AU-3: the matching cluster's alert must surface in AF's real kubernaut_list_alerts response")
 		Expect(msgStr).NotTo(ContainSubstring(collisionMarker),
 			"Issue #2274 regression: a same-namespace alert from a DIFFERENT fleet cluster "+
-				"must NOT surface in AF's list_alerts(cluster_id=remote-cluster) response -- this would "+
+				"must NOT surface in AF's kubernaut_list_alerts(cluster_id=remote-cluster) response -- this would "+
 				"indicate af_alerts.go silently dropped its cluster_id filter")
-		GinkgoWriter.Printf("  E2E-FLEET-020: confirmed AF's real list_alerts is cluster-scoped\n")
+		GinkgoWriter.Printf("  E2E-FLEET-020: confirmed AF's real kubernaut_list_alerts is cluster-scoped\n")
 	})
 })

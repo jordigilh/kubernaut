@@ -7,14 +7,11 @@
 #
 # Authorization model (AC-6): every tool call is authorized by a
 # SubjectAccessReview on kubernaut.ai/tools, verb=use, resourceName=<tool> --
-# deny-by-default. SAR on a never-invoked tool name is inert, so carrying both
-# alert surfaces' names is safe if upstream later unifies them.
-#
-# Both-names rule (kubernaut-operator#683, DD-636 row 4d): the alert
-# capability has two authorization identities -- list_alerts/get_alert_details
-# on the A2A/chat surface and kubernaut_list_alerts on the raw MCP bridge
-# (which the Console proxies). Alert-capable bundles carry all three names so
-# the same capability works through either surface.
+# deny-by-default. Since #2713 unified the alert tool name across the A2A and
+# raw MCP surfaces, the alert capability has exactly one authorization
+# identity -- kubernaut_list_alerts (A2A-only kubernaut_get_alert_details
+# follows the same convention) -- so a single grant authorizes the capability
+# on both surfaces.
 #
 # The automated demo harness applies the equivalent of these manifests after
 # operator reconciliation (infrastructure.BindAFPersonaRBAC); this file is the
@@ -57,10 +54,9 @@ rules:
       - "kubectl_list_events"
       - "kubernaut_check_existing_remediation"
       - "kubernaut_remediate"
-      # alert capability, both surfaces (#682 both-names rule)
-      - "list_alerts"
-      - "get_alert_details"
+      # alert capability, both surfaces (single canonical name since #2713)
       - "kubernaut_list_alerts"
+      - "kubernaut_get_alert_details"
       - "kubernaut_investigate_alert"
       - "kubernaut_get_approval_request"
       - "kubernaut_complete_no_action"
@@ -113,10 +109,9 @@ rules:
       - "kubectl_list_events"
       - "kubernaut_check_existing_remediation"
       - "kubernaut_remediate"
-      # alert capability, both surfaces (#682 both-names rule)
-      - "list_alerts"
-      - "get_alert_details"
+      # alert capability, both surfaces (single canonical name since #2713)
       - "kubernaut_list_alerts"
+      - "kubernaut_get_alert_details"
       - "kubernaut_investigate_alert"
       - "list_clusters"
       - "kubernaut_list_approval_requests"

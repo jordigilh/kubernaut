@@ -183,15 +183,15 @@ var _ = Describe("System Prompt", func() {
 	Describe("BuildInstruction alert tool gating (#1658)", func() {
 		It("UT-AF-1658-001: alertToolsEnabled=true advertises alert tools for observation", func() {
 			result := agentpkg.BuildInstruction("ns", true)
-			Expect(result).To(ContainSubstring("list_alerts"))
-			Expect(result).To(ContainSubstring("get_alert_details"))
+			Expect(result).To(ContainSubstring("kubernaut_list_alerts"))
+			Expect(result).To(ContainSubstring("kubernaut_get_alert_details"))
 			Expect(result).To(ContainSubstring("kubernaut_investigate_alert"))
 		})
 
 		It("UT-AF-1658-002: alertToolsEnabled=false omits alert tools from the observation permission list", func() {
 			result := agentpkg.BuildInstruction("ns", false)
-			Expect(result).NotTo(ContainSubstring("kubectl_get, kubectl_list, kubectl_list_events, list_alerts, and get_alert_details are permitted"))
-			Expect(result).NotTo(ContainSubstring("list_alerts and get_alert_details query Prometheus/Thanos"))
+			Expect(result).NotTo(ContainSubstring("kubectl_get, kubectl_list, kubectl_list_events, kubernaut_list_alerts, and kubernaut_get_alert_details are permitted"))
+			Expect(result).NotTo(ContainSubstring("kubernaut_list_alerts and kubernaut_get_alert_details query Prometheus/Thanos"))
 		})
 
 		It("UT-AF-1658-003: alertToolsEnabled=false explicitly states alert querying is unavailable", func() {
@@ -570,7 +570,7 @@ var _ = Describe("Prompt — Alert Prioritization Consent Gate (#1899)", func() 
 
 	It("UT-AF-1899-011: AC-6 prompt explicitly forbids treating a bare list/show/status as an implicit investigate request", func() {
 		Expect(instruction).To(ContainSubstring("Do NOT treat a `prioritized` field in that response as an implicit instruction to investigate anything"),
-			"#1899: a list_alerts response's prioritized field must not be read as investigation consent")
+			"#1899: a kubernaut_list_alerts response's prioritized field must not be read as investigation consent")
 	})
 
 	It("UT-AF-1899-012: AC-6/SI-10 kubernaut_investigate_alert directive is gated on a prior investigate/fix/diagnose trigger", func() {

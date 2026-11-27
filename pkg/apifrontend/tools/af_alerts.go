@@ -64,7 +64,7 @@ var SensitiveAlertKeys = map[string]bool{
 	"bearer":     true,
 }
 
-// ListAlertsArgs defines the input for list_alerts.
+// ListAlertsArgs defines the input for kubernaut_list_alerts.
 type ListAlertsArgs struct {
 	Namespace string `json:"namespace,omitempty"`
 	Severity  string `json:"severity,omitempty"`
@@ -97,7 +97,7 @@ type PrioritizedAlerts struct {
 	AlsoActiveStart int   `json:"also_active_start,omitempty"`
 }
 
-// ListAlertsResult is the output of list_alerts.
+// ListAlertsResult is the output of kubernaut_list_alerts.
 type ListAlertsResult struct {
 	Alerts      []AlertSummary     `json:"alerts"`
 	Count       int                `json:"count"`
@@ -139,7 +139,7 @@ func PrioritizeAlerts(alerts []AlertSummary) PrioritizedAlerts {
 	}
 }
 
-// GetAlertDetailsArgs defines the input for get_alert_details.
+// GetAlertDetailsArgs defines the input for kubernaut_get_alert_details.
 type GetAlertDetailsArgs struct {
 	AlertName string `json:"alert_name"`
 	Namespace string `json:"namespace,omitempty"`
@@ -148,13 +148,13 @@ type GetAlertDetailsArgs struct {
 	ClusterID string `json:"cluster_id,omitempty"`
 }
 
-// GetAlertDetailsResult is the output of get_alert_details.
+// GetAlertDetailsResult is the output of kubernaut_get_alert_details.
 type GetAlertDetailsResult struct {
 	Alerts []AlertSummary `json:"alerts"`
 	Count  int            `json:"count"`
 }
 
-// HandleListAlerts implements the list_alerts logic.
+// HandleListAlerts implements the kubernaut_list_alerts logic.
 // AC-6: GetAlerts returns all cluster alerts; filtering is client-side.
 func HandleListAlerts(ctx context.Context, client prom.Client, args ListAlertsArgs) (ListAlertsResult, error) {
 	if client == nil {
@@ -287,7 +287,7 @@ func recalcPrioritizedIndices(alerts []AlertSummary) *PrioritizedAlerts {
 	}
 }
 
-// HandleGetAlertDetails implements the get_alert_details logic.
+// HandleGetAlertDetails implements the kubernaut_get_alert_details logic.
 func HandleGetAlertDetails(ctx context.Context, client prom.Client, args GetAlertDetailsArgs) (GetAlertDetailsResult, error) {
 	if client == nil {
 		return GetAlertDetailsResult{}, ErrPromUnavailable
@@ -369,10 +369,10 @@ func redactAnnotations(annotations map[string]string) map[string]string {
 	return out
 }
 
-// NewListAlertsTool creates the list_alerts ADK tool.
+// NewListAlertsTool creates the kubernaut_list_alerts ADK tool.
 func NewListAlertsTool(client prom.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
-		Name: "list_alerts",
+		Name: "kubernaut_list_alerts",
 		Description: "List currently firing or pending Prometheus/Thanos alerts, optionally filtered by namespace, severity, or state. " +
 			"For fleet (multi-cluster) deployments, also provide cluster_id to scope results to a single fleet cluster.",
 	}, func(ctx agent.Context, args ListAlertsArgs) (ListAlertsResult, error) {
@@ -380,10 +380,10 @@ func NewListAlertsTool(client prom.Client) (tool.Tool, error) {
 	})
 }
 
-// NewGetAlertDetailsTool creates the get_alert_details ADK tool.
+// NewGetAlertDetailsTool creates the kubernaut_get_alert_details ADK tool.
 func NewGetAlertDetailsTool(client prom.Client) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
-		Name: "get_alert_details",
+		Name: "kubernaut_get_alert_details",
 		Description: "Get details of a specific Prometheus/Thanos alert by name, optionally filtered by namespace. " +
 			"For fleet (multi-cluster) deployments, also provide cluster_id to scope results to a single fleet cluster.",
 	}, func(ctx agent.Context, args GetAlertDetailsArgs) (GetAlertDetailsResult, error) {

@@ -46,7 +46,8 @@ func defaultInstruction() string {
 // context (namespace, CRD types) to the immutable embedded prompt. The core prompt
 // is never modified — this function only appends (SC-7 boundary protection).
 //
-// alertToolsEnabled reflects whether list_alerts/get_alert_details/
+// alertToolsEnabled reflects whether kubernaut_list_alerts/
+// kubernaut_get_alert_details/
 // kubernaut_investigate_alert are actually registered in the tool list (gated
 // on cfg.PromClient != nil — see agentpkg.buildToolList). When false, the
 // appended guidance omits those tools from the observation permission list and
@@ -79,15 +80,15 @@ func BuildInstruction(namespace string, alertToolsEnabled bool) string {
 	sb.WriteString("kubernaut_select_workflow, kubernaut_watch). ")
 	sb.WriteString("NEVER use kubectl tools directly for investigation or remediation actions.\n")
 	if alertToolsEnabled {
-		sb.WriteString("- kubectl_get, kubectl_list, kubectl_list_events, list_alerts, and get_alert_details are permitted ONLY for observation (reading cluster state).\n")
-		sb.WriteString("- list_alerts and get_alert_details query Prometheus/Thanos for currently firing or pending alerts. ")
+		sb.WriteString("- kubectl_get, kubectl_list, kubectl_list_events, kubernaut_list_alerts, and kubernaut_get_alert_details are permitted ONLY for observation (reading cluster state).\n")
+		sb.WriteString("- kubernaut_list_alerts and kubernaut_get_alert_details query Prometheus/Thanos for currently firing or pending alerts. ")
 		sb.WriteString("Use them for preflight investigation context before delegating to kubernaut_investigate or kubernaut_investigate_alert.\n")
 		sb.WriteString("- kubernaut_investigate_alert: use when you know the specific Prometheus alert name to investigate. ")
 		sb.WriteString("Provide alert_name, api_version, kind, name, and namespace (optional for cluster-scoped). ")
 		sb.WriteString("The backend validates the alert exists.\n")
 	} else {
 		sb.WriteString("- kubectl_get, kubectl_list, and kubectl_list_events are permitted ONLY for observation (reading cluster state).\n")
-		sb.WriteString("- Alert querying tools (list_alerts, get_alert_details, kubernaut_investigate_alert) are NOT available in this deployment ")
+		sb.WriteString("- Alert querying tools (kubernaut_list_alerts, kubernaut_get_alert_details, kubernaut_investigate_alert) are NOT available in this deployment ")
 		sb.WriteString("(Prometheus/Thanos integration is disabled). Alerts are not a Kubernetes resource — ")
 		sb.WriteString(`never call kubectl_get/kubectl_list with kind="Alert" or any similar guess. `)
 		sb.WriteString("If the user asks to list, show, or investigate alerts, explain that alert querying is not configured ")

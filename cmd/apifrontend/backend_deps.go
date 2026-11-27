@@ -890,7 +890,13 @@ func newGenAITriagerForGemini(ctx context.Context, llmCfg types.LLMConfig, logge
 		Backend: genai.BackendGeminiAPI,
 	}
 	if llmCfg.Endpoint != "" {
-		clientCfg.HTTPOptions = genai.HTTPOptions{BaseURL: llmCfg.Endpoint}
+		// genai >= v1.78 defaults the Gemini Developer API version to v1
+		// (was v1beta) — pin v1beta so operator-configured endpoints
+		// serving the Gemini-compat surface keep working (PR #2706).
+		clientCfg.HTTPOptions = genai.HTTPOptions{
+			BaseURL:    llmCfg.Endpoint,
+			APIVersion: "v1beta",
+		}
 	}
 	client, err := genai.NewClient(ctx, clientCfg)
 	if err != nil {

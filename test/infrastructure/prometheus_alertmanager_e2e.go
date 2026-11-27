@@ -88,7 +88,7 @@ const (
 	// AF-organic-ingestion-only (see DeployAlertManager's route config):
 	// AlertManager routes anything carrying this label to a null receiver
 	// instead of forwarding it to Gateway's webhook, so a rule meant to
-	// prove AF's OWN list_alerts/investigate tools read real Prometheus
+	// prove AF's OWN kubernaut_list_alerts/investigate tools read real Prometheus
 	// alerting-rule state doesn't also organically create a
 	// RemediationRequest via Gateway.
 	SkipGatewayRouteLabelKey   = "route_skip_gateway"
@@ -353,7 +353,7 @@ data:
 %[4]s
   fleet-alerts-cluster-scoped-2274.yml: |
     # CI RCA (PR #2286, E2E-FLEET-020): AF's kubernaut_list_alerts/
-    # get_alert_details tools call pkg/apifrontend/prometheus.Client.GetAlerts,
+    # kubernaut_get_alert_details tools call pkg/apifrontend/prometheus.Client.GetAlerts,
     # which queries THIS Prometheus's own /api/v1/alerts (alerting-rule-derived
     # active alerts) -- see that client's baseURL, wired from
     # severityTriage.prometheusURL (monitoring.prometheus.url), a config value
@@ -365,7 +365,7 @@ data:
     # therefore never be observed by AF, regardless of timing/polling fixes --
     # confirmed against the pre-existing, passing precedent
     # test/e2e/apifrontend/alert_prioritization_e2e_test.go, which grounds
-    # AF's list_alerts via a real Prometheus alerting rule instead.
+    # AF's kubernaut_list_alerts via a real Prometheus alerting rule instead.
     #
     # Mirrors KAInteractiveFleetBridgeGrounding immediately above: two
     # synthetic vector(1) > 0 alerts (never stale, deterministic, firing from
@@ -433,7 +433,7 @@ data:
     # fleet-alerts-cluster-scoped-2274.yml's always-firing vector(1) > 0
     # pattern, but carries route_skip_gateway="true" (see DeployAlertManager's
     # route config) so AlertManager's null-receiver swallows it instead of
-    # forwarding to gateway-webhook -- proving AF's own list_alerts tool
+    # forwarding to gateway-webhook -- proving AF's own kubernaut_list_alerts tool
     # (21_af_organic_alert_test.go) reads real Prometheus alerting-rule state
     # WITHOUT that same alert ever reaching Gateway/creating a
     # RemediationRequest. No target resource is required: this alert must
@@ -761,7 +761,7 @@ data:
       repeat_interval: 1h
       routes:
       # AF-organic-ingestion alerting rules (e.g. an AF-only Prometheus rule
-      # proving AF's own list_alerts/investigate tools read real alerting-rule
+      # proving AF's own kubernaut_list_alerts/investigate tools read real alerting-rule
       # state independently of Gateway's push-webhook path) must carry this
       # label so AlertManager routes them to null-receiver instead of
       # gateway-webhook -- otherwise the SAME alert that's meant to prove AF's

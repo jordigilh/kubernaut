@@ -29,7 +29,7 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-// E2E-FLEET-022 [AC-4, SI-10, AU-3]: AF's own list_alerts tool reads a real,
+// E2E-FLEET-022 [AC-4, SI-10, AU-3]: AF's own kubernaut_list_alerts tool reads a real,
 // organically-firing Prometheus alert that Gateway NEVER sees.
 //
 // Companion to E2E-FLEET-021 (the Gateway-ingestion organic-alert flow): this
@@ -46,7 +46,7 @@ import (
 // Design mirrors E2E-FLEET-020 (19_af_alerts_fleet_scoped_test.go): a
 // deterministic vector(1) > 0 rule (no target resource needed, since Gateway
 // must never attempt to resolve it) plus a direct poll of AF's real
-// prometheus.Client-backed list_alerts path.
+// prometheus.Client-backed kubernaut_list_alerts path.
 //
 // Authority: kubernaut#2309 (fleet E2E realism follow-up), Issue #54, ADR-068
 // FedRAMP: AC-4 (information flow enforcement), SI-10 (input validation),
@@ -67,7 +67,7 @@ var _ = Describe("E2E-FLEET-022 [AC-4, SI-10, AU-3]: AF-only organic alert never
 		_ = resp.Body.Close()
 
 		By("Waiting for FleetOrganicAFOnlyAlert to be firing on Prometheus (vector(1) > 0, deterministic from Prometheus startup; " +
-			"same /api/v1/rules backend AF's severity-triage grounding and list_alerts both read)")
+			"same /api/v1/rules backend AF's severity-triage grounding and kubernaut_list_alerts both read)")
 		Eventually(func() error {
 			return infrastructure.WaitForPrometheusRuleState(ctx, prometheusURL, ruleName,
 				infrastructure.RuleStateFiring, 5*time.Second, monitoringCAPath)
