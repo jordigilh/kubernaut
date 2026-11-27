@@ -238,8 +238,14 @@ func newGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error)
 		Backend: genai.BackendGeminiAPI,
 	}
 	if cfg.Endpoint != "" {
+		// genai >= v1.78 defaults the Gemini Developer API version to v1
+		// (was v1beta). Operator-configured endpoints (AI gateway, E2E
+		// mock-llm) serve the Gemini-compat surface under /v1beta/models/,
+		// so pin it explicitly rather than following the SDK default
+		// (dependabot PR #2706 regression).
 		clientCfg.HTTPOptions = genai.HTTPOptions{
-			BaseURL: cfg.Endpoint,
+			BaseURL:    cfg.Endpoint,
+			APIVersion: "v1beta",
 		}
 	}
 
