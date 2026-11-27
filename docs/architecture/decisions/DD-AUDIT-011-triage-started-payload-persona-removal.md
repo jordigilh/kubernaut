@@ -59,8 +59,11 @@ kubernaut-operator#682 convention):
   forensic value (verified: no consumer).
 - **SOC2 CC7.2 (reconstruction):** `correlation_id`-based reconstruction is
   unaffected; `triage.started` remains the pipeline-start marker with
-  `session_id`. Reconstruction tests (a2a_streaming IT, store adapter UTs)
-  updated/confirmed green.
+  `session_id`. Wire acceptance is proven by `IT-DS-2716-001` (DataStorage
+  OpenAPI validation middleware accepts a persona-less `triage.started`
+  payload) and `UT-AF-2716-001/002` (store adapter wire shape, launcher
+  emission). The a2a_streaming IT uses an in-memory auditor and does not
+  exercise the DataStorage wire.
 
 ## Consequences
 

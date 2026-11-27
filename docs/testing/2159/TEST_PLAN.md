@@ -158,6 +158,8 @@ accepted, non-blocking observations.
 - **APIFrontend cluster-scoped RBAC lifecycle** (`apifrontend.enabled` true→false): a
   representative subset (5 of 15) covering all 3 object shapes — main ClusterRole/CRB,
   a per-persona ClusterRole, and the console-access gate ClusterRole/CRB.
+  (Historical: the chart no longer ships per-persona/user-facing tool roles —
+  kubernaut-operator#682, #2716; this plan describes the chart state at #2159 time.)
 
 ### 4.2 Features Not to be Tested
 

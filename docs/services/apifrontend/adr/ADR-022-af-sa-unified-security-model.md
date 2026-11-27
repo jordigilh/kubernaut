@@ -99,11 +99,11 @@ permissions.
 
 ### SEC-09: Approval Without K8s RBAC Safety Net (HIGH)
 
-**Risk**: Persona assignment is the critical security boundary. Misconfiguring a
-persona has no K8s RBAC fallback.
+**Risk**: Tool-capability assignment is the critical security boundary. Misassigned
+tool grants have no K8s RBAC fallback.
 
 **Mitigation**:
-- Document persona assignment as a security-sensitive operation
+- Document role/group assignment as a security-sensitive operation
 - Audit events track all tool invocations with user identity
 - **UPDATE (#1415)**: `kubernaut_approve` structurally removed from A2A agent toolset.
   Approvals now execute exclusively via MCP endpoint (Console UI), which enforces:
@@ -117,7 +117,7 @@ persona has no K8s RBAC fallback.
 ### SEC-11: `tools/list` Reconnaissance (MEDIUM, Pre-existing)
 
 Already accepted in [ADR-020](ADR-020-mcp-bridge-rbac-runtime.md). Users can see
-tool names but cannot execute without the right persona.
+tool names but cannot execute without a tool grant.
 
 ### SEC-13: HA Replay Protection (MEDIUM, Pre-existing)
 
@@ -136,7 +136,7 @@ K8s API server validates label selectors. Accepted.
 | SEC-06 | Source IP not in audit store | HIGH | Wired existing `actor_ip` column + DS conversion + AF StoreAdapter mapping |
 | SEC-07 | A2A RBAC denial field mismatch | HIGH | Fixed `"tool"` to `"tool_name"` in `agent/root.go` |
 | SEC-08 | Missing audit for no-identity/authorizer-error denials | HIGH | Added `auditor.Emit` for two denial paths |
-| SEC-10 | Internal tool SAR grants missing | MEDIUM | Added tool names to `sre` and `ai-orchestrator` personas |
+| SEC-10 | Internal tool SAR grants missing | MEDIUM | Added tool names to the `sre` and `ai-orchestrator` role bundles (then chart-shipped; the chart no longer ships user-facing tool roles — kubernaut-operator#682, #2716) |
 | SEC-12 | No impersonation header stripping | MEDIUM | Added `stripImpersonationHeaders` in auth middleware |
 | SEC-14 | `impersonation.created` audit event removed | MEDIUM | Documented removal; `tool.executed` with `UserID` replaces it |
 | SEC-15 | Minimal tool params in audit | MEDIUM | Added `target_namespace`, `target_kind` to tool executed payload |
@@ -150,7 +150,11 @@ K8s API server validates label selectors. Accepted.
 3. AF SA ClusterRole must include all permissions needed by MCP bridge tools
    (CRD operations + triage reads).
 4. User attribution is exclusively via application audit trail, not K8s audit logs.
-5. Persona assignment in `values.yaml` becomes a security-critical configuration.
+5. Tool-capability assignment (role composition + group bindings) becomes a
+   security-critical operator task. Historical note: at the time of this ADR
+   that meant the chart-shipped `apifrontend.config.rbac.personas` values;
+   since kubernaut-operator#682 and #2716 the platform ships no persona model
+   and operators compose capability roles themselves.
 
 ## Alternatives Considered
 
