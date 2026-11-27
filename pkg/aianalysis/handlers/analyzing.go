@@ -432,6 +432,14 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 	if rca != nil && rca.SelectedWorkflow != nil {
 		input.KAResponse.Confidence = rca.SelectedWorkflow.Confidence
 		input.ActionType = rca.SelectedWorkflow.ActionType
+		// #2714: Expose the catalog-authoritative workflow identity (never
+		// LLM-suppliable — DD-WORKFLOW-018 WorkflowSnapshot) for per-workflow
+		// selective autonomy (BR-AI-085 FR-AI-085-007).
+		input.SelectedWorkflow = &rego.SelectedWorkflowInput{
+			ID:      rca.SelectedWorkflow.WorkflowID,
+			Name:    rca.SelectedWorkflow.WorkflowName,
+			Version: rca.SelectedWorkflow.Version,
+		}
 	}
 
 	// ADR-055: Populate RemediationTarget for Rego policy evaluation
