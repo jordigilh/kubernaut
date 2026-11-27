@@ -88,8 +88,12 @@ hack/                         — Utility scripts
    tools = append(tools, toolspkg.NewMyTool(deps))
    ```
 
-3. Add RBAC authorization by adding the tool name to the appropriate persona in
-   `charts/kubernaut/values.yaml` under `apifrontend.config.rbac.personas`:
+3. Add RBAC authorization by adding the tool name to the tool lists in the
+   shared E2E/demo fixture contract (`test/infrastructure`, pinned by
+   `UT-INFRA-RBAC-002`) — and, for a real deployment, to whatever
+   capability-role composition the operator maintains. The platform itself
+   only checks `kubernaut.ai/tools`, verb `use`, resourceName = tool name
+   via SAR; it expects no particular role or group set (#2716):
    ```yaml
    sre:
      - af_my_tool

@@ -2,7 +2,7 @@
 
 **Service:** kubernaut-apifrontend
 **NIST Controls:** AC-2, AC-3, AC-6, IA-2, IA-5, IA-8
-**Source of truth:** `pkg/apifrontend/auth/sar.go`, `charts/kubernaut/values.yaml` (persona ClusterRoles)
+**Source of truth:** `pkg/apifrontend/auth/sar.go` (per-tool SAR checks; role composition is operator-owned — see the demo example bundles in `test/fixtures/demo/rbac/`)
 **Last updated:** 2026-11-09
 
 ---
@@ -114,12 +114,21 @@ Per [ADR-020](../adr/ADR-020-mcp-bridge-rbac-runtime.md), `tools/list` always
 returns all registered tools regardless of caller identity. Authorization is
 enforced only at `tools/call` execution time to eliminate TOCTOU races.
 
-### Persona ClusterRoles
+### Capability Roles (composition is the operator's)
 
-The Helm chart ships pre-built ClusterRoles for each persona. Bind them to
-OIDC groups via ClusterRoleBindings.
+The per-tool capability role is the product primitive: a ClusterRole
+enumerating tool names under `kubernaut.ai/tools` (verb `use`,
+resourceName = tool name), bound to OIDC groups via ClusterRoleBindings. The
+operator renders only unbound generic console roles (kubernaut-operator#682)
+and carries no persona model — which roles exist and which groups they bind to
+is the deployer's composition decision.
 
-| Persona | ClusterRole | Tool Count |
+The six demo bundles below (one role per demo IdP group) are a **worked
+example composition**, not a platform contract; an entirely different set of
+roles and group mappings is equally supported. They are also what the E2E
+harness renders (`test/infrastructure`, `UT-INFRA-RBAC-002`).
+
+| Example role | ClusterRole | Tool Count |
 |---------|-------------|-----------|
 | `sre` | `kubernaut-tool-sre` | 19 |
 | `ai-orchestrator` | `kubernaut-tool-ai-orchestrator` | 15 |

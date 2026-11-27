@@ -224,7 +224,7 @@ var _ = Describe("AF persona RBAC wiring", func() {
 	// per-persona ClusterRoles and their group bindings, applied by
 	// afDeployE2ERBAC (AF-only lane) and BindAFPersonaRBAC (operator-managed
 	// AF lanes). This test pins that harness contract so the persona lists --
-	// which duplicate the operator's former persona contract -- cannot drift
+	// which duplicate the operator's former role lists -- cannot drift
 	// or silently lose the roles half.
 	It("UT-2492-RBAC-001 [BR-SECURITY-001]: harness renders every AF persona ClusterRole and its OIDC group binding", func() {
 		fullManifest, err := PersonaToolClusterRolesYAML()

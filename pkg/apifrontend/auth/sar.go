@@ -216,8 +216,8 @@ func (s *SARChecker) checkSARAttributes(ctx context.Context, user string, groups
 // not merely by convention.
 //
 // This is the default (#2150) so a fresh install's console works with zero
-// RBAC configuration -- production installs that configure real
-// personas/consoleAccessGroups should set
+// RBAC configuration -- production installs that bind real OIDC groups to the
+// console roles / ConsoleAccessGroups should set
 // RBACConfig.ConsoleAccessAuthorizationCheckEnabled to true so
 // ConsoleAccessGroups takes precedence and the console gate's authorization
 // check runs too.

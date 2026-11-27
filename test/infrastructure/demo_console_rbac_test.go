@@ -191,7 +191,7 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 			Expect(persona).NotTo(Equal(cr.Name), "persona role names must use the demo-tool-<persona> convention")
 			rolesByPersona[persona] = true
 			expected, ok := personaTools[persona]
-			Expect(ok).To(BeTrue(), "demo manifest persona %q must exist in the shared persona contract", persona)
+			Expect(ok).To(BeTrue(), "demo manifest bundle %q must exist in the shared fixture role contract", persona)
 			if alertCapablePersonas[persona] {
 				Expect(cr.Rules[0].ResourceNames).To(ContainElement("kubernaut_list_alerts"),
 					"demo-tool-%s must carry the canonical alert tool name (single-name contract since #2713)", persona)
@@ -199,7 +199,7 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 					"demo-tool-%s must carry the canonical alert-detail tool name (single-name contract since #2713)", persona)
 			}
 			Expect(cr.Rules[0].ResourceNames).To(ConsistOf(toAnySlice(expected)...),
-				"demo-tool-%s drifted from the shared persona contract", persona)
+				"demo-tool-%s drifted from the shared fixture role contract", persona)
 
 			// Automated-path parity: the harness-rendered kubernaut-tool-<persona>
 			// ClusterRole must grant exactly the same tool set as the manifest's

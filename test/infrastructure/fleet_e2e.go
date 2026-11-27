@@ -3370,7 +3370,7 @@ spec:
             # which the (pre-fix) handler indistinguishably reported as
             # managed=false, causing Gateway to reject alerts as unmanaged.
             # Raised to match/exceed the production Helm chart's default
-            # (the operator qualification persona contract fleetmetadatacache.resources:
+            # (the operator's former persona-shaped qualification contract fleetmetadatacache.resources:
             # 128Mi/200m) since this test infra was actually *tighter* than
             # production.
             memory: "128Mi"

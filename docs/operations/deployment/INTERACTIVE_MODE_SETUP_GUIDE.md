@@ -140,11 +140,13 @@ namespace:
 | `<ns>-console-reader` | Console read capabilities (`kubernaut_read_policy_scope`, `kubernaut_list/get_managed_resource(s)`) |
 | `<ns>-console-inventory-reader` | Local-target `get`/`list` for the console inventory projection |
 
-It renders no persona ClusterRoles and no user-facing ClusterRoleBindings,
-and the CR carries no user-access policy. Compose your own roles and bind
-them to your IdP groups (`kubectl apply`, GitOps, OpenShift RBAC) after the
-CR is reconciled. Ready-made example bundles — the six demo personas plus
-bindings for the three console roles — live in
+It renders no user-facing ClusterRoles and no user-facing ClusterRoleBindings,
+and the CR carries no user-access policy. The per-tool capability role is the
+primitive: compose your own roles and bind them to your IdP groups
+(`kubectl apply`, GitOps, OpenShift RBAC) after the CR is reconciled — any
+group-to-role mapping is equally supported. Ready-made example bundles — six
+demo capability-role compositions plus bindings for the three console roles —
+live in
 [`test/fixtures/demo/rbac/`](../../../test/fixtures/demo/rbac/).
 
 If a bundle grants alert access, it carries the canonical names. Since #2713

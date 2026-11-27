@@ -265,9 +265,9 @@ type RBACConfig struct {
 	// other RBAC-gated resource. Per-tool authorization is completely
 	// unaffected either way and remains unconditionally fail-closed.
 	// Defaults to false (#2148, #2150) so a fresh install's console works
-	// with zero RBAC configuration; production installs should configure
-	// Personas/ConsoleAccessGroups and set this to true to enable the
-	// authorization check on the console gate too.
+	// with zero RBAC configuration; production installs should bind their
+	// OIDC groups to the console roles / ConsoleAccessGroups and set this to
+	// true to enable the authorization check on the console gate too.
 	ConsoleAccessAuthorizationCheckEnabled bool `yaml:"consoleAccessAuthorizationCheckEnabled"`
 }
 

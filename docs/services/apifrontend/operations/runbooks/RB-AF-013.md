@@ -21,17 +21,17 @@ kubectl logs -l app=apifrontend -n kubernaut-system | grep "SAR denied"
 ### 2. Verify ClusterRole Exists
 
 ```bash
-# List per-persona ClusterRoles
+# List tool-authorization ClusterRoles (yours, and any demo/example ones)
 kubectl get clusterrole -l kubernaut.ai/component=tool-authorization
 
-# Inspect a specific persona's allowed tools
+# Inspect a role's allowed tools
 kubectl get clusterrole kubernaut-tool-sre -o yaml
 ```
 
 ### 3. Verify ClusterRoleBinding Exists
 
 ```bash
-# Check if the user's OIDC group is bound to the correct ClusterRole
+# Check which OIDC groups are bound to tool-granting ClusterRoles
 kubectl get clusterrolebinding -l kubernaut.ai/component=tool-authorization
 ```
 
@@ -61,8 +61,8 @@ Wait for the TTL to expire, or restart the AF pod to clear the cache.
 
 | Cause | Fix |
 |-------|-----|
-| Missing ClusterRoleBinding | Create a binding for the user's OIDC group to the appropriate `kubernaut-tool-<persona>` ClusterRole |
-| Missing ClusterRole | Ensure the Helm chart deployed all 6 persona ClusterRoles. Re-run `helm upgrade`. |
+| Missing ClusterRoleBinding | Create a binding from the user's OIDC group to a ClusterRole that grants the tool |
+| Missing ClusterRole | Create (or re-apply) a ClusterRole enumerating the tool under `kubernaut.ai/tools`, verb `use`, resourceName = tool name. The Helm chart no longer ships user-facing tool roles (kubernaut-operator#682) — compose your own or start from the demo example bundles in `test/fixtures/demo/rbac/` |
 | Wrong OIDC group | Verify the JWT `groups` claim matches the group in the ClusterRoleBinding |
 | Cached denial | Wait for `sarCacheTTL` to expire, or restart the AF pod |
 | AF ServiceAccount lacks SAR permission | Verify the AF ClusterRole includes `authorization.k8s.io/subjectaccessreviews: create` |

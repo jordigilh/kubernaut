@@ -7171,8 +7171,8 @@ components:
 
     ApifrontendTriageStartedPayload:
       type: object
-      required: [event_type, session_id, persona]
-      description: Triage started event payload (apifrontend.triage.started) — user NL query received, triage LLM invocation begins (SOC2 CC7.2, Issue #1021)
+      required: [event_type, session_id]
+      description: Triage started event payload (apifrontend.triage.started) — user NL query received, triage LLM invocation begins (SOC2 CC7.2, Issue #1021). The legacy `persona` field was removed (#2716): kubernaut carries no persona model, and actor attribution is carried by the parent audit record's actor_id.
       properties:
         event_type:
           type: string
@@ -7181,10 +7181,6 @@ components:
         session_id:
           type: string
           description: InvestigationSession CRD name
-        persona:
-          type: string
-          enum: [sre, orchestrator, cicd, dashboard, audit, approver]
-          description: Detected/assigned persona from JWT role
         model_name:
           type: string
           description: LLM model identifier used for triage
