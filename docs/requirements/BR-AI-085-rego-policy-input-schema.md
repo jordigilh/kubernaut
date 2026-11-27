@@ -423,7 +423,7 @@ name/version can never match a populated trusted set anyway).
 1. ✅ Rego can read `input.selected_workflow.id`, `.name` and `.version`
 2. ✅ Values come from the catalog-authoritative `WorkflowSnapshot`, never from LLM output
 3. ✅ Existing policies and tests are unaffected when the field is absent (key omitted)
-4. ✅ Unit tests for `buildPolicyInput` and integration tests evaluating a policy using the new fields (UT-AA-2714-001..004, IT-AA-2714-001..003)
+4. ✅ Unit tests for `buildPolicyInput` and integration tests evaluating a policy using the new fields (UT-AA-2714-001..005, IT-AA-2714-001..003)
 
 ---
 
