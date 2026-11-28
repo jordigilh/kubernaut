@@ -21,8 +21,12 @@ kubectl logs -l app=apifrontend -n kubernaut-system | grep "SAR denied"
 ### 2. Verify ClusterRole Exists
 
 ```bash
-# List tool-authorization ClusterRoles (yours, and any demo/example ones)
+# List tool-authorization ClusterRoles. NOTE: the label filter covers only
+# resources that carry the optional kubernaut.ai/component=tool-authorization
+# label (demo/example fixtures); your own roles may omit it, so also check by
+# rule shape:
 kubectl get clusterrole -l kubernaut.ai/component=tool-authorization
+kubectl get clusterroles -o json | jq -r '.items[] | select(.rules[]? | .apiGroups? // [] | index("kubernaut.ai")) | .metadata.name'
 
 # Inspect a role's allowed tools
 kubectl get clusterrole kubernaut-tool-sre -o yaml
@@ -31,8 +35,10 @@ kubectl get clusterrole kubernaut-tool-sre -o yaml
 ### 3. Verify ClusterRoleBinding Exists
 
 ```bash
-# Check which OIDC groups are bound to tool-granting ClusterRoles
+# Check which OIDC groups are bound to tool-granting ClusterRoles (same
+# label caveat as above)
 kubectl get clusterrolebinding -l kubernaut.ai/component=tool-authorization
+kubectl get clusterrolebindings -o json | jq -r '.items[] | select(.roleRef.name | test("tool|console")) | "\(.metadata.name) -> \(.roleRef.name)"'
 ```
 
 ### 4. Test SAR Manually

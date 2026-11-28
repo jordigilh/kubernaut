@@ -140,7 +140,7 @@ namespace:
 | `<ns>-console-reader` | Console read capabilities (`kubernaut_read_policy_scope`, `kubernaut_list/get_managed_resource(s)`) |
 | `<ns>-console-inventory-reader` | Local-target `get`/`list` for the console inventory projection |
 
-It renders no user-facing ClusterRoles and no user-facing ClusterRoleBindings,
+It renders no user-facing tool roles and no user-facing ClusterRoleBindings,
 and the CR carries no user-access policy. The per-tool capability role is the
 primitive: compose your own roles and bind them to your IdP groups
 (`kubectl apply`, GitOps, OpenShift RBAC) after the CR is reconciled — any

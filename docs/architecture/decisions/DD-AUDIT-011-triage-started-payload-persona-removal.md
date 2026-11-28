@@ -27,15 +27,17 @@ and forensic reconstruction, and (b) required production code
 
 ## Decision
 
-**Drop the field entirely** (remove, not rename).
-
-Verification (preflight, #2716): no consumer reads it — DataStorage
-reconstruction, query, and repository code never reference the field; the
-ogen-generated client was the only Go surface; actor attribution is already
-carried by the parent audit record's `actor_id` (username) per ADR-034. A
-rename (e.g. `detected_role`) was rejected because any value for such a field
-still requires production persona-derivation logic, which the product
-principle forbids.
+**Decision (drop, information loss accepted):** the field recorded the
+user's group-derived classification at event time. That per-event snapshot
+is not recoverable from `actor_id` alone. Accepted because (a) no
+in-repo consumer read it — DataStorage reconstruction, query, and
+repository code never referenced the field; the ogen-generated client was
+the only Go surface; (b) post-#2716 the platform deliberately derives no
+user classification, so any replacement value would require resurrecting
+exactly the production persona logic the product principle forbids; and
+(c) group context remains joinable from the IdP/identity source of record
+when an investigation needs it. A rename (e.g. `detected_role`) was
+rejected for the same reason.
 
 Wire-schema changes (pre-GA, no backwards-compatibility commitment per the
 kubernaut-operator#682 convention):
@@ -52,11 +54,15 @@ kubernaut-operator#682 convention):
 
 ## Compliance Mapping
 
-- **AU-3 (content of audit records):** unchanged in substance — the record
-  still carries `event_id`, `event_type`, `event_action`, `event_outcome`,
-  `actor_type`, `actor_id`, `correlation_id`, and `session_id`. The removed
-  field was redundant with actor attribution and duplicated no unique
-  forensic value (verified: no consumer).
+- **AU-3 (content of audit records):** the record still carries
+  `event_id`, `event_type`, `event_action`, `event_outcome`,
+  `actor_type`, `actor_id`, `correlation_id`, and `session_id`. Note the
+  information loss honestly: the removed field recorded the user's
+  group-derived classification *at event time*, which `actor_id` alone does
+  not preserve (the same actor can hold different group memberships across
+  sessions). No in-repo consumer read it, and post-#2716 the platform
+  deliberately derives no such classification — an investigator needing
+  group context must join against the IdP/identity source of record.
 - **SOC2 CC7.2 (reconstruction):** `correlation_id`-based reconstruction is
   unaffected; `triage.started` remains the pipeline-start marker with
   `session_id`. Wire acceptance is proven by `IT-DS-2716-001` (DataStorage

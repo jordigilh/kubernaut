@@ -157,8 +157,8 @@ This table is drift-pinned against the registered tool set by
 | List remediations | `kubernaut_list_remediations` | all six | |
 | Get a remediation | `kubernaut_get_remediation` | all six | |
 | Cancel a remediation | `kubernaut_cancel_remediation` | sre | |
-| Watch remediation state | `kubernaut_watch` | all six | |
-| Wait for KA session readiness | `kubernaut_await_session` | all six | |
+| Watch remediation state | `kubernaut_watch` | all except l3-audit | |
+| Wait for KA session readiness | `kubernaut_await_session` | all except l3-audit | |
 | Initiate investigation (resource) | `kubernaut_investigate` | sre, ai-orchestrator | A2A + MCP bridge |
 | Initiate investigation (alert) | `kubernaut_investigate_alert` | sre, ai-orchestrator | |
 | Initiate remediation | `kubernaut_remediate` | sre, ai-orchestrator | |
@@ -191,7 +191,7 @@ Console read capabilities (`kubernaut_read_policy_scope`,
 `kubernaut_list_managed_resources`, `kubernaut_get_managed_resource`) are NOT
 part of this per-tool contract: they are granted by the operator-rendered
 `<ns>-console-reader` ClusterRole (see the
-[interactive-mode setup guide](../../../../operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md)).
+[interactive-mode setup guide](../../../operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md)).
 
 ### Roles the platform renders (and what they allow)
 
@@ -206,7 +206,7 @@ roles (#2716).
 | `<ns>-console-inventory-reader` | core API-group `get`/`list` on local-target resources | The Console's inventory projection reads |
 
 Bind them to your IdP groups via ClusterRoleBindings (see
-[`test/fixtures/demo/rbac/console-bindings.yaml`](../../../../../test/fixtures/demo/rbac/console-bindings.yaml)
+[`test/fixtures/demo/rbac/console-bindings.yaml`](../../../../test/fixtures/demo/rbac/console-bindings.yaml)
 for a worked example). All checks are deny-by-default.
 
 ### Enforcement Code Paths

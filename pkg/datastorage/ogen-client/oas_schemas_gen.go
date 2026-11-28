@@ -10734,7 +10734,9 @@ func (s *ApifrontendTriageCompletedPayloadTriageOutcome) UnmarshalText(data []by
 }
 
 // Triage started event payload (apifrontend.triage.started) — user NL query received, triage LLM
-// invocation begins (SOC2 CC7.2, Issue.
+// invocation begins (SOC2 CC7.2, Issue #1021). The legacy `persona` field was removed (#2716):
+// kubernaut carries no persona model, and actor attribution is carried by the parent audit record's
+// actor_id.
 // Ref: #/components/schemas/ApifrontendTriageStartedPayload
 type ApifrontendTriageStartedPayload struct {
 	// Event type for discriminator (matches parent event_type).
