@@ -43,7 +43,7 @@
 | ID | Tier | Business behavior | BR/control mapping |
 |---|---|---|---|
 | UT-TLS-2548-001 | UT | Repo workload manifests never statically inject `SSL_CERT_FILE`/`SSL_CERT_DIR` | BR-SECURITY-2548; AC-6/CM-7, SI-10; CC8.1; V12.3.4, V16.5.3 |
-| UT-TLS-2548-002 | UT | CA/TLS material mounts are read-only secret/configMap/projected, never emptyDir/hostPath | BR-SECURITY-2548; SC-8/SC-13, AC-6; CC8.1; V12.3.1–V12.3.4, V15.2.5 |
+| UT-TLS-2548-002 | UT | CA/TLS material mounts are read-only secret/configMap/projected, never emptyDir/hostPath (documented exception: init-only memory-backed Job staging with read-only root, UT-TLS-2548-009) | BR-SECURITY-2548; SC-8/SC-13, AC-6; CC8.1; V12.3.1–V12.3.4, V15.2.5 |
 | UT-TLS-2548-003 | UT | Detector catches planted violations; ignores `replicas-cache` lookalikes and ConfigMap-embedded workload text | BR-SECURITY-2548; SI-10; CC8.1; V16.5.3 |
 | UT-TLS-2548-004 | UT | `pkg/shared/tls` non-test sources contain no write/temp-file APIs | BR-SECURITY-2548/BR-SECURITY-2545; AC-6/CM-7; CC8.1; V15.2.5 |
 | UT-TLS-2548-005 | UT | Ambient env ownership stays in `pkg/shared/tls` across `pkg/`, `cmd/`, `internal/` | BR-SECURITY-2548; AC-6/CM-7, SI-10; CC8.1; V12.3.4 |

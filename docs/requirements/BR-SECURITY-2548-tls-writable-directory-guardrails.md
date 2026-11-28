@@ -33,13 +33,17 @@ shared runtime behavior and the upstream deployment-contract guardrails.
    and `hostPath` MUST NOT back certificate material. Documented
    exception: an init-only `kind: Job` may stage certificate material in
    a memory-backed `emptyDir` (`medium: Memory`, bounded tmpfs) when its
-   root filesystem is otherwise read-only (acceptance criterion 3 of
+   staging container sets `securityContext.readOnlyRootFilesystem: true`
+   so the tmpfs is its only writable path (acceptance criterion 3 of
    issue #2548); disk-backed staging and long-running workload kinds
    never qualify.
 4. Repository-owned workload manifests and the CI-rendered operator
    deployment bundles MUST be mechanically guarded against regressions of
    requirements 2 and 3 (static manifest contract tests plus a CI job over
-   the rendered production surface).
+   the rendered production surface). Operator-reconciled operand
+   Deployments are rendered at runtime from the Kubernaut CR and are not
+   present in the CI-rendered bundles; they are outside this gate and are
+   owned by `jordigilh/kubernaut-operator#571`.
 5. Ambient trust environment ownership MUST NOT drift out of
    `pkg/shared/tls`: no other non-test Go source may set or reference
    `SSL_CERT_FILE` / `SSL_CERT_DIR`.

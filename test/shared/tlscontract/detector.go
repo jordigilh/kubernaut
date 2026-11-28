@@ -213,6 +213,11 @@ func splitYAMLDocuments(data []byte) [][]byte {
 	return segments
 }
 
+// errResidualDocs marks a decodeSegment failure caused by residual
+// documents in a segment (an unrecognized separator form). These must
+// never be template-skipped: the residual documents may carry violations.
+var errResidualDocs = errors.New("segment contains multiple yaml documents after splitting")
+
 // decodeSegment decodes exactly one YAML document from a pre-split
 // segment. It fails closed if the segment still contains more than one
 // document (an unrecognized separator form): yaml.Unmarshal would
@@ -229,7 +234,7 @@ func decodeSegment(path string, docNum int, seg []byte) (any, error) {
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("segment %d in %s contains multiple yaml documents after splitting (unrecognized document separator)", docNum, path)
+		return nil, fmt.Errorf("segment %d in %s: %w (unrecognized document separator)", docNum, path, errResidualDocs)
 	}
 	return raw, nil
 }
@@ -253,7 +258,14 @@ func decodeManifestDocs(path string, data []byte, allowTemplateSkip bool) ([]man
 		}
 		raw, err := decodeSegment(path, i+1, seg)
 		if err != nil {
-			if allowTemplateSkip && strings.Contains(string(seg), "{{") {
+			// A segment with residual documents is never
+			// template-skipped: an unrecognized separator merged
+			// documents, and the residual ones may carry violations
+			// that a template marker in the first document must not
+			// mask. Only a single-document segment whose own parse
+			// fails may be skipped as a template document.
+			if allowTemplateSkip && !errors.Is(err, errResidualDocs) &&
+				strings.Contains(string(seg), "{{") {
 				continue // template document: skip this document only
 			}
 			return nil, fmt.Errorf("failed to parse yaml document %d in %s: %w", i+1, path, err)
@@ -308,23 +320,31 @@ func decodeDataKeys(docMap map[string]any) map[string]bool {
 	return keys
 }
 
-// buildEnvSourceIndex maps object name -> data keys for ConfigMap/Secret
-// documents, so envFrom references can be checked for ambient env keys.
-// Same-named sources within one stream union-merge: a clean source can
-// never shadow one carrying an ambient env key (possible false positive,
-// never a missed violation).
+// envSourceIndexKey qualifies an envFrom source by kind and name so a
+// ConfigMap and a Secret sharing a name never merge: an envFrom
+// configMapRef resolves only against ConfigMap documents, a secretRef
+// only against Secret documents, exactly as Kubernetes resolves them.
+func envSourceIndexKey(kind, name string) string {
+	return kind + "/" + name
+}
+
+// buildEnvSourceIndex maps kind-qualified source name -> data keys for
+// ConfigMap/Secret documents, so envFrom references can be checked for
+// ambient env keys. Same-named sources within one stream union-merge: a
+// clean source can never shadow one carrying an ambient env key
+// (possible false positive, never a missed violation).
 func buildEnvSourceIndex(docs []manifestObject) map[string]map[string]bool {
 	index := map[string]map[string]bool{}
 	for _, doc := range docs {
 		if envSourceKinds[doc.kind] && doc.name != "" {
-			mergeEnvSource(index, doc.name, doc.dataKey)
+			mergeEnvSource(index, envSourceIndexKey(doc.kind, doc.name), doc.dataKey)
 		}
 	}
 	return index
 }
 
-// mergeEnvSource union-merges data keys for one named envFrom source
-// into an index, never overwriting existing keys.
+// mergeEnvSource union-merges data keys for one kind-qualified envFrom
+// source into an index, never overwriting existing keys.
 func mergeEnvSource(index map[string]map[string]bool, name string, keys map[string]bool) {
 	if existing, ok := index[name]; ok {
 		for key := range keys {
@@ -506,12 +526,16 @@ func scanContainerMounts(path, kind, containerName string, container map[string]
 		// BR-SECURITY-2548): an init-only Job may generate
 		// certificates into a memory-backed emptyDir (bounded
 		// tmpfs, never reaching disk) when its root filesystem is
-		// not otherwise writable. Long-running workload kinds
+		// not otherwise writable -- the exception requires
+		// securityContext.readOnlyRootFilesystem: true on the
+		// staging container, so the tmpfs mount is its only
+		// writable path. Long-running workload kinds
 		// (Deployment/StatefulSet/DaemonSet/ReplicaSet/CronJob/Pod)
 		// never qualify: a writable CA directory in a
 		// long-running container is a post-compromise staging
 		// location, which this contract exists to eliminate.
-		initOnlyMemoryBacked := initOnlyMemoryBackedCertStaging(kind, volumes, volumeName)
+		initOnlyMemoryBacked := containerReadOnlyRootFS(container) &&
+			initOnlyMemoryBackedCertStaging(kind, volumes, volumeName)
 		if readOnly, ok := mount["readOnly"].(bool); (!ok || !readOnly) && !initOnlyMemoryBacked {
 			result.Violations = append(result.Violations, Violation{
 				File:    path,
@@ -543,7 +567,11 @@ func scanEnvFrom(path, kind, containerName string, envFrom map[string]any, envSo
 			continue
 		}
 		refName, _ := ref["name"].(string)
-		dataKeys, found := envSourceIndex[refName]
+		refKind := "ConfigMap"
+		if refField == "secretRef" {
+			refKind = "Secret"
+		}
+		dataKeys, found := envSourceIndex[envSourceIndexKey(refKind, refName)]
 		if !found {
 			continue
 		}
@@ -607,15 +635,37 @@ func volumeSourceNames(volume map[string]any) []string {
 			}
 		}
 	}
+	// A hostPath's host directory path participates in the CA-material
+	// heuristic: a writable host directory like /srv/certs mounted at a
+	// neutral path through a neutral volume name must still be
+	// classified (and then rejected -- hostPath never has a read-only
+	// volume source).
+	if hostPath, ok := volume["hostPath"].(map[string]any); ok {
+		if hp, _ := hostPath["path"].(string); hp != "" {
+			names = append(names, hp)
+		}
+	}
 	return names
 }
 
+// containerReadOnlyRootFS reports whether the container sets
+// securityContext.readOnlyRootFilesystem: true.
+func containerReadOnlyRootFS(container map[string]any) bool {
+	sc, ok := container["securityContext"].(map[string]any)
+	if !ok {
+		return false
+	}
+	readOnly, ok := sc["readOnlyRootFilesystem"].(bool)
+	return ok && readOnly
+}
+
 // initOnlyMemoryBackedCertStaging reports whether the documented
-// init-only certificate-generation exception applies: the workload is a
-// Job (runs to completion, never long-running) and the named volume is an
-// emptyDir explicitly backed by memory (medium: Memory, i.e. bounded
-// tmpfs). Everything else -- disk-backed emptyDir, hostPath, long-running
-// kinds -- stays a violation.
+// init-only certificate-generation exception's volume condition applies:
+// the workload is a Job (runs to completion, never long-running) and the
+// named volume is an emptyDir explicitly backed by memory (medium:
+// Memory, i.e. bounded tmpfs). Callers must additionally require
+// containerReadOnlyRootFS. Everything else -- disk-backed emptyDir,
+// hostPath, long-running kinds -- stays a violation.
 func initOnlyMemoryBackedCertStaging(kind string, volumes []map[string]any, volumeName string) bool {
 	if kind != "Job" {
 		return false
@@ -837,12 +887,24 @@ func (v SourceViolation) String() string {
 // file-creation/mutation APIs: the ambient CA trust path must stay no-write
 // (DD-TLS-001). Comment mentions are immune because this is AST-based, and
 // aliased imports (e.g. `ose "os"`) are resolved through the file's import
-// list.
+// list. Dot-imports (import . "os") resolve bare identifiers to the
+// package, so a bare WriteFile reference is flagged too -- fail-closed,
+// even though a same-named local declaration would false-positive (none
+// exist; dot-imports fail lint anyway).
 func ScanTLSSourceWrites(tlsPkgDir string) ([]SourceViolation, error) {
 	return scanGoSources(tlsPkgDir, func(file *ast.File, fset *token.FileSet, path string) []SourceViolation {
 		writePackageAliases := importAliases(file, "os", "io/ioutil")
+		dotImportsBanned := hasDotImport(file, "os", "io/ioutil")
 		var found []SourceViolation
 		ast.Inspect(file, func(n ast.Node) bool {
+			if ident, ok := n.(*ast.Ident); ok && dotImportsBanned && bannedWriteAPIs[ident.Name] {
+				found = append(found, SourceViolation{
+					File:    path,
+					Line:    fset.Position(ident.Pos()).Line,
+					Message: fmt.Sprintf("%s is forbidden in the no-write ambient CA package (dot-import of os/ioutil)", ident.Name),
+				})
+				return true
+			}
 			selector, ok := n.(*ast.SelectorExpr)
 			if !ok {
 				return true
@@ -862,6 +924,26 @@ func ScanTLSSourceWrites(tlsPkgDir string) ([]SourceViolation, error) {
 		})
 		return found
 	})
+}
+
+// hasDotImport reports whether the file dot-imports any of the given
+// import paths (import . "os").
+func hasDotImport(file *ast.File, paths ...string) bool {
+	for _, imp := range file.Imports {
+		if imp.Name == nil || imp.Name.Name != "." {
+			continue
+		}
+		importPath, ok := goLiteralValue(imp.Path)
+		if !ok {
+			continue
+		}
+		for _, want := range paths {
+			if importPath == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // goLiteralValue decodes a Go string literal to its value: interpreted
@@ -915,7 +997,10 @@ func ScanAmbientEnvOwnership(scanRoots []string, ownerDir string) ([]SourceViola
 	for _, root := range scanRoots {
 		violations, err := scanGoSources(root, func(file *ast.File, fset *token.FileSet, path string) []SourceViolation {
 			var hits []SourceViolation
-			if strings.HasPrefix(filepath.Clean(path), filepath.Clean(ownerDir)+string(filepath.Separator)) {
+			// Exempt only files in the owner package itself, not
+			// subdirectories: a separate package under
+			// pkg/shared/tls/<sub> is not the ambient CA owner.
+			if filepath.Dir(filepath.Clean(path)) == filepath.Clean(ownerDir) {
 				return nil
 			}
 			ast.Inspect(file, func(n ast.Node) bool {

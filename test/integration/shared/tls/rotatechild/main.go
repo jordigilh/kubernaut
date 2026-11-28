@@ -268,7 +268,7 @@ func generateCA(commonName string) (caMaterial, error) {
 	return caMaterial{key: key, cert: cert, pem: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})}, nil
 }
 
-func startServer(dir, name string, ca caMaterial) (*http.Server, string, error) {
+func startServer(dir, name string, ca caMaterial) (*serveErrServer, string, error) {
 	certDir := filepath.Join(dir, name+"-server")
 	if err := os.Mkdir(certDir, 0755); err != nil {
 		return nil, "", fmt.Errorf("create server cert dir: %w", err)
@@ -319,9 +319,41 @@ func startServer(dir, name string, ca caMaterial) (*http.Server, string, error) 
 	if err != nil {
 		return nil, "", fmt.Errorf("listen: %w", err)
 	}
-	go func() { _ = server.Serve(listener) }()
+	// Surface unexpected Serve failures: a dead server must fail the
+	// test with its original error, not a later request timeout.
+	serveErr := make(chan error, 1)
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			select {
+			case serveErr <- err:
+			default:
+			}
+		}
+	}()
 	addr := listener.Addr().(*net.TCPAddr)
-	return server, fmt.Sprintf("https://127.0.0.1:%d", addr.Port), nil
+	return &serveErrServer{server: server, serveErr: serveErr},
+		fmt.Sprintf("https://127.0.0.1:%d", addr.Port), nil
+}
+
+// serveErrServer wraps the test TLS server so callers can observe an
+// unexpected Serve failure after shutdown.
+type serveErrServer struct {
+	server   *http.Server
+	serveErr <-chan error
+}
+
+// Close shuts the server down and reports an unexpected Serve error, if
+// any, so test failures point at the root cause.
+func (s *serveErrServer) Close() error {
+	shutdownErr := s.server.Close()
+	select {
+	case err := <-s.serveErr:
+		if err != nil {
+			return err
+		}
+	default:
+	}
+	return shutdownErr
 }
 
 func rotate(path string, pemBytes []byte) error {

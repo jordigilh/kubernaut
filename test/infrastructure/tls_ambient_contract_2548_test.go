@@ -347,6 +347,9 @@ items:
 
 		// subPathExpr with an explicit certificate path segment must be
 		// matched like subPath.
+		// subPathExpr is the ONLY certificate signal: mountPath and
+		// volume name are deliberately neutral so this fixture fails
+		// if the scanner stops checking subPathExpr.
 		subPathExprFixture := `apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -362,13 +365,43 @@ spec:
           image: registry.example/app:1
           volumeMounts:
             - name: app-config
-              mountPath: /etc/pki
+              mountPath: /work
               subPathExpr: certs/$(POD_NAME)
 `
 		subPathExprResult, err := tlscontract.ScanManifestData("planted-subpathexpr.yaml", []byte(subPathExprFixture))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(subPathExprResult.Violations).To(HaveLen(2),
 			"a subPathExpr carrying a certificate path segment must trigger the CA-material heuristic for BR-SECURITY-2548")
+
+		// A hostPath whose host directory path carries a certificate
+		// segment must be classified as CA material (and then
+		// rejected: hostPath never has a read-only volume source),
+		// even with a neutral volume name and mount path.
+		hostPathFixture := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-hostpath-certs
+spec:
+  template:
+    spec:
+      volumes:
+        - name: shared
+          hostPath:
+            path: /srv/certs
+      containers:
+        - name: app
+          image: registry.example/app:1
+          volumeMounts:
+            - name: shared
+              mountPath: /work
+`
+		hostPathResult, err := tlscontract.ScanManifestData("planted-hostpath-certs.yaml", []byte(hostPathFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(hostPathResult.Violations).To(HaveLen(2),
+			"a hostPath directory carrying a certificate path segment must be classified and rejected for BR-SECURITY-2548")
+		joinedHostPath := strings.Join(hostPathResult.SortedViolations(), "\n")
+		Expect(joinedHostPath).To(ContainSubstring("readOnly"))
+		Expect(joinedHostPath).To(ContainSubstring("hostPath"))
 	})
 
 	// UT-TLS-2548-006: Go-template placeholders in one document of a
@@ -468,6 +501,23 @@ spec:
 		Expect(err).To(HaveOccurred(),
 			"an unrecognized document separator form must abort the scan, not silently decode only the first document, for BR-SECURITY-2548")
 		Expect(err.Error()).To(ContainSubstring("planted-sameline-separator.yaml"))
+
+		// A template marker in the first document of a merged segment
+		// must not mask the residual documents: an unrecognized
+		// same-line separator merging a violating Pod into a
+		// {{-bearing segment aborts the scan, never skips it.
+		templateMaskResidual := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: template-bearing
+data:
+  note: "{{ .Values.note }}"
+--- {apiVersion: v1, kind: Pod, metadata: {name: bad-merged}, spec: {containers: [{name: app, image: registry.example/app:1, env: [{name: SSL_CERT_DIR, value: /etc/custom-ca}]}]}}
+`
+		_, err = tlscontract.ScanManifestData("planted-template-mask-residual.yaml", []byte(templateMaskResidual))
+		Expect(err).To(HaveOccurred(),
+			"a template marker must not mask violations in residual documents of a merged segment for BR-SECURITY-2548")
+		Expect(err.Error()).To(ContainSubstring("planted-template-mask-residual.yaml"))
 	})
 
 	// UT-TLS-2548-007: envFrom references resolve across files of the
@@ -575,6 +625,51 @@ spec:
 		Expect(inStreamResult.Violations).To(HaveLen(1),
 			"a same-named clean ConfigMap in the same stream must not shadow one carrying SSL_CERT_DIR for BR-SECURITY-2548")
 		Expect(inStreamResult.Violations[0].String()).To(ContainSubstring("envFrom"))
+
+		// The envFrom index is kind-qualified: a clean ConfigMap and
+		// a Secret sharing a name do not merge. A Deployment
+		// envFrom-ing only the ConfigMap is not flagged for the
+		// Secret's key; envFrom-ing the Secret is.
+		kindSeparatedFixture := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: settings
+data:
+  UNRELATED: value
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: settings
+stringData:
+  SSL_CERT_DIR: /etc/custom-ca
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kind-separated-envfrom
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          envFrom:
+            - configMapRef:
+                name: settings
+`
+		kindResult, err := tlscontract.ScanManifestData("planted-kind-separated.yaml", []byte(kindSeparatedFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(kindResult.HasViolations()).To(BeFalse(),
+			"envFrom configMapRef must resolve only against ConfigMap documents, not a same-named Secret, for BR-SECURITY-2548")
+
+		secretRefFixture := strings.Replace(kindSeparatedFixture,
+			"configMapRef:\n                name: settings", "secretRef:\n                name: settings", 1)
+		secretRefResult, err := tlscontract.ScanManifestData("planted-kind-separated-secret.yaml", []byte(secretRefFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(secretRefResult.Violations).To(HaveLen(1),
+			"envFrom secretRef must resolve against the same-named Secret carrying SSL_CERT_DIR for BR-SECURITY-2548")
+		Expect(secretRefResult.Violations[0].String()).To(ContainSubstring("envFrom"))
 	})
 
 	// UT-TLS-2548-008: the rendered-bundle entry point
@@ -664,7 +759,8 @@ spec:
 			"the exception fixture must still be counted as a CA-material mount for BR-SECURITY-2548")
 
 		jobDiskBacked := strings.Replace(jobMemoryBacked, "name: cert-bootstrap-memory", "name: cert-bootstrap-disk", 1)
-		jobDiskBacked = strings.Replace(jobDiskBacked, "            medium: Memory\n", "", 1)
+		jobDiskBacked = strings.Replace(jobDiskBacked,
+			"          emptyDir:\n            medium: Memory\n", "          emptyDir: {}\n", 1)
 		diskResult, err := tlscontract.ScanManifestData("job-disk-backed.yaml", []byte(jobDiskBacked))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(diskResult.Violations).To(HaveLen(2),
@@ -675,6 +771,18 @@ spec:
 		Expect(err).ToNot(HaveOccurred())
 		Expect(deployResult.Violations).To(HaveLen(2),
 			"memory-backed cert staging must remain a violation in long-running workload kinds for BR-SECURITY-2548")
+
+		// The exception requires readOnlyRootFilesystem: true: a
+		// memory-backed staging mount in a Job whose container root
+		// is writable does not qualify (the tmpfs would not be the
+		// container's only writable path).
+		jobWritableRoot := strings.Replace(jobMemoryBacked, "name: cert-bootstrap-memory", "name: cert-bootstrap-writable-root", 1)
+		jobWritableRoot = strings.Replace(jobWritableRoot,
+			"          securityContext:\n            readOnlyRootFilesystem: true\n", "", 1)
+		writableRootResult, err := tlscontract.ScanManifestData("job-writable-root.yaml", []byte(jobWritableRoot))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(writableRootResult.Violations).To(HaveLen(2),
+			"memory-backed cert staging without readOnlyRootFilesystem must remain a violation for BR-SECURITY-2548")
 	})
 
 	// UT-TLS-2548-004: the ambient CA owner package stays no-write

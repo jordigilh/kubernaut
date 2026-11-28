@@ -81,7 +81,7 @@ future addition cannot silently escape the contract.
 | ID | Tier | Proof |
 |---|---|---|
 | UT-TLS-2548-001 | UT (static manifest) | No static ambient CA env injection in repo workload manifests, including `envFrom` sources carrying ambient env keys |
-| UT-TLS-2548-002 | UT (static manifest) | CA/TLS mounts are read-only secret/configMap/projected, never emptyDir/hostPath; minimum-match anchor on the DataStorage `/etc/certs` mount |
+| UT-TLS-2548-002 | UT (static manifest) | CA/TLS mounts are read-only secret/configMap/projected, never emptyDir/hostPath (except the documented init-only memory-backed Job staging exception, UT-TLS-2548-009); minimum-match anchor on the DataStorage `/etc/certs` mount |
 | UT-TLS-2548-003 | UT (detector self-test) | Planted violations are caught (static env, writable/emptyDir CA mount, envFrom key injection); `replicas-cache` lookalike and ConfigMap-embedded workload text are not |
 | UT-TLS-2548-004 | UT (source guard) | `pkg/shared/tls` non-test sources contain no write/temp APIs (AST-based, comment-immune, import-alias aware) |
 | UT-TLS-2548-005 | UT (source guard) | `SSL_CERT_FILE`/`SSL_CERT_DIR` literals confined to `pkg/shared/tls` across `pkg/`, `cmd/`, `internal/` |
@@ -98,19 +98,24 @@ The manifest detector is deliberately fail-closed but heuristic; its known
 envelope is:
 
 - **CA-material naming.** Mount paths, subPaths, subPathExprs, volume
-  names, and volume source names (secret/configMap/projected) are matched by whole-segment
+  names, and volume source names (secret/configMap/projected, and
+  hostPath host directory paths) are matched by whole-segment
   or token matching (`ca`, `cert`, `certs`, `pki`, `tls`, `x509`, `.crt`,
   `.pem`, `.key` suffixes). An arbitrarily-named CA volume (e.g. a secret
   named `cache` mounted at `/var/lib/app`) is not detected. Token matching
   accepts compound names like `signing-cert`, `webhook-certs`, and
   `tls-ca` while rejecting lookalikes like `replicas-cache`.
 - **envFrom external sources.** `envFrom` references are resolved against
-  a corpus-wide index of ConfigMap/Secret documents: across all scanned
-  files (`ScanManifestFiles`), across the streams of a rendered
-  deployment surface (`ScanManifestCorpus`, used by the operator-bundle
-  gate), or within a single stream (`ScanManifestData`). `envFrom.prefix`
-  is applied when matching keys. Rendered surfaces never skip template
-  documents: a `{{`-bearing parse failure aborts the corpus scan. Same-named sources across files/namespaces are union-merged:
+  a corpus-wide, kind-qualified index of ConfigMap/Secret documents (a
+  `configMapRef` resolves only against ConfigMaps, a `secretRef` only
+  against Secrets): across all scanned files (`ScanManifestFiles`),
+  across the streams of a rendered deployment surface
+  (`ScanManifestCorpus`, used by the operator-bundle gate), or within a
+  single stream (`ScanManifestData`). `envFrom.prefix` is applied when
+  matching keys. Rendered surfaces never skip template documents: a
+  `{{`-bearing parse failure aborts the corpus scan, and a segment with
+  residual documents (unrecognized separator) is never template-skipped
+  in any entrypoint. Same-named sources across files/namespaces are union-merged:
   the error direction is a possible false positive, never a missed
   violation. Sources defined outside the scanned manifests (e.g.
   cluster-user-created objects) cannot be statically verified.
@@ -137,9 +142,11 @@ envelope is:
 - **Init-only certificate-generation exception.** A `kind: Job`
   workload (runs to completion) may mount writable CA/TLS material when
   the volume is a memory-backed emptyDir (`medium: Memory`, bounded
-  tmpfs) and its root filesystem is otherwise read-only -- the operator
-  chart's `certificate-bootstrap` Job pattern (issue #2548 acceptance
-  criterion 3). Disk-backed staging and every long-running kind
+  tmpfs) AND the staging container sets
+  `securityContext.readOnlyRootFilesystem: true` (the tmpfs is its only
+  writable path) -- the operator chart's `certificate-bootstrap` Job
+  pattern (issue #2548 acceptance criterion 3). Disk-backed staging and
+  every long-running kind
   (Deployment/StatefulSet/DaemonSet/ReplicaSet/CronJob/Pod) remain
   violations. Verified in UT-TLS-2548-009.
 - **Malformed workloads.** A workload document without a pod
@@ -148,15 +155,19 @@ envelope is:
 - **ephemeralContainers** are scanned like init containers.
 - **Source guards.** The AST scans exclude `_test.go`, `testdata`, and
   hidden directories; import aliases are resolved through each file's
-  import list. Dot-imports of `os` are not resolved (none exist in the
-  repository; a dot-import would fail lint anyway).
+  import list (string literals decoded via `strconv.Unquote`), and
+  dot-imports of `os`/`io/ioutil` flag bare write-API identifiers
+  (fail-closed). The ambient-env ownership exemption covers only files
+  directly in `pkg/shared/tls`, not subpackages.
 
 
 ## Residual risks
 
-- The operator repository's operand Deployment rendering is qualified
-  upstream of this repo's rendered-bundle gate only through that gate and
-  the operator's own follow-up (`jordigilh/kubernaut-operator#571`).
+- The rendered-bundle gate covers the operator chart and its development
+  dependencies only; operator-reconciled operand Deployments are rendered
+  at runtime from the Kubernaut CR, are absent from the CI-rendered
+  bundles, and cannot be qualified by this gate. They are owned by
+  `jordigilh/kubernaut-operator#571`.
 - The `tls-rendered-contract` job consumes the `build-operator` artifact
   and is wired into the `summary` job's needs; branch protection must
   include `summary` for merge gating.
