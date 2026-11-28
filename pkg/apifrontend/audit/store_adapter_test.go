@@ -2,6 +2,7 @@ package audit_test
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -85,7 +86,7 @@ var _ = Describe("StoreAdapter", func() {
 		{"UT-AF-1156-019", audit.EventJWTDelegation, map[string]string{"target_service": "kubernaut-agent"}, "apifrontend.jwt.delegation"},
 		{"UT-AF-1156-020", audit.EventSeverityTriageCompleted, map[string]string{"severity": "critical", "source_tier": "prometheus_rules"}, "apifrontend.severity_triage.completed"},
 		{"UT-AF-1156-021", audit.EventSeverityTriageFailed, map[string]string{"error": "llm timeout"}, "apifrontend.severity_triage.failed"},
-		{"UT-AF-1156-022", audit.EventTriageStarted, map[string]string{"session_id": "sess-1", "persona": "sre"}, "apifrontend.triage.started"},
+		{"UT-AF-1156-022", audit.EventTriageStarted, map[string]string{"session_id": "sess-1"}, "apifrontend.triage.started"},
 		{"UT-AF-1156-023", audit.EventTriageCompleted, map[string]string{"session_id": "sess-1", "triage_outcome": "delegated", "triage_duration_ms": "500"}, "apifrontend.triage.completed"},
 		{"UT-AF-1156-024", audit.EventRRCreated, map[string]string{"session_id": "sess-1", "rr_name": "rr-1", "rr_namespace": "default", "target_kind": "Deployment", "target_name": "web", "fingerprint": "fp1", "signal_name": "HighCPU"}, "apifrontend.rr.created"},
 		{"UT-AF-1156-025", audit.EventRRDeduplicated, map[string]string{"session_id": "sess-1", "fingerprint": "abc123", "existing_rr_name": "rr-1"}, "apifrontend.rr.deduplicated"},
@@ -391,6 +392,28 @@ var _ = Describe("StoreAdapter", func() {
 			Expect(payload.Fingerprint).To(Equal("fp-abc123"))
 			Expect(payload.SignalName).To(Equal("OOMKilled"),
 				"Issue #2043: SignalName is required for RR reconstruction parity with gateway.signal.received")
+		})
+	})
+
+	Describe("Issue #2716: triage.started payload carries no persona field (de-opinionated audit record, BR-AUDIT-005 / AU-3)", func() {
+		It("UT-AF-2716-001: EventTriageStarted persists session_id only, with no persona key on the wire", func() {
+			adapter.Emit(context.Background(), &audit.Event{
+				Type: audit.EventTriageStarted,
+				Detail: map[string]string{
+					"session_id": "sess-2716",
+				},
+			})
+			evt := store.lastEvent()
+			Expect(evt).NotTo(BeNil())
+			payload, ok := evt.EventData.GetApifrontendTriageStartedPayload()
+			Expect(ok).To(BeTrue(), "expected ApifrontendTriageStartedPayload variant")
+			Expect(payload.SessionID).To(Equal("sess-2716"))
+			// AU-3: the serialized event_data must not carry the legacy persona
+			// framing; actor attribution lives in actor_id (#2716).
+			raw, err := json.Marshal(evt.EventData)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(raw)).NotTo(ContainSubstring("persona"),
+				"Issue #2716: triage.started wire payload must not carry a persona field")
 		})
 	})
 

@@ -33,7 +33,7 @@ import (
 // group names AF's SAR authorization recognizes. Duplicated here (rather
 // than importing afPersonaGroupNames directly) only to keep this parity
 // test decoupled from an unrelated file's private variable; both must stay
-// in sync with the operator qualification persona tool contract.
+// in sync with the harness/demo fixture role contract (operators compose their own roles, #2716).
 var afPersonaGroupNamesForParity = []string{
 	"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver",
 }
@@ -397,7 +397,7 @@ var _ = Describe("AF persona tool RBAC parity (UT-INFRA-RBAC-002)", func() {
 		Expect(err).NotTo(HaveOccurred(), "PersonaToolClusterRolesYAML must succeed")
 	})
 
-	DescribeTable("generated ClusterRole tool set matches operator persona contract",
+	DescribeTable("generated ClusterRole tool set matches the fixture role contract",
 		func(persona string) {
 			expectedTools, ok := personaTools[persona]
 			Expect(ok).To(BeTrue(), "harness persona tool contract must define persona %q", persona)
@@ -411,7 +411,7 @@ var _ = Describe("AF persona tool RBAC parity (UT-INFRA-RBAC-002)", func() {
 				actualTools = append(actualTools, r.ResourceNames...)
 			}
 			Expect(actualTools).To(ConsistOf(toAnySlice(expectedTools)...),
-				"kubernaut-tool-%s ClusterRole tool set drifted from the operator persona contract.%s -- "+
+				"kubernaut-tool-%s ClusterRole tool set drifted from the harness fixture role contract.%s -- "+
 					"PersonaToolClusterRolesYAML must derive from LoadPersonaTools", persona, persona)
 		},
 		Entry("sre", "sre"),

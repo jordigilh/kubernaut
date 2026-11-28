@@ -44,6 +44,13 @@
 - **Expected Volume**: +100 events/day (RW admission lifecycle + startup re-registration)
 - **Authority**: ADR-058, Issue #1246 (graceful degradation), BR-WORKFLOW-007
 
+**Recent Changes** (v2.1 - November 27, 2026):
+- **API Frontend (AF)**: Removed the `persona` field from the
+  `apifrontend.triage.started` payload per [DD-AUDIT-011](DD-AUDIT-011-triage-started-payload-persona-removal.md)
+  (Issue #2716, de-opinionation): kubernaut carries no persona model, actor
+  attribution lives in `actor_id`. Wire-schema change is in-place (pre-GA,
+  no backwards-compatibility commitment). No consumer read the field.
+
 **Recent Changes** (v2.0 - May 19, 2026):
 - **API Frontend (AF)**: Added as P0 MUST service (8th P0, 13th overall) per Issue #1156 (SOC2 AU-2)
   - 30 `apifrontend.*` event types covering: auth (success/failure/denied), sessions (created/phase_changed/completed/auto_cancelled/retention_deleted), tools (executed), MCP (session_init/tool_failed), A2A (task_failed), triage (started/completed), severity (completed/failed), resilience (circuitbreaker.trip), config (reloaded/rejected), auth decorators (impersonation.created/jwt.delegation), remediation (rr.created/rr.deduplicated), user (decision), KA delegation (ka.delegated/ka.result_received), rate limiting (ratelimit.denied)

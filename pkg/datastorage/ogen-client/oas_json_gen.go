@@ -18658,10 +18658,6 @@ func (s *ApifrontendTriageStartedPayload) encodeFields(e *jx.Encoder) {
 		e.Str(s.SessionID)
 	}
 	{
-		e.FieldStart("persona")
-		s.Persona.Encode(e)
-	}
-	{
 		if s.ModelName.Set {
 			e.FieldStart("model_name")
 			s.ModelName.Encode(e)
@@ -18675,12 +18671,11 @@ func (s *ApifrontendTriageStartedPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfApifrontendTriageStartedPayload = [5]string{
+var jsonFieldsNameOfApifrontendTriageStartedPayload = [4]string{
 	0: "event_type",
 	1: "session_id",
-	2: "persona",
-	3: "model_name",
-	4: "query_length",
+	2: "model_name",
+	3: "query_length",
 }
 
 // Decode decodes ApifrontendTriageStartedPayload from json.
@@ -18714,16 +18709,6 @@ func (s *ApifrontendTriageStartedPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"session_id\"")
 			}
-		case "persona":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				if err := s.Persona.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"persona\"")
-			}
 		case "model_name":
 			if err := func() error {
 				s.ModelName.Reset()
@@ -18754,7 +18739,7 @@ func (s *ApifrontendTriageStartedPayload) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000111,
+		0b00000011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -18834,54 +18819,6 @@ func (s ApifrontendTriageStartedPayloadEventType) MarshalJSON() ([]byte, error) 
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *ApifrontendTriageStartedPayloadEventType) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes ApifrontendTriageStartedPayloadPersona as json.
-func (s ApifrontendTriageStartedPayloadPersona) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes ApifrontendTriageStartedPayloadPersona from json.
-func (s *ApifrontendTriageStartedPayloadPersona) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode ApifrontendTriageStartedPayloadPersona to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch ApifrontendTriageStartedPayloadPersona(v) {
-	case ApifrontendTriageStartedPayloadPersonaSre:
-		*s = ApifrontendTriageStartedPayloadPersonaSre
-	case ApifrontendTriageStartedPayloadPersonaOrchestrator:
-		*s = ApifrontendTriageStartedPayloadPersonaOrchestrator
-	case ApifrontendTriageStartedPayloadPersonaCicd:
-		*s = ApifrontendTriageStartedPayloadPersonaCicd
-	case ApifrontendTriageStartedPayloadPersonaDashboard:
-		*s = ApifrontendTriageStartedPayloadPersonaDashboard
-	case ApifrontendTriageStartedPayloadPersonaAudit:
-		*s = ApifrontendTriageStartedPayloadPersonaAudit
-	case ApifrontendTriageStartedPayloadPersonaApprover:
-		*s = ApifrontendTriageStartedPayloadPersonaApprover
-	default:
-		*s = ApifrontendTriageStartedPayloadPersona(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s ApifrontendTriageStartedPayloadPersona) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *ApifrontendTriageStartedPayloadPersona) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -23487,10 +23424,6 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("session_id")
 				e.Str(s.SessionID)
-			}
-			{
-				e.FieldStart("persona")
-				s.Persona.Encode(e)
 			}
 			{
 				if s.ModelName.Set {
@@ -29834,10 +29767,6 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 			{
 				e.FieldStart("session_id")
 				e.Str(s.SessionID)
-			}
-			{
-				e.FieldStart("persona")
-				s.Persona.Encode(e)
 			}
 			{
 				if s.ModelName.Set {

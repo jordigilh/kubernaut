@@ -155,9 +155,7 @@ func buildBeforeExecuteCallback(userCb func(ctx context.Context) (context.Contex
 				Detail:        detail,
 			})
 
-			triageDetail := map[string]string{
-				"persona": resolvePersona(user),
-			}
+			triageDetail := map[string]string{}
 			if ids.TaskID != "" {
 				triageDetail["task_id"] = ids.TaskID
 			}
@@ -325,38 +323,9 @@ func enrichRRDetail(ctx context.Context, detail map[string]string) {
 	}
 }
 
-// personaSRE is the default/fallback persona used when the user has no
-// group membership matching a more specific persona (or is unauthenticated).
-const personaSRE = "sre"
-
 // a2aMethodMessageSend is the A2A JSON-RPC method string for the default/
 // fallback and non-streaming send-message call paths.
 const a2aMethodMessageSend = "message/send"
-
-// resolvePersona maps the authenticated user's group membership to the
-// OpenAPI persona enum used in triage audit events.
-func resolvePersona(user *auth.UserIdentity) string {
-	if user == nil {
-		return personaSRE
-	}
-	for _, g := range user.Groups {
-		switch g {
-		case personaSRE:
-			return personaSRE
-		case "ai-orchestrator":
-			return "orchestrator"
-		case "cicd":
-			return "cicd"
-		case "observability":
-			return "dashboard"
-		case "l3-audit":
-			return "audit"
-		case "remediation-approver":
-			return "approver"
-		}
-	}
-	return personaSRE
-}
 
 // resolveA2AMethod maps the a2asrv CallContext method name to the corresponding
 // A2A JSON-RPC method string for audit events (AU-2/AU-3 compliance).

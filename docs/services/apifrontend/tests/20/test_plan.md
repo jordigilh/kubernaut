@@ -9,7 +9,7 @@
 
 ## 1. Introduction
 
-This test plan covers the 4 Data Store-native MCP tools that query the kubernaut Data Store (DS) via its OpenAPI REST API. These tools support the L3 Audit / Forensic Analyst persona and provide historical remediation data, workflow catalog, effectiveness scores, and audit trails.
+This test plan covers the 4 Data Store-native MCP tools that query the kubernaut Data Store (DS) via its OpenAPI REST API. These tools support the L3 Audit / Forensic Analyst role (historically "persona") and provide historical remediation data, workflow catalog, effectiveness scores, and audit trails.
 
 ## 2. Test Items
 

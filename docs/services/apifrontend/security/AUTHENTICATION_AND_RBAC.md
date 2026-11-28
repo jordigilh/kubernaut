@@ -2,8 +2,8 @@
 
 **Service:** kubernaut-apifrontend
 **NIST Controls:** AC-2, AC-3, AC-6, IA-2, IA-5, IA-8
-**Source of truth:** `pkg/apifrontend/auth/sar.go`, `charts/kubernaut/values.yaml` (persona ClusterRoles)
-**Last updated:** 2026-11-09
+**Source of truth:** `pkg/apifrontend/auth/sar.go` (per-tool SAR checks; role composition is operator-owned — see the demo example bundles in `test/fixtures/demo/rbac/`)
+**Last updated:** 2026-11-28
 
 ---
 
@@ -108,25 +108,192 @@ denials result in tool rejection and an audit event.
    ClusterRoleBindings.
 4. Results are cached for `sarCacheTTL` (default 30s) to reduce API server load.
 
+**Why these grants look unusual (and why that's fine).** Tool authorization is
+not a Kubernetes object operation, so the rule reuses RBAC as a policy engine
+over a **virtual resource**: `kubernaut.ai` / `tools` is never a real CRD or
+APIService — RBAC matching is pure string comparison against request
+attributes, so no registration is needed. The verb `use` follows the
+Kubernetes convention for capability-style grants (PodSecurityPolicy used
+`verbs: ["use"]` the same way), and `resourceNames` — normally an object name —
+discriminates the capability being granted. The check is a genuine SubjectAccessReview whose **subject** is the logged-in
+user: AF submits it with its own service account, setting the user's name and
+OIDC groups as the SAR subject (`sar.go` → `checkSARAttributes`,
+`Spec.User`/`Spec.Groups`). The RBAC engine answers for that subject, so it
+works with `kubectl auth can-i` (same question, asked manually), standard
+GitOps/IAM tooling, and K8s RBAC auditing, with no bespoke policy engine
+(rationale: [ADR-021](../adr/ADR-021-sar-based-tool-authorization.md)).
+
 ### `tools/list` Is Unfiltered
 
 Per [ADR-020](../adr/ADR-020-mcp-bridge-rbac-runtime.md), `tools/list` always
 returns all registered tools regardless of caller identity. Authorization is
 enforced only at `tools/call` execution time to eliminate TOCTOU races.
 
-### Persona ClusterRoles
+### Capability Roles (composition is the operator's)
 
-The Helm chart ships pre-built ClusterRoles for each persona. Bind them to
-OIDC groups via ClusterRoleBindings.
+The per-tool capability role is the product primitive: a ClusterRole
+enumerating tool names under `kubernaut.ai/tools` (verb `use`,
+resourceName = tool name), bound to OIDC groups via ClusterRoleBindings. The
+operator renders only unbound generic console roles (kubernaut-operator#682);
+which roles exist and which groups they bind to is the deployer's composition
+decision (#2716: only roles and grants — no user classification).
 
-| Persona | ClusterRole | Tool Count |
-|---------|-------------|-----------|
-| `sre` | `kubernaut-tool-sre` | 19 |
-| `ai-orchestrator` | `kubernaut-tool-ai-orchestrator` | 15 |
-| `observability` | `kubernaut-tool-observability` | 8 |
-| `l3-audit` | `kubernaut-tool-l3-audit` | 6 |
-| `cicd` | `kubernaut-tool-cicd` | 3 |
-| `remediation-approver` | `kubernaut-tool-remediation-approver` | 4 |
+The six demo bundles below (one role per demo IdP group) are a **worked
+example composition**, not a platform contract; an entirely different set of
+roles and group mappings is equally supported. They are also what the E2E
+harness renders (`test/infrastructure`, `UT-INFRA-RBAC-002`).
+
+### Operation → capability grant catalog
+
+Every AF operation is one tool name. To let a user perform an operation, grant
+`use` on `kubernaut.ai` `tools` with resourceName = the tool name (bound to one
+of the user's OIDC groups via a ClusterRoleBinding). "Example bundles" lists
+which of the six demo example compositions include the grant — pure
+information; compose your own.
+
+This table is drift-pinned by a two-link chain: `UT-DOC-2716-001`
+(`test/infrastructure/tool_catalog_doc_test.go`) pins catalog ↔
+`LoadPersonaTools` bidirectionally, and `TC-A-RBAC-01a–d`
+(`pkg/apifrontend/handler/manifest_validation_test.go`) pins that fixture
+contract ↔ the registered tool set (bridge + A2A). Together: no registered
+tool can be missing from the catalog, and the catalog cannot list a
+non-existent grant.
+
+<!-- tool-catalog:start -->
+| Operation | Grant (resourceName) | Example bundles | Notes |
+|---|---|---|---|
+| List remediations | `kubernaut_list_remediations` | all six | |
+| Get a remediation | `kubernaut_get_remediation` | all six | |
+| Cancel a remediation | `kubernaut_cancel_remediation` | sre | |
+| Watch remediation state | `kubernaut_watch` | all except l3-audit | |
+| Wait for KA session readiness | `kubernaut_await_session` | all except l3-audit | |
+| Initiate investigation (resource) | `kubernaut_investigate` | sre, ai-orchestrator | A2A + MCP bridge |
+| Initiate investigation (alert) | `kubernaut_investigate_alert` | sre, ai-orchestrator | |
+| Initiate remediation | `kubernaut_remediate` | sre, ai-orchestrator | |
+| Check existing remediation | `kubernaut_check_existing_remediation` | sre, ai-orchestrator | |
+| Approve / decline a RAR | `kubernaut_approve` | sre, remediation-approver | MCP/Console only — structurally removed from the A2A LLM toolset (DD-AF-006 consent guard) |
+| List approval requests | `kubernaut_list_approval_requests` | sre, ai-orchestrator, remediation-approver | |
+| Get an approval request | `kubernaut_get_approval_request` | sre, ai-orchestrator, remediation-approver | |
+| List workflows | `kubernaut_list_workflows` | sre, observability, l3-audit | |
+| Discover workflows (schemas) | `kubernaut_discover_workflows` | sre, ai-orchestrator | |
+| Select a workflow | `kubernaut_select_workflow` | sre, ai-orchestrator | |
+| Present a decision point | `kubernaut_present_decision` | sre, ai-orchestrator | MCP bridge name (canonical since #2713) |
+| Complete investigation | `kubernaut_complete` | sre, ai-orchestrator | |
+| Complete with no action | `kubernaut_complete_no_action` | sre | MCP/Console only (DD-AF-007) |
+| Cancel investigation session | `kubernaut_cancel` | sre, ai-orchestrator | |
+| Investigation session status | `kubernaut_status` | sre, ai-orchestrator | |
+| Message an investigation | `kubernaut_message` | sre, ai-orchestrator | |
+| Reconnect to a session | `kubernaut_reconnect` | sre, ai-orchestrator | |
+| List firing alerts | `kubernaut_list_alerts` | sre, ai-orchestrator | A2A + MCP bridge (single canonical name since #2713) |
+| Get alert details | `kubernaut_get_alert_details` | sre, ai-orchestrator | Chat/A2A only — not registered on the raw MCP bridge |
+| Remediation history | `kubernaut_get_remediation_history` | sre, l3-audit | |
+| Effectiveness metrics | `kubernaut_get_effectiveness` | sre, observability, l3-audit | |
+| Audit trail | `kubernaut_get_audit_trail` | sre, l3-audit | |
+| Read K8s objects | `kubectl_get` | sre, ai-orchestrator | |
+| List K8s objects | `kubectl_list` | sre, ai-orchestrator | |
+| List K8s events | `kubectl_list_events` | sre, ai-orchestrator | |
+| List fleet clusters | `list_clusters` | sre, ai-orchestrator | |
+<!-- tool-catalog:end -->
+
+Console read capabilities (`kubernaut_read_policy_scope`,
+`kubernaut_list_managed_resources`, `kubernaut_get_managed_resource`) are NOT
+part of this per-tool contract: they are granted by the operator-rendered
+`<ns>-console-reader` ClusterRole (see the
+[interactive-mode setup guide](../../../operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md)).
+
+### Roles the platform renders (and what they allow)
+
+The operator renders exactly three unbound ClusterRoles, prefixed with the
+Kubernaut CR's namespace. Everything else is operator-composed capability
+roles (#2716).
+
+> **Resolving `<ns>`:** the placeholder is the namespace of your Kubernaut
+> custom resource — `kubernaut-system` on a default install. Find yours with:
+> `kubectl get kubernaut -A -o custom-columns=NS:.metadata.namespace`. The
+> demo fixtures assume `kubernaut-system`.
+
+| ClusterRole | Rule | What it allows |
+|---|---|---|
+| `<ns>-console-access` | `kubernaut.ai` `console`, verb `use` | Passing the console login gate (checked only when `consoleAccessAuthorizationCheckEnabled=true`; default is auth-only) |
+| `<ns>-console-reader` | `kubernaut.ai` `tools`, verb `use`, resourceNames: `kubernaut_read_policy_scope`, `kubernaut_list_managed_resources`, `kubernaut_get_managed_resource` | The Console UI's read capabilities (policy scope, managed-resource projections) |
+| `<ns>-console-inventory-reader` | core API-group `get`/`list` on local-target resources | The Console's inventory projection reads |
+
+Bind them to your IdP groups via ClusterRoleBindings (see
+[`test/fixtures/demo/rbac/console-bindings.yaml`](../../../../test/fixtures/demo/rbac/console-bindings.yaml)
+for a worked example). All checks are deny-by-default.
+
+### Composing your own roles (quickstart)
+
+The platform ships no user-classification model. To give a group of users a
+set of capabilities, you write **one ClusterRole + one ClusterRoleBinding** —
+nothing else. Copy this, replace the three `EDIT` markers, apply with
+`kubectl apply -f`:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: my-oncall-role                       # EDIT: any name you want
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+      # EDIT: pick grants from the operation → capability grant catalog above
+      - "kubernaut_investigate"              # initiate investigations
+      - "kubernaut_list_alerts"              # see firing alerts
+      - "kubernaut_list_workflows"           # browse the workflow catalog
+      - "kubernaut_get_audit_trail"          # forensic reads
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: my-oncall-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: my-oncall-role                       # must match the role above
+subjects:
+  - kind: Group
+    name: platform-oncall                    # EDIT: your IdP group (JWT groups claim)
+    apiGroup: rbac.authorization.k8s.io
+```
+
+To also let those users into the Console, bind the rendered roles (these are
+`ClusterRoleBinding`s only — the roles already exist):
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: my-oncall-console-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-system-console-reader      # <ns>-console-reader
+subjects:
+  - kind: Group
+    name: platform-oncall
+    apiGroup: rbac.authorization.k8s.io
+```
+
+Verify what a user ends up with:
+
+```bash
+kubectl auth can-i use tools.kubernaut.ai/kubernaut_investigate \
+  --as=alice@example.com --as-group=platform-oncall
+```
+
+Design notes:
+- **One role can serve many groups** (add more `subjects`) and **one group can
+  hold many roles** (add more bindings) — combine freely.
+- The `resourceNames` list is the entire authorization surface: a user can do
+  exactly what the roles bound to their groups enumerate, nothing more
+  (deny-by-default, AC-6).
+- Users need **both** a tool-granting role (this recipe) *and* console-role
+  bindings if they use the Console UI; the two sets are independent.
+- For a complete worked composition (six example roles bound to demo IdP
+  groups), see [`test/fixtures/demo/rbac/example-tool-roles.yaml`](../../../../test/fixtures/demo/rbac/example-tool-roles.yaml).
 
 ### Enforcement Code Paths
 

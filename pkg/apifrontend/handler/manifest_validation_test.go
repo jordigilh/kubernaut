@@ -146,7 +146,10 @@ var _ = Describe("PrometheusRule manifest", func() {
 })
 
 // ---------------------------------------------------------------------------
-// TC-A-RBAC-01: Tool names in the operator persona contract must match bridge registration
+// TC-A-RBAC-01: Tool names in the demo/E2E fixture role contract must match
+// bridge registration. This pins the harness fixture (which roles and tools
+// the demo lanes provision), not a platform expectation about operator role
+// composition (#2716: operators compose their own capability roles).
 // ---------------------------------------------------------------------------
 
 var _ = Describe("RBAC tool name alignment", func() {
@@ -208,17 +211,17 @@ var _ = Describe("RBAC tool name alignment", func() {
 		return personas
 	}
 
-	It("TC-A-RBAC-01a: every tool in operator persona definitions must exist in bridge or A2A registration", func() {
+	It("TC-A-RBAC-01a: every tool in the fixture role contract must exist in bridge or A2A registration", func() {
 		personas := loadPersonas()
 		for persona, tools := range personas {
 			for _, tool := range tools {
 				Expect(allKnownTools).To(HaveKey(tool),
-					"persona %q references tool %q which is not registered in mcp_bridge.go or agent/root.go", persona, tool)
+					"fixture role %q references tool %q which is not registered in mcp_bridge.go or agent/root.go", persona, tool)
 			}
 		}
 	})
 
-	It("TC-A-RBAC-01b: every registered MCP tool must appear in at least one operator persona", func() {
+	It("TC-A-RBAC-01b: every registered MCP tool must appear in at least one fixture role bundle", func() {
 		personas := loadPersonas()
 		allPersonaTools := map[string]bool{}
 		for _, tools := range personas {
@@ -228,11 +231,11 @@ var _ = Describe("RBAC tool name alignment", func() {
 		}
 		for tool := range registeredTools {
 			Expect(allPersonaTools).To(HaveKey(tool),
-				"registered tool %q has no persona assignment in operator contract", tool)
+				"registered tool %q has no grant in the fixture role contract (operators compose their own roles; this pin only keeps the demo/E2E fixture complete)", tool)
 		}
 	})
 
-	It("TC-A-RBAC-01d: every A2A internal tool must appear in at least one persona", func() {
+	It("TC-A-RBAC-01d: every A2A internal tool must appear in at least one fixture role bundle", func() {
 		personas := loadPersonas()
 		allPersonaTools := map[string]bool{}
 		for _, tools := range personas {
@@ -242,20 +245,20 @@ var _ = Describe("RBAC tool name alignment", func() {
 		}
 		for tool := range a2aInternalTools {
 			Expect(allPersonaTools).To(HaveKey(tool),
-				"A2A internal tool %q has no persona assignment in operator contract", tool)
+				"A2A internal tool %q has no grant in the fixture role contract", tool)
 		}
 	})
 
-	It("TC-A-RBAC-01c: operator personas must use kubernaut_present_decision (MCP bridge name)", func() {
+	It("TC-A-RBAC-01c: fixture role bundles must use kubernaut_present_decision (MCP bridge name)", func() {
 		foundCanonicalName := false
 		for persona, tools := range loadPersonas() {
 			Expect(tools).NotTo(ContainElement("present_decision"),
-				"persona %q must not use the bare MCP tool name", persona)
+				"fixture role %q must not use the bare MCP tool name", persona)
 			if slices.Contains(tools, "kubernaut_present_decision") {
 				foundCanonicalName = true
 			}
 		}
-		Expect(foundCanonicalName).To(BeTrue(), "at least one operator persona must use the registered MCP bridge tool name")
+		Expect(foundCanonicalName).To(BeTrue(), "at least one fixture role bundle must use the registered MCP bridge tool name")
 	})
 })
 

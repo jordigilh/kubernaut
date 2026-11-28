@@ -14,6 +14,12 @@ This proposal defines Kubernaut's external integration strategy: **who** interac
 
 This is a proposal, not a committed design. Once accepted, persona definitions graduate into a formal ADR, and business requirements are extracted per-persona per-capability.
 
+> **Historical note (#2716):** the persona catalog below predates the
+> de-opinionation decision and was never graduated into an ADR. Kubernaut
+> ships no persona model: it exposes roles/capabilities, and operators decide
+> which user gets which functionality. Read the catalog as a description of
+> example user archetypes for integration design, not as a platform contract.
+
 ---
 
 ## Table of Contents

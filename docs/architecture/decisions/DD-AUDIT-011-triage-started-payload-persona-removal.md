@@ -1,0 +1,88 @@
+# DD-AUDIT-011: Remove the `persona` Field from the `apifrontend.triage.started` Audit Payload
+
+- **Status:** Accepted
+- **Date:** 2026-11-27
+- **Issue:** [#2716](https://github.com/jordigilh/kubernaut/issues/2716) (follow-up to #2713, umbrella #2701)
+- **Related:** [DD-AUDIT-003](DD-AUDIT-003-service-audit-trace-requirements.md) (per-service audit catalog), [ADR-034](ADR-034-unified-audit-table-design.md) (unified audit table schema), kubernaut-operator#682 (operator renders no persona roles)
+- **Compliance impact:** FedRAMP AU-3 (content of audit records), SOC2 CC7.2 (reconstruction completeness)
+
+## Context
+
+`ApifrontendTriageStartedPayload.persona` was a **required** field in the
+data-storage OpenAPI contract (`api/openapi/data-storage-v1.yaml`), described
+as "Detected/assigned persona from JWT role". It was populated by
+`resolvePersona()` in `pkg/apifrontend/launcher/launcher.go`, which mapped the
+authenticated user's OIDC group membership (`sre`, `ai-orchestrator`, `cicd`,
+`observability`, `l3-audit`, `remediation-approver`) onto a fixed
+six-value persona enum (`sre`, `orchestrator`, `cicd`, `dashboard`, `audit`,
+`approver`).
+
+This violated the product principle confirmed in #2716: **kubernaut exposes
+roles/capabilities; operators and SREs decide which user gets which
+functionality. Hardcoded personas are an opinionated shortcut the platform
+must not enforce.** Although the field was observability metadata and never an
+authorization input, it (a) baked persona framing into the AU-3 audit record
+and forensic reconstruction, and (b) required production code
+(`resolvePersona`) to carry a hardcoded group-to-persona mapping.
+
+## Decision
+
+**Decision (drop, information loss accepted):** the field recorded the
+user's group-derived classification at event time. That per-event snapshot
+is not recoverable from `actor_id` alone. Accepted because (a) no
+in-repo consumer read it — DataStorage reconstruction, query, and
+repository code never referenced the field; the ogen-generated client was
+the only Go surface; (b) post-#2716 the platform deliberately derives no
+user classification, so any replacement value would require resurrecting
+exactly the production persona logic the product principle forbids; and
+(c) group context remains joinable from the IdP/identity source of record
+when an investigation needs it. A rename (e.g. `detected_role`) was
+rejected for the same reason.
+
+Wire-schema changes (pre-GA, no backwards-compatibility commitment per the
+kubernaut-operator#682 convention):
+
+1. `api/openapi/data-storage-v1.yaml` — remove `persona` from
+   `ApifrontendTriageStartedPayload` (properties and `required`)
+2. Embedded spec copies regenerated (`pkg/audit/openapi_spec_data.yaml`,
+   `pkg/datastorage/server/middleware/openapi_spec_data.yaml`)
+3. ogen client regenerated (`pkg/datastorage/ogen-client`)
+4. `buildTriageStartedPayload` (`pkg/apifrontend/audit/store_adapter.go`) no
+   longer sets the field
+5. `resolvePersona()` / `personaSRE` and the `"persona"` detail key removed
+   from `pkg/apifrontend/launcher/launcher.go`
+
+## Compliance Mapping
+
+- **AU-3 (content of audit records):** the record still carries
+  `event_id`, `event_type`, `event_action`, `event_outcome`,
+  `actor_type`, `actor_id`, `correlation_id`, and `session_id`. Note the
+  information loss honestly: the removed field recorded the user's
+  group-derived classification *at event time*, which `actor_id` alone does
+  not preserve (the same actor can hold different group memberships across
+  sessions). No in-repo consumer read it, and post-#2716 the platform
+  deliberately derives no such classification — an investigator needing
+  group context must join against the IdP/identity source of record.
+- **SOC2 CC7.2 (reconstruction):** `correlation_id`-based reconstruction is
+  unaffected; `triage.started` remains the pipeline-start marker with
+  `session_id`. Wire acceptance is proven by `IT-DS-2716-001` (DataStorage
+  OpenAPI validation middleware accepts a persona-less `triage.started`
+  payload) and `UT-AF-2716-001/002` (store adapter wire shape, launcher
+  emission). The a2a_streaming IT uses an in-memory auditor and does not
+  exercise the DataStorage wire.
+
+## Consequences
+
+- **No backwards compatibility** (pre-GA, kubernaut-operator#682 convention):
+  the persona field is removed outright. Old records carrying `persona` are
+  not a supported input shape; any external consumer that grouped forensics
+  by that field must re-derive grouping from `actor_id`/group claims at the
+  source. None exist in-repo.
+- The six-value persona enum no longer exists anywhere in the audit contract.
+
+## Alternatives Considered
+
+1. **Rename to `role` / `detected_role`** — rejected: keeps production
+   persona-derivation logic alive and implies the platform assigns roles.
+2. **Keep as optional field** — rejected: same objection; a legacy-framing
+   field with no consumer is pure contract debt.

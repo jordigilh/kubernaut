@@ -43,7 +43,7 @@ sum(rate(af_tool_calls_total{result="throttled"}[5m]))
 ### 1. RBAC Denials
 
 1. Check `af_tool_calls_total{result="denied"}` by tool — which tool is being denied?
-2. Verify the user's OIDC groups are bound to the correct `kubernaut-tool-<persona>` ClusterRole via ClusterRoleBindings
+2. Verify the user's OIDC groups are bound (via ClusterRoleBindings) to a ClusterRole that grants the denied tool. The platform contract is per-tool capability roles (`kubernaut.ai/tools`, verb `use`, resourceName = tool name) — which roles exist and which groups they bind to is your composition. The demo fixture's `kubernaut-tool-<name>` / `demo-tool-<name>` roles are one example, not a required naming scheme
 3. Test SAR manually: `kubectl auth can-i use tools.kubernaut.ai/<toolName> --as=<user> --as-group=<group>`
 4. Check audit trail (DataStorage) for `EventMCPToolDenied` events with user/tool
 5. Check SAR cache TTL (`rbac.sarCacheTTL`) — permission changes take up to this duration to propagate

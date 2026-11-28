@@ -1,12 +1,12 @@
 # PR Review Prompt Template
 
-Use this prompt when asking the AI to review a pull request from all project personas.
+Use this prompt when asking the AI to review a pull request from all project review lenses.
 
 ---
 
 ## The Prompt
 
-> Review this PR. Audit every file changed from **all 8 personas** below. For each finding, assign a severity (P1 must-fix, P2 should-fix, P3 nit/hardening) and cite the specific file and line range. At the end, provide a summary verdict: **approve**, **approve-with-nits**, or **request-changes**.
+> Review this PR. Audit every file changed from **all 8 review lenses** below. For each finding, assign a severity (P1 must-fix, P2 should-fix, P3 nit/hardening) and cite the specific file and line range. At the end, provide a summary verdict: **approve**, **approve-with-nits**, or **request-changes**.
 >
 > ### 1. QE (Quality Engineering) -- "Can we ship this with confidence?"
 >

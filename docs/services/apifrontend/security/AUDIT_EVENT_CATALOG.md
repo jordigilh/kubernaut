@@ -79,7 +79,7 @@ type Event struct {
 
 | Event Type | Constant | NIST Control | Trigger | Detail Fields |
 |-----------|----------|-------------|---------|---------------|
-| `triage.started` | `EventTriageStarted` | AU-2, AU-12 | Triage pipeline begins for a session | `session_id`, `persona` |
+| `triage.started` | `EventTriageStarted` | AU-2, AU-12 | Triage pipeline begins for a session | `session_id` (actor attribution lives in the parent record's `actor_id`; the removed legacy role-label field is documented in DD-AUDIT-011) |
 | `triage.completed` | `EventTriageCompleted` | AU-2, AU-12 | Triage pipeline completes | `session_id`, `triage_outcome`, `triage_duration_ms` |
 | `severity_triage.completed` | `EventSeverityTriageCompleted` | AU-2, AU-12 | Severity triage pipeline determines severity | `severity`, `source_tier`, `api_group` (canonical target group, `""` = core; #2658), `namespace`, `kind`, `name` |
 | `severity_triage.ambiguous` | `EventSeverityTriageAmbiguous` | AU-2, AU-3, AU-12, CC7.2 | Correlating evidence exists but cannot be attributed to the target resource; no RR is created until the user confirms (DD-AF-012, #2027/#2028, #2658) | `ambiguity_reason` (`cluster_scoped_only` / `group_unscopable` / `alert_belongs_to_sibling`), `api_group`, `namespace`, `kind`, `name`, `candidate_alert`, `candidate_severity`, `candidate_api_groups` (JSON array; `""` element = core) |

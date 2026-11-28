@@ -235,7 +235,7 @@ Write 17 failing tests. MCP tests need the initialize+tools/list flow. Agent Car
 
 ### Phase 3: TDD Refactor
 
-100 Go Mistakes checklist, lint, coverage verification, 8-persona audit.
+100 Go Mistakes checklist, lint, coverage verification, 8-persona audit (historical review-process terminology, not the RBAC persona model — #2716).
 
 ---
 

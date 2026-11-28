@@ -138,7 +138,9 @@ the file onto the clone, matching startup behavior.
 The handler serves static JSON for all users regardless of their role.
 
 **Required behavior:** Agent Card response is filtered by the authenticated user's role,
-showing only the tools and capabilities the user's persona is authorized to use.
+showing only the tools and capabilities the user's role grants. (Historical wording:
+"user's persona" — the platform no longer models personas; roles/capabilities are
+operator-composed, #2716.)
 
 | TC ID | Preconditions | Input | Expected Result | Type |
 |-------|---------------|-------|-----------------|------|

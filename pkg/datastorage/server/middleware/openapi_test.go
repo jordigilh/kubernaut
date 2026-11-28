@@ -143,6 +143,46 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 			}
 			Expect(rr.Code).To(Equal(http.StatusCreated))
 		})
+		It("IT-DS-2716-001: accepts apifrontend.triage.started without the removed persona field (#2716, DD-AUDIT-011)", func() {
+			// Wire-contract proof for the audit-contract change: the embedded
+			// spec must validate a triage.started event_data carrying only
+			// event_type + session_id (persona was removed; BR-AUDIT-005 / AU-3).
+			body := `{
+			"version": "1.0",
+			"event_type": "apifrontend.triage.started",
+			"event_category": "apifrontend",
+			"event_action": "started",
+			"event_outcome": "success",
+			"correlation_id": "sess-2716",
+			"event_timestamp": "2026-11-27T12:00:00Z",
+			"actor_type": "user",
+			"actor_id": "alice",
+			"event_data": {
+				"event_type": "apifrontend.triage.started",
+				"session_id": "sess-2716"
+			}
+		}`
+
+			req := httptest.NewRequest("POST", "/api/v1/audit/events", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+
+			rr := httptest.NewRecorder()
+
+			handlerCalled := false
+			handler := validator.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handlerCalled = true
+				w.WriteHeader(http.StatusCreated)
+			}))
+
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusCreated {
+				GinkgoWriter.Printf("❌ Validation failed (triage.started persona removal test). Response: %d\nBody: %s\n", rr.Code, rr.Body.String())
+			}
+			Expect(rr.Code).To(Equal(http.StatusCreated),
+				"the embedded spec must accept a persona-less triage.started payload (#2716)")
+			Expect(handlerCalled).To(BeTrue(), "Handler should be called after successful validation")
+		})
 	})
 
 	Describe("Invalid Requests - Missing Required Fields", func() {

@@ -1,9 +1,14 @@
-# Demo-owned persona tool ClusterRoles and external group bindings (Issue #2703).
+# Demo-owned example capability-role bundles and external group bindings (Issue #2703).
 #
-# Example role composition for the roles-only model: the operator renders no
-# persona ClusterRoles, so the deployer defines them and binds them to their
-# IdP's groups (one group per persona, see
-# test/infrastructure/keycloak-realm-demo.json).
+# One worked example of role composition for the roles-only model — NOT the
+# model itself. The product primitive is the per-tool capability role: the
+# operator renders only the unbound console roles (kubernaut-system-console-
+# access/-reader/-inventory-reader) and no user-facing tool ClusterRoles or
+# ClusterRoleBindings, so the deployer composes tool roles and binds them to
+# their IdP's groups however they like. These six demo bundles happen to pair
+# one role with one demo IdP group
+# (see test/infrastructure/keycloak-realm-demo.json); an entirely different
+# group-to-role mapping is equally supported first-class behavior.
 #
 # Authorization model (AC-6): every tool call is authorized by a
 # SubjectAccessReview on kubernaut.ai/tools, verb=use, resourceName=<tool> --
@@ -14,9 +19,11 @@
 # on both surfaces.
 #
 # The automated demo harness applies the equivalent of these manifests after
-# operator reconciliation (infrastructure.BindAFPersonaRBAC); this file is the
-# human SOP artifact and is parity-tested against the shared persona contract
-# (test/infrastructure/demo_console_rbac_test.go, UT-INFRA-2703-004).
+# operator reconciliation (infrastructure.BindAFPersonaRBAC, the harness role
+# binder); this file is the
+# human SOP artifact and is parity-tested against the harness fixture
+# contract (test/infrastructure/demo_console_rbac_test.go, UT-INFRA-2703-004)
+# so the manual and automated demo paths do not drift.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

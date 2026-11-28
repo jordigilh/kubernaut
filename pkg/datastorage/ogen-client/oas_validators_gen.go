@@ -5531,17 +5531,6 @@ func (s *ApifrontendTriageStartedPayload) Validate() error {
 			Error: err,
 		})
 	}
-	if err := func() error {
-		if err := s.Persona.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "persona",
-			Error: err,
-		})
-	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -5551,25 +5540,6 @@ func (s *ApifrontendTriageStartedPayload) Validate() error {
 func (s ApifrontendTriageStartedPayloadEventType) Validate() error {
 	switch s {
 	case "apifrontend.triage.started":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s ApifrontendTriageStartedPayloadPersona) Validate() error {
-	switch s {
-	case "sre":
-		return nil
-	case "orchestrator":
-		return nil
-	case "cicd":
-		return nil
-	case "dashboard":
-		return nil
-	case "audit":
-		return nil
-	case "approver":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

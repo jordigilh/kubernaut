@@ -215,18 +215,19 @@ var _ = Describe("EAIGW stable Service alias", func() {
 	})
 })
 
-var _ = Describe("AF persona RBAC wiring", func() {
-	// #2702 (kubernaut-operator#682): the operator no longer renders persona
-	// ClusterRoles (kubernaut-tool-<persona>) or user-facing
+var _ = Describe("AF example-role RBAC wiring (harness fixture)", func() {
+	// #2702 (kubernaut-operator#682): the operator no longer renders user-facing
+	// tool ClusterRoles (kubernaut-tool-<name>) or user-facing
 	// ClusterRoleBindings, and spec.apiFrontend.rbac.roleBindings /
 	// consoleAccessGroups are gone from the CRD. The E2E harness owns this
 	// provisioning end to end: PersonaToolClusterRolesYAML renders BOTH the
-	// per-persona ClusterRoles and their group bindings, applied by
+	// per-group ClusterRoles and their group bindings, applied by
 	// afDeployE2ERBAC (AF-only lane) and BindAFPersonaRBAC (operator-managed
-	// AF lanes). This test pins that harness contract so the persona lists --
-	// which duplicate the operator's former persona contract -- cannot drift
-	// or silently lose the roles half.
-	It("UT-2492-RBAC-001 [BR-SECURITY-001]: harness renders every AF persona ClusterRole and its OIDC group binding", func() {
+	// AF lanes). This test pins that harness fixture contract so the fixture
+	// role lists -- which duplicate the operator's former role lists -- cannot
+	// drift or silently lose the roles half. (#2716: these are demo/E2E fixture
+	// roles; operators compose their own capability roles.)
+	It("UT-2492-RBAC-001 [BR-SECURITY-001]: harness renders every AF fixture role ClusterRole and its OIDC group binding", func() {
 		fullManifest, err := PersonaToolClusterRolesYAML()
 		Expect(err).NotTo(HaveOccurred())
 

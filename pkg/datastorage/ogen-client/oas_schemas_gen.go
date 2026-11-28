@@ -10734,15 +10734,15 @@ func (s *ApifrontendTriageCompletedPayloadTriageOutcome) UnmarshalText(data []by
 }
 
 // Triage started event payload (apifrontend.triage.started) — user NL query received, triage LLM
-// invocation begins (SOC2 CC7.2, Issue.
+// invocation begins (SOC2 CC7.2, Issue #1021). The legacy `persona` field was removed (#2716):
+// kubernaut carries no persona model, and actor attribution is carried by the parent audit record's
+// actor_id.
 // Ref: #/components/schemas/ApifrontendTriageStartedPayload
 type ApifrontendTriageStartedPayload struct {
 	// Event type for discriminator (matches parent event_type).
 	EventType ApifrontendTriageStartedPayloadEventType `json:"event_type"`
 	// InvestigationSession CRD name.
 	SessionID string `json:"session_id"`
-	// Detected/assigned persona from JWT role.
-	Persona ApifrontendTriageStartedPayloadPersona `json:"persona"`
 	// LLM model identifier used for triage.
 	ModelName OptString `json:"model_name"`
 	// Length of user query in characters (not the query itself, for privacy).
@@ -10757,11 +10757,6 @@ func (s *ApifrontendTriageStartedPayload) GetEventType() ApifrontendTriageStarte
 // GetSessionID returns the value of SessionID.
 func (s *ApifrontendTriageStartedPayload) GetSessionID() string {
 	return s.SessionID
-}
-
-// GetPersona returns the value of Persona.
-func (s *ApifrontendTriageStartedPayload) GetPersona() ApifrontendTriageStartedPayloadPersona {
-	return s.Persona
 }
 
 // GetModelName returns the value of ModelName.
@@ -10782,11 +10777,6 @@ func (s *ApifrontendTriageStartedPayload) SetEventType(val ApifrontendTriageStar
 // SetSessionID sets the value of SessionID.
 func (s *ApifrontendTriageStartedPayload) SetSessionID(val string) {
 	s.SessionID = val
-}
-
-// SetPersona sets the value of Persona.
-func (s *ApifrontendTriageStartedPayload) SetPersona(val ApifrontendTriageStartedPayloadPersona) {
-	s.Persona = val
 }
 
 // SetModelName sets the value of ModelName.
@@ -10828,76 +10818,6 @@ func (s *ApifrontendTriageStartedPayloadEventType) UnmarshalText(data []byte) er
 	switch ApifrontendTriageStartedPayloadEventType(data) {
 	case ApifrontendTriageStartedPayloadEventTypeApifrontendTriageStarted:
 		*s = ApifrontendTriageStartedPayloadEventTypeApifrontendTriageStarted
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Detected/assigned persona from JWT role.
-type ApifrontendTriageStartedPayloadPersona string
-
-const (
-	ApifrontendTriageStartedPayloadPersonaSre          ApifrontendTriageStartedPayloadPersona = "sre"
-	ApifrontendTriageStartedPayloadPersonaOrchestrator ApifrontendTriageStartedPayloadPersona = "orchestrator"
-	ApifrontendTriageStartedPayloadPersonaCicd         ApifrontendTriageStartedPayloadPersona = "cicd"
-	ApifrontendTriageStartedPayloadPersonaDashboard    ApifrontendTriageStartedPayloadPersona = "dashboard"
-	ApifrontendTriageStartedPayloadPersonaAudit        ApifrontendTriageStartedPayloadPersona = "audit"
-	ApifrontendTriageStartedPayloadPersonaApprover     ApifrontendTriageStartedPayloadPersona = "approver"
-)
-
-// AllValues returns all ApifrontendTriageStartedPayloadPersona values.
-func (ApifrontendTriageStartedPayloadPersona) AllValues() []ApifrontendTriageStartedPayloadPersona {
-	return []ApifrontendTriageStartedPayloadPersona{
-		ApifrontendTriageStartedPayloadPersonaSre,
-		ApifrontendTriageStartedPayloadPersonaOrchestrator,
-		ApifrontendTriageStartedPayloadPersonaCicd,
-		ApifrontendTriageStartedPayloadPersonaDashboard,
-		ApifrontendTriageStartedPayloadPersonaAudit,
-		ApifrontendTriageStartedPayloadPersonaApprover,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ApifrontendTriageStartedPayloadPersona) MarshalText() ([]byte, error) {
-	switch s {
-	case ApifrontendTriageStartedPayloadPersonaSre:
-		return []byte(s), nil
-	case ApifrontendTriageStartedPayloadPersonaOrchestrator:
-		return []byte(s), nil
-	case ApifrontendTriageStartedPayloadPersonaCicd:
-		return []byte(s), nil
-	case ApifrontendTriageStartedPayloadPersonaDashboard:
-		return []byte(s), nil
-	case ApifrontendTriageStartedPayloadPersonaAudit:
-		return []byte(s), nil
-	case ApifrontendTriageStartedPayloadPersonaApprover:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ApifrontendTriageStartedPayloadPersona) UnmarshalText(data []byte) error {
-	switch ApifrontendTriageStartedPayloadPersona(data) {
-	case ApifrontendTriageStartedPayloadPersonaSre:
-		*s = ApifrontendTriageStartedPayloadPersonaSre
-		return nil
-	case ApifrontendTriageStartedPayloadPersonaOrchestrator:
-		*s = ApifrontendTriageStartedPayloadPersonaOrchestrator
-		return nil
-	case ApifrontendTriageStartedPayloadPersonaCicd:
-		*s = ApifrontendTriageStartedPayloadPersonaCicd
-		return nil
-	case ApifrontendTriageStartedPayloadPersonaDashboard:
-		*s = ApifrontendTriageStartedPayloadPersonaDashboard
-		return nil
-	case ApifrontendTriageStartedPayloadPersonaAudit:
-		*s = ApifrontendTriageStartedPayloadPersonaAudit
-		return nil
-	case ApifrontendTriageStartedPayloadPersonaApprover:
-		*s = ApifrontendTriageStartedPayloadPersonaApprover
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

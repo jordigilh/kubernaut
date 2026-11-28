@@ -62,9 +62,9 @@ API server load.
 - Fail-closed: SAR errors result in tool denial
 - Cache: SHA256-keyed TTL cache with `sync.RWMutex`
 
-### Helm Integration
+### Helm Integration (historical, superseded by kubernaut-operator#682 and #2716)
 
-Per-persona ClusterRoles are shipped via `values.yaml`:
+Earlier chart versions shipped per-persona ClusterRoles via `values.yaml`:
 
 ```yaml
 apifrontend.config.rbac.personas:
@@ -72,8 +72,11 @@ apifrontend.config.rbac.personas:
   cicd: [tool1, ...]
 ```
 
-Each persona generates a `kubernaut-tool-<persona>` ClusterRole with
-`resourceNames` restricting access to specific tools.
+Each entry generated a `kubernaut-tool-<name>` ClusterRole with
+`resourceNames` restricting access to specific tools. The operator no longer
+renders user-facing tool roles: capability-role composition and group
+bindings are the deployer's decision, and the six historical bundles survive
+only as the demo/E2E example composition (#2716).
 
 ## Consequences
 

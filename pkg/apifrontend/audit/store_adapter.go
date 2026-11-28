@@ -669,10 +669,12 @@ func buildSeverityTriageFailedPayload(e *Event) ogenclient.AuditEventRequestEven
 
 func buildTriageStartedPayload(e *Event) ogenclient.AuditEventRequestEventData {
 	d := e.Detail
+	// #2716: the legacy `persona` field was removed from the audit contract
+	// (DD-AUDIT-011). Actor attribution is carried by the parent audit
+	// record's actor_id; kubernaut derives no persona in production code.
 	return ogenclient.NewApifrontendTriageStartedPayloadAuditEventRequestEventData(ogenclient.ApifrontendTriageStartedPayload{
 		EventType: ogenclient.ApifrontendTriageStartedPayloadEventTypeApifrontendTriageStarted,
 		SessionID: detailStr(d, "session_id"),
-		Persona:   ogenclient.ApifrontendTriageStartedPayloadPersona(detailStr(d, "persona")),
 	})
 }
 
