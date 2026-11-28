@@ -8,7 +8,7 @@ require (
 	github.com/Alcova-AI/adk-anthropic-go/v2 v2.0.13
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/a2aproject/a2a-go v0.3.15
-	github.com/a2aproject/a2a-go/v2 v2.8.0
+	github.com/a2aproject/a2a-go/v2 v2.9.0
 	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/anthropics/anthropic-sdk-go v1.84.0
 	github.com/cloudwego/eino v0.9.23
@@ -36,7 +36,7 @@ require (
 	github.com/lestrrat-go/jwx/v3 v3.4.0
 	github.com/lib/pq v1.12.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/ogen-go/ogen v1.24.0
+	github.com/ogen-go/ogen v1.25.0
 	github.com/onsi/ginkgo/v2 v2.34.0
 	github.com/onsi/gomega v1.44.0
 	github.com/open-policy-agent/opa v1.22.4
@@ -47,7 +47,7 @@ require (
 	github.com/prometheus/prometheus v0.316.0
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	github.com/slack-go/slack v0.35.0
+	github.com/slack-go/slack v0.36.0
 	github.com/sony/gobreaker/v2 v2.4.0
 	github.com/tektoncd/pipeline v1.16.0
 	github.com/vektah/gqlparser/v2 v2.5.64
