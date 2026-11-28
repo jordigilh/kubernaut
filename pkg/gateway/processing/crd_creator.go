@@ -25,7 +25,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -33,7 +32,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/cancellation"
 	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
@@ -48,16 +46,16 @@ type RetryObserver interface {
 // CRDCreator converts NormalizedSignal to RemediationRequest CRD
 //
 // This component is responsible for:
-// 1. Generating unique CRD names (rr-{fingerprint[:12]}-{uuid[:8]})
+// 1. Generating unique CRD names (rr-{fingerprint[:12]}-{uuid-hex[:12]})
 // 2. Populating CRD spec from signal data
 // 3. Adding required labels for querying/filtering
 // 4. Creating CRD in Kubernetes via API
 // 5. Recording metrics (success/failure)
 //
 // CRD naming (DD-AUDIT-CORRELATION-002):
-// - Format: rr-{fingerprint[:12]}-{uuid[:8]}
-// - Example: rr-b157a3a9e42f-1c2b5576
-// - Reason: Human-readable fingerprint prefix + UUID suffix for zero collision risk
+// - Format: rr-{fingerprint[:12]}-{uuid-hex[:12]}
+// - Example: rr-b157a3a9e42f-1c2b5576a3f0
+// - Reason: Human-readable fingerprint prefix + random 48-bit UUID suffix
 type CRDCreator struct {
 	k8sClient           k8s.ClientInterface   // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
 	logger              logr.Logger           // DD-005: logr.Logger for unified logging
@@ -114,9 +112,9 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 }
 
 // Note: createCRDWithRetry and its error-classification/retry-handler methods
-// (handleAlreadyExistsError, shouldRetryError, logSuccessAfterRetry,
-// wrapRetryExhaustedError, waitWithBackoff, getErrorTypeString) live in
-// crd_creator_retry.go (Wave 6 GREEN: file-size remediation).
+// (shouldRetryError, logSuccessAfterRetry, wrapRetryExhaustedError,
+// waitWithBackoff, getErrorTypeString) live in crd_creator_retry.go
+// (Wave 6 GREEN: file-size remediation).
 
 // CreateRemediationRequest creates a RemediationRequest CRD from a signal
 //
@@ -133,7 +131,7 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 //	apiVersion: remediation.kubernaut.ai/v1alpha1
 //	kind: RemediationRequest
 //	metadata:
-//	  name: rr-<fingerprint[:12]>-<uuid[:8]>
+//	  name: rr-<fingerprint[:12]>-<uuid-hex[:12]>
 //	  namespace: <controller-namespace>
 //	spec:
 //	  signalFingerprint: <fingerprint>
@@ -184,11 +182,6 @@ func (c *CRDCreator) CreateRemediationRequest(
 	// Create CRD in Kubernetes with retry logic
 	// BR-GATEWAY-112: Retry logic for transient K8s API errors
 	if err := c.createCRDWithRetry(ctx, rr, signal); err != nil {
-		// Check if CRD already exists (e.g., Redis TTL expired but K8s CRD still exists)
-		// This is normal behavior - Redis TTL is shorter than CRD lifecycle
-		if k8serrors.IsAlreadyExists(err) {
-			return c.recoverExistingCRDOnConflict(ctx, crdName, signal, startTime)
-		}
 		return nil, c.buildCreationFailureError(err, crdName, signal, startTime)
 	}
 
@@ -209,16 +202,17 @@ func (c *CRDCreator) CreateRemediationRequest(
 }
 
 // generateCRDName builds a unique CRD name per DD-AUDIT-CORRELATION-002:
-// rr-{fingerprint-prefix[:12]}-{uuid-suffix[:8]}. The fingerprint prefix gives
-// human-readable correlation for debugging; the UUID suffix guarantees zero
-// collision risk across occurrences of the same signal. Supersedes DD-015
+// rr-{fingerprint-prefix[:12]}-{uuid-hex[:12]}. The fingerprint prefix gives
+// human-readable correlation for debugging; the suffix is the first 12 hex
+// chars of a random UUID (48 bits, dashes removed), so two occurrences of the
+// same signal only collide with probability ~2^-48 per pair. Supersedes DD-015
 // (timestamp-based naming). Extracted from CreateRemediationRequest (funlen).
 func generateCRDName(fingerprint string) string {
 	fingerprintPrefix := fingerprint
 	if len(fingerprintPrefix) > 12 {
 		fingerprintPrefix = fingerprintPrefix[:12]
 	}
-	shortUUID := uuid.New().String()[:8]
+	shortUUID := strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
 	return fmt.Sprintf("rr-%s-%s", fingerprintPrefix, shortUUID)
 }
 
@@ -280,93 +274,6 @@ func (c *CRDCreator) buildRemediationRequestCRD(crdName string, signal *types.No
 			// DD-GATEWAY-011: Deduplication lives in Status (initialized by StatusUpdater)
 		},
 	}
-}
-
-// recoverExistingCRDOnConflict handles the AlreadyExists race (e.g., Redis TTL
-// expired but the K8s CRD still exists — normal behavior since Redis TTL is
-// shorter than CRD lifecycle): fetch and return the existing CRD instead of
-// treating this as a failure. Retries the fetch up to 3 times with the shared
-// backoff (~50ms, then ~100ms, ±10% jitter) to absorb any residual
-// read-after-write lag; the wait is context-aware. Extracted from
-// CreateRemediationRequest (funlen).
-func (c *CRDCreator) recoverExistingCRDOnConflict(
-	ctx context.Context,
-	crdName string,
-	signal *types.NormalizedSignal,
-	startTime time.Time,
-) (*remediationv1alpha1.RemediationRequest, error) {
-	c.logger.V(1).Info("RemediationRequest CRD already exists (Redis TTL expired, CRD persists)",
-		"name", crdName,
-		"namespace", c.controllerNamespace,
-		"fingerprint", signal.Fingerprint,
-	)
-
-	var existing *remediationv1alpha1.RemediationRequest
-	var fetchErr error
-	const maxFetchAttempts = 3
-	// Fixed short delays instead of c.retryConfig (BR-GATEWAY-113): this only
-	// absorbs read-after-write lag on a Get, while retryConfig is the create
-	// retry profile (100ms initial, up to 5s).
-	fetchBackoff := backoff.Config{
-		BasePeriod:    50 * time.Millisecond,
-		MaxPeriod:     200 * time.Millisecond,
-		Multiplier:    2.0,
-		JitterPercent: 10,
-	}
-	attempts := 0
-	abandoned := false
-fetchLoop:
-	for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
-		attempts = attempt
-		existing, fetchErr = c.k8sClient.GetRemediationRequest(ctx, c.controllerNamespace, crdName)
-		if fetchErr == nil {
-			break // Successfully fetched
-		}
-
-		if attempt < maxFetchAttempts {
-			// Shared exponential backoff with jitter: ~50ms, then ~100ms
-			backoffDelay := fetchBackoff.Calculate(int32(attempt))
-			c.logger.V(1).Info("CRD fetch failed, retrying after backoff",
-				"name", crdName,
-				"attempt", attempt,
-				"backoff_ms", backoffDelay.Milliseconds(),
-				"error", fetchErr)
-			// Context-aware wait (graceful shutdown), as in waitWithBackoff
-			select {
-			case <-time.After(backoffDelay):
-			case <-ctx.Done():
-				fetchErr = fmt.Errorf("%w (last fetch error: %w)", ctx.Err(), fetchErr)
-				abandoned = true
-				break fetchLoop
-			}
-		}
-	}
-
-	if fetchErr != nil {
-		err := fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", attempts, fetchErr)
-		if abandoned {
-			err = fmt.Errorf("CRD exists but fetch abandoned after %d attempts: %w", attempts, fetchErr)
-		}
-		c.metrics.CRDCreationErrors.WithLabelValues("fetch_existing_failed").Inc()
-		return nil, NewCRDCreationError(CRDCreationErrorParams{
-			Fingerprint: signal.Fingerprint,
-			Namespace:   c.controllerNamespace,
-			CRDName:     crdName,
-			SignalType:  signal.SourceType,
-			SignalName:  signal.SignalName,
-			Attempts:    attempts,
-			StartTime:   startTime,
-			Err:         err,
-		})
-	}
-
-	c.logger.Info("Reusing existing RemediationRequest CRD (Redis TTL expired)",
-		"name", crdName,
-		"namespace", c.controllerNamespace,
-		"fingerprint", signal.Fingerprint,
-	)
-
-	return existing, nil
 }
 
 // buildCreationFailureError records metrics/logs and builds the structured

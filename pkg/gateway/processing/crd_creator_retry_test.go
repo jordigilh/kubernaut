@@ -470,8 +470,10 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 
 	Context("HTTP 409 Conflict Handling", func() {
 		It("should NOT retry on HTTP 409 (already exists)", func() {
-			// BR-GATEWAY-112: Error Classification (409 is non-retryable, idempotent)
-			// Already exists is not an error condition
+			// BR-GATEWAY-112: Error Classification (409 is non-retryable)
+			// #2718: in production the circuit-breaker client absorbs 409
+			// (BR-GATEWAY-CIRCUIT-BREAKER-IDEMPOTENT-FIX), so the CRDCreator never
+			// sees it. With a bare client a 409 is a non-retryable "conflict".
 
 			// Setup: Fake client with interceptor (ADR-004)
 			callCount.Store(0)
@@ -497,70 +499,14 @@ var _ = Describe("CRDCreator Retry Logic", func() {
 			// Create test signal (with required resource info per BR-GATEWAY-TARGET-RESOURCE-VALIDATION)
 			signal := newTestSignal("test-fingerprint-409", "TestAlert409")
 
-			// Execute: Create CRD (should fail immediately but gracefully)
-			_, _ = creator.CreateRemediationRequest(ctx, signal)
+			// Execute: Create CRD (should fail immediately, no retry)
+			rr, err := creator.CreateRemediationRequest(ctx, signal)
 
-			// Verify: Immediate failure (no retry), but CRD is fetched
-			// Note: The actual implementation fetches the existing CRD, so this test
-			// verifies the retry logic doesn't kick in for 409
-			Expect(callCount.Load()).To(Equal(int32(1)), "Should have made exactly 1 attempt (no retry)")
-		})
-	})
-
-	// #1523: fetch-retry in recoverExistingCRDOnConflict uses the shared
-	// backoff (with jitter) and is context-aware, like waitWithBackoff.
-	Context("Existing CRD fetch retry", func() {
-		It("should retry fetching the existing CRD and return it", func() {
-			// BR-GATEWAY-113: transient Get failures are retried with backoff
-			getCount := &atomic.Int32{}
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithInterceptorFuncs(interceptor.Funcs{
-					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-						if getCount.Add(1) < 3 {
-							return apierrors.NewServiceUnavailable("apiserver catching up")
-						}
-						obj.SetName(key.Name)
-						obj.SetNamespace(key.Namespace)
-						return nil
-					},
-				}).
-				Build()
-			creator = processing.NewCRDCreator(k8s.NewClient(fakeClient), logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
-			signal := newTestSignal("test-fingerprint-fetch-retry", "TestAlertFetchRetry")
-
-			rr, err := creator.RecoverExistingCRDOnConflictForTest(ctx, "rr-existing", signal, time.Now())
-
-			Expect(err).ToNot(HaveOccurred())
-			Expect(rr.Name).To(Equal("rr-existing"))
-			Expect(getCount.Load()).To(Equal(int32(3)), "should fetch until the 3rd attempt succeeds")
-		})
-
-		It("should stop retrying the fetch when the context is cancelled", func() {
-			// BR-GATEWAY-113: backoff wait is context-aware (graceful shutdown)
-			fetchCtx, cancelFetch := context.WithCancel(context.Background())
-			defer cancelFetch()
-
-			getCount := &atomic.Int32{}
-			fakeClient = fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithInterceptorFuncs(interceptor.Funcs{
-					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-						getCount.Add(1)
-						cancelFetch() // shutdown starts while the fetch is failing
-						return apierrors.NewServiceUnavailable("apiserver unavailable")
-					},
-				}).
-				Build()
-			creator = processing.NewCRDCreator(k8s.NewClient(fakeClient), logger, metricsInst, retryConfig, &mocks.NoopRetryObserver{}, "kubernaut-system")
-			signal := newTestSignal("test-fingerprint-fetch-cancel", "TestAlertFetchCancel")
-
-			rr, err := creator.RecoverExistingCRDOnConflictForTest(fetchCtx, "rr-existing", signal, time.Now())
-
+			// Verify: Immediate failure (no retry)
+			Expect(err).To(HaveOccurred(), "a bare-client 409 is reported, not swallowed")
+			Expect(apierrors.IsAlreadyExists(err)).To(BeTrue(), "the 409 stays in the error chain")
 			Expect(rr).To(BeNil())
-			Expect(errors.Is(err, context.Canceled)).To(BeTrue(), "error should report the cancellation")
-			Expect(err.Error()).To(ContainSubstring("fetch abandoned after 1 attempts"), "a cancelled wait is not a failed fetch")
-			Expect(getCount.Load()).To(Equal(int32(1)), "no further fetch attempts after cancellation")
+			Expect(callCount.Load()).To(Equal(int32(1)), "Should have made exactly 1 attempt (no retry)")
 		})
 	})
 

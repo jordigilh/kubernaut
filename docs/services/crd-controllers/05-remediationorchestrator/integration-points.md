@@ -26,13 +26,10 @@ func (c *CRDCreator) CreateRemediationRequest(
         return nil, err
     }
 
-    crdName := generateCRDName(signal.Fingerprint) // "rr-{fingerprint[:12]}-{uuid[:8]}"
+    crdName := generateCRDName(signal.Fingerprint) // "rr-{fingerprint[:12]}-{uuid-hex[:12]}"
     rr := c.buildRemediationRequestCRD(crdName, signal)
 
     if err := c.createCRDWithRetry(ctx, rr, signal); err != nil {
-        if k8serrors.IsAlreadyExists(err) {
-            return c.recoverExistingCRDOnConflict(ctx, crdName, signal, startTime)
-        }
         return nil, c.buildCreationFailureError(err, crdName, signal, startTime)
     }
     return rr, nil

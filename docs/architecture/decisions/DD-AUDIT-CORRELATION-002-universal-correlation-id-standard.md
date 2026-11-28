@@ -85,9 +85,9 @@ correlationID := string(remediationRequest.UID)
 // ✅ CORRECT: UUID-based name generation
 import "github.com/google/uuid"
 
-shortUUID := uuid.New().String()[:8]  // 8-char suffix
+shortUUID := strings.ReplaceAll(uuid.New().String(), "-", "")[:12]  // 12 hex chars (48 random bits)
 crdName := fmt.Sprintf("rr-%s-%s", fingerprintPrefix, shortUUID)
-// Result: "rr-pod-crash-f8a3b9c2"
+// Result: "rr-pod-crash-f8a3b9c27d41"
 
 // ❌ INCORRECT: Timestamp-based (collision risk)
 timestamp := time.Now().Unix()
@@ -97,9 +97,11 @@ crdName := fmt.Sprintf("rr-%s-%d", fingerprintPrefix, timestamp)
 
 **Format**: `rr-{fingerprint-prefix}-{uuid-suffix}`
 - `fingerprint-prefix`: First 12 chars of signal fingerprint (human-readable context)
-- `uuid-suffix`: 8 chars from UUID (guaranteed uniqueness)
+- `uuid-suffix`: first 12 hex chars of a random UUID, dashes removed (48 random bits)
 
-**Example**: `"rr-pod-crash-f8a3b9c2"`
+**Example**: `"rr-pod-crash-f8a3b9c27d41"`
+
+> **Update (2026-11, #2718)**: the suffix was 8 hex chars (32 bits, ~2^-32 collision odds per pair of names with the same prefix). Widened to 12 hex chars (48 bits, ~2^-48). A collision is still possible in theory; it is not "zero risk".
 
 ---
 
@@ -128,15 +130,15 @@ crdName := fmt.Sprintf("rr-%s-%d", fingerprintPrefix, timestamp)
 
 **NEW Gateway Pattern (UUID-Based)**:
 ```go
-shortUUID := uuid.New().String()[:8]
+shortUUID := strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
 crdName := fmt.Sprintf("rr-%s-%s", fingerprintPrefix, shortUUID)
-// Zero collision risk: UUID guarantees uniqueness (2^128 space)
+// 48 random bits: ~2^-48 collision odds per pair with the same fingerprint prefix
 ```
 
 **Benefits**:
-1. ✅ **Zero collision risk**: UUID v4 has 122 bits of randomness
+1. ✅ **Negligible collision risk**: the 12-hex-char suffix carries 48 random bits of the UUID v4
 2. ✅ **Human-readable**: Fingerprint prefix provides context
-3. ✅ **Consistent length**: 24 chars (well under K8s 253-char limit)
+3. ✅ **Consistent length**: 28 chars (well under K8s 253-char limit)
 4. ✅ **Industry standard**: Docker, Kubernetes use similar patterns
 
 ---
@@ -185,8 +187,8 @@ fingerprintPrefix := signal.Fingerprint
 if len(fingerprintPrefix) > 12 {
     fingerprintPrefix = fingerprintPrefix[:12]
 }
-// DD-AUDIT-CORRELATION-002: Use UUID suffix for guaranteed uniqueness
-shortUUID := uuid.New().String()[:8]
+// DD-AUDIT-CORRELATION-002: random UUID suffix (12 hex chars, 48 bits)
+shortUUID := strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
 crdName := fmt.Sprintf("rr-%s-%s", fingerprintPrefix, shortUUID)
 ```
 
@@ -287,7 +289,7 @@ grep -r "correlationID := string(.*\.UID)" \
 # Verify UUID-based name generation
 grep -A 5 "crdName :=" pkg/gateway/processing/crd_creator.go
 
-# Expected: uuid.New().String()[:8]
+# Expected: strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
 ```
 
 ---
