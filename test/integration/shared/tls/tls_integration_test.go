@@ -446,4 +446,48 @@ var _ = Describe("TLS Integration Tests (#493)", func() {
 		runOutput, runErr := run.CombinedOutput()
 		Expect(runErr).ToNot(HaveOccurred(), strings.TrimSpace(string(runOutput)))
 	})
+
+	// IT-TLS-2545-002: BR-SECURITY-2545 requires explicit TLS_CA_FILE-driven
+	// transports to hot-reload a valid CA rotation, and to retain the
+	// last-known-good transport after an invalid rotation. Proof is by real
+	// HTTPS round trips inside a read-only Linux container (composition of
+	// env -> StartCAFileWatcher -> fsnotify -> CAReloader pool swap -> live
+	// request), not by pool identity, which UT-TLS-756-012/013 already cover
+	// at the unit level. The child process is required because macOS kqueue
+	// directory watches do not attribute fsnotify events to file names.
+	It("IT-TLS-2545-002: should hot-reload TLS_CA_FILE transports and keep last-known-good after invalid rotation", func() {
+		repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
+		Expect(err).ToNot(HaveOccurred())
+		binaryDir, err := os.MkdirTemp("", "tls-rotate-child-bin-*")
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() { Expect(os.RemoveAll(binaryDir)).To(Succeed()) })
+		binaryPath := filepath.Join(binaryDir, "rotatechild")
+
+		buildCtx, cancelBuild := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancelBuild()
+		build := exec.CommandContext(buildCtx, "go", "build", "-o", binaryPath, "./test/integration/shared/tls/rotatechild")
+		build.Dir = repoRoot
+		build.Env = append(os.Environ(),
+			"CGO_ENABLED=0",
+			"GOOS=linux",
+			"GOARCH="+runtime.GOARCH,
+		)
+		buildOutput, buildErr := build.CombinedOutput()
+		Expect(buildErr).ToNot(HaveOccurred(), string(buildOutput))
+
+		runCtx, cancelRun := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancelRun()
+		run := exec.CommandContext(runCtx, "podman", "run", "--rm", "--read-only",
+			"--user", "1001",
+			// Memory-backed /tmp: the only writable location, and only for
+			// the child's own rotation mechanics -- aligned with the
+			// issue #2548 threat model of minimizing disk-backed staging.
+			"--tmpfs", "/tmp:rw,size=64m,mode=1777",
+			"--volume", binaryPath+":/rotatechild:ro",
+			"registry.access.redhat.com/ubi10/ubi-minimal:10.2",
+			"/rotatechild",
+		)
+		runOutput, runErr := run.CombinedOutput()
+		Expect(runErr).ToNot(HaveOccurred(), strings.TrimSpace(string(runOutput)))
+	})
 })

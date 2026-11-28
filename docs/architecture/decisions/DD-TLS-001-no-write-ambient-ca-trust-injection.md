@@ -71,8 +71,18 @@ compatibility branches.
   validation, transactional rollback, empty-config behavior, and explicit
   `TLS_CA_FILE` reload wiring.
 - IT: production bootstrap with a read-only temp/root filesystem and a UBI
-  child process verifying private and public/system CA trust.
-- Helm: no ambient-only `/tmp` mount and read-only CA mount; legitimate scratch
-  paths remain.
+  child process verifying private and public/system CA trust, plus CA
+  rotation with last-known-good retention proven by HTTPS round trips in a
+  read-only Linux container (issue #2548, `rotatechild`).
+- Deployment contract (issue #2548, BR-SECURITY-2548): the deprecated
+  application Helm chart has been removed entirely (commit `a45436df4`);
+  the production deployment surface is the operator chart rendered by CI.
+  Static manifest guardrail tests (UT-TLS-2548-001..009) protect the
+  repository corpus, and the CI `tls-rendered-contract` job applies the
+  same YAML-aware contract to the rendered operator and
+  development-dependencies chart bundles. Operator-reconciled operand
+  Deployments (rendered at runtime from the Kubernaut CR, not present in
+  the CI-rendered bundles) are out of this check's scope and are owned by
+  `jordigilh/kubernaut-operator#571`.
 - Operator: separate migration PR proves the same contract before release
-  qualification.
+  qualification (see `jordigilh/kubernaut-operator#571`).
