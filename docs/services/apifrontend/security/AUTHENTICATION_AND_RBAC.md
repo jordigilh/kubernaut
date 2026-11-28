@@ -115,10 +115,13 @@ APIService — RBAC matching is pure string comparison against request
 attributes, so no registration is needed. The verb `use` follows the
 Kubernetes convention for capability-style grants (PodSecurityPolicy used
 `verbs: ["use"]` the same way), and `resourceNames` — normally an object name —
-discriminates the capability being granted. The check is a genuine
-SubjectAccessReview issued as the logged-in user, so it works with
-`kubectl auth can-i`, standard GitOps/IAM tooling, and K8s RBAC auditing, with
-no bespoke policy engine (rationale: [ADR-021](../adr/ADR-021-sar-based-tool-authorization.md)).
+discriminates the capability being granted. The check is a genuine SubjectAccessReview whose **subject** is the logged-in
+user: AF submits it with its own service account, setting the user's name and
+OIDC groups as the SAR subject (`sar.go` → `checkSARAttributes`,
+`Spec.User`/`Spec.Groups`). The RBAC engine answers for that subject, so it
+works with `kubectl auth can-i` (same question, asked manually), standard
+GitOps/IAM tooling, and K8s RBAC auditing, with no bespoke policy engine
+(rationale: [ADR-021](../adr/ADR-021-sar-based-tool-authorization.md)).
 
 ### `tools/list` Is Unfiltered
 
@@ -148,8 +151,13 @@ of the user's OIDC groups via a ClusterRoleBinding). "Example bundles" lists
 which of the six demo example compositions include the grant — pure
 information; compose your own.
 
-This table is drift-pinned against the registered tool set by
-`UT-DOC-2716-001` (`test/infrastructure/tool_catalog_doc_test.go`).
+This table is drift-pinned by a two-link chain: `UT-DOC-2716-001`
+(`test/infrastructure/tool_catalog_doc_test.go`) pins catalog ↔
+`LoadPersonaTools` bidirectionally, and `TC-A-RBAC-01a–d`
+(`pkg/apifrontend/handler/manifest_validation_test.go`) pins that fixture
+contract ↔ the registered tool set (bridge + A2A). Together: no registered
+tool can be missing from the catalog, and the catalog cannot list a
+non-existent grant.
 
 <!-- tool-catalog:start -->
 | Operation | Grant (resourceName) | Example bundles | Notes |

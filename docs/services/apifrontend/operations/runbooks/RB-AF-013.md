@@ -35,10 +35,9 @@ kubectl get clusterrole kubernaut-tool-sre -o yaml
 ### 3. Verify ClusterRoleBinding Exists
 
 ```bash
-# Check which OIDC groups are bound to tool-granting ClusterRoles (same
-# label caveat as above)
-kubectl get clusterrolebinding -l kubernaut.ai/component=tool-authorization
-kubectl get clusterrolebindings -o json | jq -r '.items[] | select(.roleRef.name | test("tool|console")) | "\(.metadata.name) -> \(.roleRef.name)"'
+# Check which OIDC groups are bound to ClusterRoles (any role — no name or
+# label filter, so custom-named tool roles are included)
+kubectl get clusterrolebindings -o json | jq -r '.items[] | "\(.metadata.name) -> \(.roleRef.name): \([.subjects[]? | .name] | join(","))"'
 ```
 
 ### 4. Test SAR Manually

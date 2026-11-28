@@ -93,11 +93,14 @@ hack/                         — Utility scripts
    `LoadPersonaTools` in `test/infrastructure/apifrontend_e2e.go`, pinned by
    `UT-INFRA-RBAC-002` — **and** to the matching `demo-tool-*` bundle in
    `test/fixtures/demo/rbac/example-tool-roles.yaml` (parity-tested against
-   the map by `UT-INFRA-2703-004`, so adding only one side fails CI). For a
-   real deployment, add it to whatever capability-role composition the
-   operator maintains. The platform itself only checks `kubernaut.ai/tools`,
-   verb `use`, resourceName = tool name via SAR; it expects no particular
-   role or group set (#2716). Example fixture entry:
+   the map by `UT-INFRA-2703-004`, so adding only one side fails CI)
+   **and** to the operation catalog in
+   `docs/services/apifrontend/security/AUTHENTICATION_AND_RBAC.md`
+   (pinned by `UT-DOC-2716-001` — a tool missing from the catalog fails CI).
+   For a real deployment, add it to whatever capability-role composition
+   the operator maintains. The platform itself only checks
+   `kubernaut.ai/tools`, verb `use`, resourceName = tool name via SAR; it
+   expects no particular role or group set (#2716). Example fixture entry:
 
    ```go
    "sre": {"af_my_tool"},
