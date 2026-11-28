@@ -67,12 +67,12 @@ kubernaut-operator#682 convention):
 
 ## Consequences
 
-- Audit records written before this change that contain `persona` remain
-  readable (the field is simply absent from new records; the ogen decoder
-  ignores unknown/absent optional fields on read paths that matter).
+- **No backwards compatibility** (pre-GA, kubernaut-operator#682 convention):
+  the persona field is removed outright. Old records carrying `persona` are
+  not a supported input shape; any external consumer that grouped forensics
+  by that field must re-derive grouping from `actor_id`/group claims at the
+  source. None exist in-repo.
 - The six-value persona enum no longer exists anywhere in the audit contract.
-- Any external consumer that grouped forensics by that field must re-derive
-  grouping from `actor_id`/groups at the source; none exist in-repo.
 
 ## Alternatives Considered
 

@@ -183,46 +183,6 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 				"the embedded spec must accept a persona-less triage.started payload (#2716)")
 			Expect(handlerCalled).To(BeTrue(), "Handler should be called after successful validation")
 		})
-		It("IT-DS-2716-002: accepts a legacy-shaped triage.started payload that still carries persona (#2716, DD-AUDIT-011)", func() {
-			// Backward readability: records written before the persona removal
-			// keep validating. The schema intentionally has no
-			// additionalProperties: false on this payload; this test pins that
-			// so a future strictness change fails loudly instead of breaking
-			// historical reconstruction (AU-3 / CC7.2).
-			body := `{
-			"version": "1.0",
-			"event_type": "apifrontend.triage.started",
-			"event_category": "apifrontend",
-			"event_action": "started",
-			"event_outcome": "success",
-			"correlation_id": "sess-legacy",
-			"event_timestamp": "2026-01-01T12:00:00Z",
-			"actor_type": "user",
-			"actor_id": "bob",
-			"event_data": {
-				"event_type": "apifrontend.triage.started",
-				"session_id": "sess-legacy",
-				"persona": "sre"
-			}
-		}`
-
-			req := httptest.NewRequest("POST", "/api/v1/audit/events", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-
-			rr := httptest.NewRecorder()
-
-			handler := validator.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusCreated)
-			}))
-
-			handler.ServeHTTP(rr, req)
-
-			if rr.Code != http.StatusCreated {
-				GinkgoWriter.Printf("❌ Validation failed (legacy persona compat test). Response: %d\nBody: %s\n", rr.Code, rr.Body.String())
-			}
-			Expect(rr.Code).To(Equal(http.StatusCreated),
-				"legacy triage.started records carrying persona must remain valid (#2716)")
-		})
 	})
 
 	Describe("Invalid Requests - Missing Required Fields", func() {
