@@ -2060,7 +2060,7 @@ jobs:
           # Check TLS rendered deployment contract (BR-SECURITY-2548 / Issue #2548)
           if [ "${{ needs.tls-rendered-contract.result }}" == "failure" ]; then
             echo ""
-            echo "❌ TLS rendered deployment contract failed (Issue #2548) - rendered operator bundles violate the ambient CA contract"
+            echo "❌ TLS rendered deployment contract job failed (Issue #2548) - see the tls-rendered-contract job logs for the failing spec and violation details"
             exit 1
           elif [ "${{ needs.tls-rendered-contract.result }}" == "skipped" ]; then
             echo ""

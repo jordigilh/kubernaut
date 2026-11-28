@@ -289,6 +289,86 @@ spec:
 		joinedSuffix := strings.Join(suffixOnlyResult.SortedViolations(), "\n")
 		Expect(joinedSuffix).To(ContainSubstring("readOnly"))
 		Expect(joinedSuffix).To(ContainSubstring("emptyDir"))
+
+		// envFrom prefix: a source key that only becomes an ambient env
+		// var after the envFrom prefix is applied must be flagged.
+		prefixFixture := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prefixed-env
+data:
+  CERT_DIR: /etc/custom-ca
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-prefixed-envfrom
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          image: registry.example/app:1
+          envFrom:
+            - prefix: SSL_
+              configMapRef:
+                name: prefixed-env
+`
+		prefixResult, err := tlscontract.ScanManifestData("planted-prefix-envfrom.yaml", []byte(prefixFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(prefixResult.Violations).To(HaveLen(1),
+			"envFrom prefix SSL_ applied to key CERT_DIR injects SSL_CERT_DIR and must be flagged for BR-SECURITY-2548")
+		Expect(prefixResult.Violations[0].String()).To(ContainSubstring("SSL_CERT_DIR"))
+
+		// kind: List wrapper documents are unpacked: a violating
+		// workload inside items[] cannot hide from the contract.
+		listFixture := `apiVersion: v1
+kind: List
+items:
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: bad-in-list
+    spec:
+      template:
+        spec:
+          containers:
+            - name: app
+              image: registry.example/app:1
+              env:
+                - name: SSL_CERT_DIR
+                  value: /etc/custom-ca
+`
+		listResult, err := tlscontract.ScanManifestData("planted-list-wrapper.yaml", []byte(listFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(listResult.Violations).To(HaveLen(1),
+			"a workload wrapped in kind: List items must still be scanned for BR-SECURITY-2548")
+		Expect(listResult.Violations[0].String()).To(ContainSubstring("SSL_CERT_DIR"))
+
+		// subPathExpr with an explicit certificate path segment must be
+		// matched like subPath.
+		subPathExprFixture := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bad-subpathexpr
+spec:
+  template:
+    spec:
+      volumes:
+        - name: app-config
+          emptyDir: {}
+      containers:
+        - name: app
+          image: registry.example/app:1
+          volumeMounts:
+            - name: app-config
+              mountPath: /etc/pki
+              subPathExpr: certs/$(POD_NAME)
+`
+		subPathExprResult, err := tlscontract.ScanManifestData("planted-subpathexpr.yaml", []byte(subPathExprFixture))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(subPathExprResult.Violations).To(HaveLen(2),
+			"a subPathExpr carrying a certificate path segment must trigger the CA-material heuristic for BR-SECURITY-2548")
 	})
 
 	// UT-TLS-2548-006: Go-template placeholders in one document of a
@@ -379,6 +459,15 @@ spec:
 		Expect(crlfResult.Violations).To(HaveLen(1),
 			"the second document of a CRLF stream must still be scanned for BR-SECURITY-2548")
 		Expect(crlfResult.Violations[0].String()).To(ContainSubstring("SSL_CERT_DIR"))
+
+		// A separator form the splitter does not recognize (content on
+		// the same line as ---) must fail closed: the residual second
+		// document in the segment is an error, never a silent skip.
+		sameLineSeparator := "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: first\n--- {kind: ConfigMap}\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: second\n"
+		_, err = tlscontract.ScanManifestData("planted-sameline-separator.yaml", []byte(sameLineSeparator))
+		Expect(err).To(HaveOccurred(),
+			"an unrecognized document separator form must abort the scan, not silently decode only the first document, for BR-SECURITY-2548")
+		Expect(err.Error()).To(ContainSubstring("planted-sameline-separator.yaml"))
 	})
 
 	// UT-TLS-2548-007: envFrom references resolve across files of the
@@ -529,6 +618,15 @@ spec:
 		Expect(err).To(HaveOccurred(),
 			"a malformed stream must abort the whole rendered-corpus scan for BR-SECURITY-2548")
 		Expect(err.Error()).To(ContainSubstring("operator-bootstrap-rendered.yaml"))
+
+		// Rendered surfaces must never contain Go-template documents:
+		// a {{-bearing parse failure is a rendering bug and aborts the
+		// corpus scan instead of being skipped.
+		_, err = tlscontract.ScanManifestCorpus(map[string][]byte{
+			"operator-bootstrap-rendered.yaml": []byte("value: \"{{ .Values.unrendered }}\"\nextra: [unclosed\n"),
+		})
+		Expect(err).To(HaveOccurred(),
+			"template placeholders in a rendered bundle must abort the corpus scan for BR-SECURITY-2548")
 	})
 
 	// UT-TLS-2548-009: the documented init-only certificate-generation

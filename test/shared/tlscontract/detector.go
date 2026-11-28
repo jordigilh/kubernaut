@@ -39,6 +39,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -239,8 +240,11 @@ func decodeSegment(path string, docNum int, seg []byte) (any, error) {
 // Go-template placeholders ("{{"): a runtime-substituted template document
 // cannot be applied by kubectl/helm as-is and only that document is
 // skipped. Template placeholders in one document never mask a parse error
-// or a violation in any other document of the same stream.
-func decodeManifestDocs(path string, data []byte) ([]manifestObject, error) {
+// or a violation in any other document of the same stream. When
+// allowTemplateSkip is false (rendered deployment surfaces), template
+// documents are never skipped: rendered output must be valid YAML, and a
+// parse failure is a rendering bug that aborts the scan.
+func decodeManifestDocs(path string, data []byte, allowTemplateSkip bool) ([]manifestObject, error) {
 	segments := splitYAMLDocuments(data)
 	var docs []manifestObject
 	for i, seg := range segments {
@@ -249,7 +253,7 @@ func decodeManifestDocs(path string, data []byte) ([]manifestObject, error) {
 		}
 		raw, err := decodeSegment(path, i+1, seg)
 		if err != nil {
-			if strings.Contains(string(seg), "{{") {
+			if allowTemplateSkip && strings.Contains(string(seg), "{{") {
 				continue // template document: skip this document only
 			}
 			return nil, fmt.Errorf("failed to parse yaml document %d in %s: %w", i+1, path, err)
@@ -261,17 +265,34 @@ func decodeManifestDocs(path string, data []byte) ([]manifestObject, error) {
 		if !ok {
 			continue // empty or non-mapping document
 		}
-		obj := manifestObject{doc: docMap}
-		obj.kind, _ = docMap["kind"].(string)
-		if meta, ok := docMap["metadata"].(map[string]any); ok {
-			obj.name, _ = meta["name"].(string)
-		}
-		if envSourceKinds[obj.kind] {
-			obj.dataKey = decodeDataKeys(docMap)
-		}
-		docs = append(docs, obj)
+		docs = appendManifestObject(docs, docMap)
 	}
 	return docs, nil
+}
+
+// appendManifestObject appends one decoded document to docs, unpacking
+// kind: List wrapper documents one level at a time so their items are
+// scanned like top-level documents (a List-wrapped workload cannot hide
+// from the contract).
+func appendManifestObject(docs []manifestObject, docMap map[string]any) []manifestObject {
+	obj := manifestObject{doc: docMap}
+	obj.kind, _ = docMap["kind"].(string)
+	if meta, ok := docMap["metadata"].(map[string]any); ok {
+		obj.name, _ = meta["name"].(string)
+	}
+	if obj.kind == "List" {
+		items, _ := docMap["items"].([]any)
+		for _, item := range items {
+			if itemMap, ok := item.(map[string]any); ok {
+				docs = appendManifestObject(docs, itemMap)
+			}
+		}
+		return docs
+	}
+	if envSourceKinds[obj.kind] {
+		obj.dataKey = decodeDataKeys(docMap)
+	}
+	return append(docs, obj)
 }
 
 func decodeDataKeys(docMap map[string]any) map[string]bool {
@@ -323,7 +344,7 @@ func mergeEnvSource(index map[string]map[string]bool, name string, keys map[stri
 // not present in the stream are not verifiable here (documented envelope).
 func ScanManifestData(path string, data []byte) (ScanResult, error) {
 	result := ScanResult{}
-	docs, err := decodeManifestDocs(path, data)
+	docs, err := decodeManifestDocs(path, data, true)
 	if err != nil {
 		return result, err
 	}
@@ -350,7 +371,7 @@ func ScanManifestCorpus(streams map[string][]byte) (ScanResult, error) {
 	var all []decodedStream
 	corpusIndex := map[string]map[string]bool{}
 	for _, name := range names {
-		docs, err := decodeManifestDocs(name, streams[name])
+		docs, err := decodeManifestDocs(name, streams[name], false)
 		if err != nil {
 			return result, err
 		}
@@ -461,47 +482,61 @@ func scanPodSpec(path, kind string, podSpec map[string]any, envSourceIndex map[s
 		for _, envFrom := range mapSlice(container, "envFrom") {
 			scanEnvFrom(path, kind, containerName, envFrom, envSourceIndex, result)
 		}
-		for _, mount := range mapSlice(container, "volumeMounts") {
-			mountPath, _ := mount["mountPath"].(string)
-			subPath, _ := mount["subPath"].(string)
-			volumeName := volumeNameFor(mount)
-			if !IsCertMaterialPath(mountPath) && !IsCertMaterialPath(subPath) &&
-				!IsCertMaterialPath(volumeName) && !certVolumes[volumeName] {
-				continue
-			}
-			result.CertMountCount++
-			// Documented exception (issue #2548 acceptance criterion 3,
-			// BR-SECURITY-2548): an init-only Job may generate
-			// certificates into a memory-backed emptyDir (bounded
-			// tmpfs, never reaching disk) when its root filesystem is
-			// not otherwise writable. Long-running workload kinds
-			// (Deployment/StatefulSet/DaemonSet/ReplicaSet/CronJob/Pod)
-			// never qualify: a writable CA directory in a
-			// long-running container is a post-compromise staging
-			// location, which this contract exists to eliminate.
-			initOnlyMemoryBacked := initOnlyMemoryBackedCertStaging(kind, volumes, volumeName)
-			if readOnly, ok := mount["readOnly"].(bool); (!ok || !readOnly) && !initOnlyMemoryBacked {
-				result.Violations = append(result.Violations, Violation{
-					File:    path,
-					Kind:    kind,
-					Message: fmt.Sprintf("container %q mounts CA/TLS material at %q without readOnly: true", containerName, mountPath),
-				})
-			}
-			if !hasReadOnlyVolumeSource(volumes, volumeName) && !initOnlyMemoryBacked {
-				result.Violations = append(result.Violations, Violation{
-					File:    path,
-					Kind:    kind,
-					Message: fmt.Sprintf("CA/TLS material volume %q is not backed by secret/configMap/projected (emptyDir and hostPath are forbidden)", volumeName),
-				})
-			}
+		scanContainerMounts(path, kind, containerName, container, volumes, certVolumes, result)
+	}
+}
+
+// scanContainerMounts checks one container's volumeMounts against the
+// CA-material contract (read-only mounts, secret/configMap/projected
+// backing, and the documented init-only memory-backed staging exception).
+func scanContainerMounts(path, kind, containerName string, container map[string]any,
+	volumes []map[string]any, certVolumes map[string]bool, result *ScanResult) {
+	for _, mount := range mapSlice(container, "volumeMounts") {
+		mountPath, _ := mount["mountPath"].(string)
+		subPath, _ := mount["subPath"].(string)
+		subPathExpr, _ := mount["subPathExpr"].(string)
+		volumeName := volumeNameFor(mount)
+		if !IsCertMaterialPath(mountPath) && !IsCertMaterialPath(subPath) &&
+			!IsCertMaterialPath(subPathExpr) && !IsCertMaterialPath(volumeName) &&
+			!certVolumes[volumeName] {
+			continue
+		}
+		result.CertMountCount++
+		// Documented exception (issue #2548 acceptance criterion 3,
+		// BR-SECURITY-2548): an init-only Job may generate
+		// certificates into a memory-backed emptyDir (bounded
+		// tmpfs, never reaching disk) when its root filesystem is
+		// not otherwise writable. Long-running workload kinds
+		// (Deployment/StatefulSet/DaemonSet/ReplicaSet/CronJob/Pod)
+		// never qualify: a writable CA directory in a
+		// long-running container is a post-compromise staging
+		// location, which this contract exists to eliminate.
+		initOnlyMemoryBacked := initOnlyMemoryBackedCertStaging(kind, volumes, volumeName)
+		if readOnly, ok := mount["readOnly"].(bool); (!ok || !readOnly) && !initOnlyMemoryBacked {
+			result.Violations = append(result.Violations, Violation{
+				File:    path,
+				Kind:    kind,
+				Message: fmt.Sprintf("container %q mounts CA/TLS material at %q without readOnly: true", containerName, mountPath),
+			})
+		}
+		if !hasReadOnlyVolumeSource(volumes, volumeName) && !initOnlyMemoryBacked {
+			result.Violations = append(result.Violations, Violation{
+				File:    path,
+				Kind:    kind,
+				Message: fmt.Sprintf("CA/TLS material volume %q is not backed by secret/configMap/projected (emptyDir and hostPath are forbidden)", volumeName),
+			})
 		}
 	}
 }
 
 // scanEnvFrom checks that a configMapRef/secretRef source does not carry
-// ambient CA env keys. Sources not present in the scanned stream cannot be
+// ambient CA env keys. envFrom.prefix is applied to every key of the
+// source, so both the unprefixed key and prefix+key forms are matched:
+// a source key "CERT_DIR" under prefix "SSL_" injects SSL_CERT_DIR.
+// Sources not present in the scanned stream cannot be
 // verified and are skipped (documented detection envelope).
 func scanEnvFrom(path, kind, containerName string, envFrom map[string]any, envSourceIndex map[string]map[string]bool, result *ScanResult) {
+	prefix, _ := envFrom["prefix"].(string)
 	for _, refField := range []string{"configMapRef", "secretRef"} {
 		ref, ok := envFrom[refField].(map[string]any)
 		if !ok {
@@ -513,7 +548,11 @@ func scanEnvFrom(path, kind, containerName string, envFrom map[string]any, envSo
 			continue
 		}
 		for _, envVar := range AmbientEnvVars {
-			if dataKeys[envVar] {
+			key := envVar
+			if prefix != "" && strings.HasPrefix(envVar, prefix) {
+				key = strings.TrimPrefix(envVar, prefix)
+			}
+			if dataKeys[envVar] || dataKeys[key] {
 				result.Violations = append(result.Violations, Violation{
 					File:    path,
 					Kind:    kind,
@@ -690,7 +729,7 @@ func collectCorpusDocs(repoRoot string, roots []string, excluded map[string]bool
 			if err != nil {
 				return fmt.Errorf("failed to read manifest %s: %w", path, err)
 			}
-			docs, err := decodeManifestDocs(path, data)
+			docs, err := decodeManifestDocs(path, data, true)
 			if err != nil {
 				return err
 			}
@@ -825,12 +864,33 @@ func ScanTLSSourceWrites(tlsPkgDir string) ([]SourceViolation, error) {
 	})
 }
 
+// goLiteralValue decodes a Go string literal to its value: interpreted
+// literals (with escapes) via strconv.Unquote, raw literals by stripping
+// backticks. Returns ok=false for literals that fail to decode (which a
+// compiled file never contains; treat as no-match).
+func goLiteralValue(lit *ast.BasicLit) (string, bool) {
+	if lit.Kind != token.STRING {
+		return "", false
+	}
+	if strings.HasPrefix(lit.Value, "`") {
+		return strings.Trim(lit.Value, "`"), true
+	}
+	value, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return "", false
+	}
+	return value, true
+}
+
 // importAliases returns the identifiers a file uses for the given import
 // paths: the explicit alias if present, otherwise the package's base name.
 func importAliases(file *ast.File, paths ...string) map[string]bool {
 	aliases := map[string]bool{}
 	for _, imp := range file.Imports {
-		importPath := strings.Trim(imp.Path.Value, "\"")
+		importPath, ok := goLiteralValue(imp.Path)
+		if !ok {
+			continue
+		}
 		for _, want := range paths {
 			if importPath != want {
 				continue
@@ -860,10 +920,13 @@ func ScanAmbientEnvOwnership(scanRoots []string, ownerDir string) ([]SourceViola
 			}
 			ast.Inspect(file, func(n ast.Node) bool {
 				lit, ok := n.(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
+				if !ok {
 					return true
 				}
-				value := strings.Trim(lit.Value, "\"'`")
+				value, ok := goLiteralValue(lit)
+				if !ok {
+					return true
+				}
 				for _, envVar := range AmbientEnvVars {
 					if value == envVar {
 						hits = append(hits, SourceViolation{

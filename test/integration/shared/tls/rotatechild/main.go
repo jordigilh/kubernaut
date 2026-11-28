@@ -99,7 +99,7 @@ func run() error {
 		return fmt.Errorf("write initial CA: %w", err)
 	}
 
-	transport, stopWatcher, err := startExplicitTransport(caPath)
+	transport, reloadEvents, stopWatcher, err := startExplicitTransport(caPath)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func run() error {
 		return errors.New("new-CA server must not be trusted before rotation")
 	}
 
-	return verifyRotationLifecycle(ctx, client, caPath, newCA.pem, urlNew, thirdCA.pem, urlThird)
+	return verifyRotationLifecycle(ctx, client, caPath, newCA.pem, urlNew, thirdCA.pem, urlThird, reloadEvents)
 }
 
 // verifyRotationLifecycle proves, through real HTTPS round trips, that a
@@ -125,7 +125,7 @@ func run() error {
 // rejecting the garbage PEM (the second valid rotation makes the rejection
 // check non-vacuous).
 func verifyRotationLifecycle(ctx context.Context, client *http.Client, caPath string,
-	newCAPEM []byte, urlNew string, thirdCAPEM []byte, urlThird string) error {
+	newCAPEM []byte, urlNew string, thirdCAPEM []byte, urlThird string, reloadEvents <-chan error) error {
 	// Valid rotation via atomic rename (the ConfigMap update pattern).
 	if err := rotate(caPath, newCAPEM); err != nil {
 		return err
@@ -134,12 +134,17 @@ func verifyRotationLifecycle(ctx context.Context, client *http.Client, caPath st
 		return fmt.Errorf("valid CA rotation did not hot-reload: %w", err)
 	}
 
-	// Invalid rotation: the watcher must reject the garbage PEM and keep
-	// the last-known-good trust.
+	// Invalid rotation: wait for the watcher's own rejection signal (the
+	// StartCAFileWatcher onReload callback reports the reload error) so
+	// the trust check below runs only after the garbage PEM was actually
+	// processed and rejected -- never before the watcher saw it.
+	drainReloadEvents(reloadEvents)
 	if err := rotate(caPath, []byte("not a certificate")); err != nil {
 		return err
 	}
-	time.Sleep(1500 * time.Millisecond)
+	if err := waitForReloadResult(ctx, reloadEvents); err != nil {
+		return fmt.Errorf("watcher did not report the invalid rotation: %w", err)
+	}
 	if err := get(ctx, client, urlNew); err != nil {
 		return fmt.Errorf("last-known-good trust lost after invalid rotation: %w", err)
 	}
@@ -154,32 +159,69 @@ func verifyRotationLifecycle(ctx context.Context, client *http.Client, caPath st
 	return nil
 }
 
+// drainReloadEvents discards buffered reload results (non-blocking).
+func drainReloadEvents(events <-chan error) {
+	for {
+		select {
+		case <-events:
+		default:
+			return
+		}
+	}
+}
+
+// waitForReloadResult blocks (bounded by ctx) until the watcher reports
+// the next reload attempt's result and returns it: the invalid rotation
+// must surface as a non-nil reload error.
+func waitForReloadResult(ctx context.Context, events <-chan error) error {
+	deadline := time.After(20 * time.Second)
+	select {
+	case err := <-events:
+		if err == nil {
+			return errors.New("invalid PEM was accepted by the CA reloader")
+		}
+		return nil
+	case <-deadline:
+		return errors.New("timed out waiting for the watcher to process the rotation")
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // startExplicitTransport wires the production TLS_CA_FILE contract: env ->
 // DefaultBaseTransport (CAReloader singleton) -> StartCAFileWatcher. The
 // returned stop function stops the watcher and its context.
-func startExplicitTransport(caPath string) (rt http.RoundTripper, stop func(), err error) {
+func startExplicitTransport(caPath string) (rt http.RoundTripper, reloadEvents <-chan error, stop func(), err error) {
 	if err := os.Setenv("TLS_CA_FILE", caPath); err != nil {
-		return nil, nil, fmt.Errorf("set TLS_CA_FILE: %w", err)
+		return nil, nil, nil, fmt.Errorf("set TLS_CA_FILE: %w", err)
 	}
 	transport, err := sharedtls.DefaultBaseTransport()
 	if err != nil {
-		return nil, nil, fmt.Errorf("default base transport: %w", err)
+		return nil, nil, nil, fmt.Errorf("default base transport: %w", err)
 	}
 	if _, ok := transport.(*sharedtls.CAReloader); !ok {
-		return nil, nil, errors.New("TLS_CA_FILE transport is not a CAReloader")
+		return nil, nil, nil, errors.New("TLS_CA_FILE transport is not a CAReloader")
 	}
 
+	// The onReload callback (StartCAFileWatcher's audit hook) gives an
+	// observable signal for every reload attempt, including rejections.
+	events := make(chan error, 8)
 	watchCtx, cancel := context.WithCancel(context.Background())
-	watcher, err := sharedtls.StartCAFileWatcher(watchCtx, logr.Discard())
+	watcher, err := sharedtls.StartCAFileWatcher(watchCtx, logr.Discard(), func(reloadErr error) {
+		select {
+		case events <- reloadErr:
+		default: // never block the watcher on a slow test consumer
+		}
+	})
 	if err != nil {
 		cancel()
-		return nil, nil, fmt.Errorf("start CA file watcher: %w", err)
+		return nil, nil, nil, fmt.Errorf("start CA file watcher: %w", err)
 	}
 	if watcher == nil {
 		cancel()
-		return nil, nil, errors.New("CA file watcher did not start")
+		return nil, nil, nil, errors.New("CA file watcher did not start")
 	}
-	return transport, func() {
+	return transport, events, func() {
 		watcher.Stop()
 		cancel()
 	}, nil

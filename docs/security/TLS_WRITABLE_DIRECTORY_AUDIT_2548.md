@@ -97,8 +97,8 @@ future addition cannot silently escape the contract.
 The manifest detector is deliberately fail-closed but heuristic; its known
 envelope is:
 
-- **CA-material naming.** Mount paths, subPaths, volume names, and volume
-  source names (secret/configMap/projected) are matched by whole-segment
+- **CA-material naming.** Mount paths, subPaths, subPathExprs, volume
+  names, and volume source names (secret/configMap/projected) are matched by whole-segment
   or token matching (`ca`, `cert`, `certs`, `pki`, `tls`, `x509`, `.crt`,
   `.pem`, `.key` suffixes). An arbitrarily-named CA volume (e.g. a secret
   named `cache` mounted at `/var/lib/app`) is not detected. Token matching
@@ -108,7 +108,9 @@ envelope is:
   a corpus-wide index of ConfigMap/Secret documents: across all scanned
   files (`ScanManifestFiles`), across the streams of a rendered
   deployment surface (`ScanManifestCorpus`, used by the operator-bundle
-  gate), or within a single stream (`ScanManifestData`). Same-named sources across files/namespaces are union-merged:
+  gate), or within a single stream (`ScanManifestData`). `envFrom.prefix`
+  is applied when matching keys. Rendered surfaces never skip template
+  documents: a `{{`-bearing parse failure aborts the corpus scan. Same-named sources across files/namespaces are union-merged:
   the error direction is a possible false positive, never a missed
   violation. Sources defined outside the scanned manifests (e.g.
   cluster-user-created objects) cannot be statically verified.
@@ -128,11 +130,10 @@ envelope is:
   before splitting, and a segment that still contains multiple documents
   after splitting (an unrecognized separator form) aborts the scan
   fail-closed rather than silently decoding only the first.
-- **kind: List and non-YAML files.** `kind: List` wrapper documents and
-  `.json` manifest files are not unpacked/scanned (only `.yaml`/`.yml`
-  files, top-level workload documents). No such documents exist in the
-  scanned corpus today; introducing one is a detected-by-review contract
-  change, not a silent bypass.
+- **kind: List and non-YAML files.** Top-level `kind: List` wrapper
+  documents are unpacked and their `items` scanned like top-level
+  documents. `.json` manifest files are not scanned (only `.yaml`/`.yml`
+  files); no such documents exist in the scanned corpus today.
 - **Init-only certificate-generation exception.** A `kind: Job`
   workload (runs to completion) may mount writable CA/TLS material when
   the volume is a memory-backed emptyDir (`medium: Memory`, bounded
