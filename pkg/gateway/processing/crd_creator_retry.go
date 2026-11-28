@@ -30,8 +30,6 @@ import (
 	"strings"
 	"time"
 
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
@@ -75,11 +73,6 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 		if err == nil {
 			c.logSuccessAfterRetry(attempt, startTime, rr)
 			return nil
-		}
-
-		// Handle special cases with dedicated error handlers
-		if k8serrors.IsAlreadyExists(err) {
-			return c.handleAlreadyExistsError(ctx, rr)
 		}
 
 		// Determine if error is retryable
@@ -184,56 +177,6 @@ func getErrorTypeString(err error) string {
 // - After: ~40 lines main method + 4 extracted methods (~25 lines each)
 // - Cyclomatic complexity: Reduced from 23 to <10
 // ========================================
-
-// handleAlreadyExistsError treats AlreadyExists as idempotent success.
-//
-// **Business Requirement**: BR-GATEWAY-CIRCUIT-BREAKER-FIX
-// **Business Outcome**: Prevent circuit breaker from opening on parallel requests
-//
-// **Scenario**: Multiple signals with same fingerprint arrive simultaneously,
-// creating race condition where 2nd request gets AlreadyExists error.
-// This is NOT a failure - it's idempotent success.
-//
-// **Behavior**:
-//   - Logs idempotent success
-//   - Optionally fetches existing CRD to verify fingerprint matches
-//   - Logs warning if fingerprints differ (potential hash collision)
-//   - Returns nil (success) in all cases
-//
-// **Parameters**:
-//   - ctx: Context for cancellation
-//   - rr: RemediationRequest being created
-//
-// **Returns**:
-//   - error: Always nil (idempotent success)
-func (c *CRDCreator) handleAlreadyExistsError(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-	c.logger.Info("CRD already exists (idempotent success)",
-		"name", rr.Name,
-		"namespace", rr.Namespace,
-		"fingerprint", rr.Spec.SignalFingerprint)
-
-	// Optionally fetch the existing CRD to verify fingerprint matches
-	existing, getErr := c.k8sClient.GetRemediationRequest(ctx, rr.Namespace, rr.Name)
-	if getErr != nil {
-		c.logger.Error(getErr, "Failed to fetch existing CRD after AlreadyExists error",
-			"name", rr.Name,
-			"namespace", rr.Namespace)
-		// Still return success - the CRD exists, which is our goal
-		return nil
-	}
-
-	// Log for debugging: verify fingerprints match
-	if existing.Spec.SignalFingerprint != rr.Spec.SignalFingerprint {
-		c.logger.Info("Warning: Existing CRD has different fingerprint (hash collision?)",
-			"name", rr.Name,
-			"namespace", rr.Namespace,
-			"expected_fingerprint", rr.Spec.SignalFingerprint,
-			"actual_fingerprint", existing.Spec.SignalFingerprint)
-	}
-
-	// Return success - CRD exists (idempotent operation)
-	return nil
-}
 
 // shouldRetryError determines if an error is transient and retryable.
 //

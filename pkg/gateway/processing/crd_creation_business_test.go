@@ -277,10 +277,10 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Different CRD names enable tracking each remediation attempt
 			Expect(rr1.Name).NotTo(Equal(rr2.Name),
 				"UUID-based naming allows same problem to be remediated multiple times")
-			// DD-AUDIT-CORRELATION-002: UUID suffix guarantees zero collision risk
-			Expect(rr1.Name).To(MatchRegexp(`^rr-same-fingerp-[0-9a-f]{8}$`),
-				"CRD name follows rr-{fingerprint-prefix}-{uuid-suffix} pattern (8 hex chars)")
-			Expect(rr2.Name).To(MatchRegexp(`^rr-same-fingerp-[0-9a-f]{8}$`),
+			// DD-AUDIT-CORRELATION-002: random 48-bit UUID suffix (#2718)
+			Expect(rr1.Name).To(MatchRegexp(`^rr-same-fingerp-[0-9a-f]{12}$`),
+				"CRD name follows rr-{fingerprint-prefix}-{uuid-suffix} pattern (12 hex chars)")
+			Expect(rr2.Name).To(MatchRegexp(`^rr-same-fingerp-[0-9a-f]{12}$`),
 				"Each occurrence gets unique UUID suffix in CRD name")
 		})
 	})
