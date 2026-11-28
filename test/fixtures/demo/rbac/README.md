@@ -66,3 +66,8 @@ parity-tests these manifests against the harness fixture contract
 bindings, so drift fails CI. That contract pins the *demo fixture's* role
 contents — it is not a statement about which roles or groups an operator
 should compose.
+
+For the full per-operation grant catalog (what to grant for "list workflows",
+"approve a RAR", "initiate investigation", …), see the
+[operation → capability grant catalog](../../../docs/services/apifrontend/security/AUTHENTICATION_AND_RBAC.md#operation--capability-grant-catalog)
+in the AF security model.

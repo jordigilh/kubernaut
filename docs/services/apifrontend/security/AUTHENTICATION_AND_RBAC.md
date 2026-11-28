@@ -3,7 +3,7 @@
 **Service:** kubernaut-apifrontend
 **NIST Controls:** AC-2, AC-3, AC-6, IA-2, IA-5, IA-8
 **Source of truth:** `pkg/apifrontend/auth/sar.go` (per-tool SAR checks; role composition is operator-owned — see the demo example bundles in `test/fixtures/demo/rbac/`)
-**Last updated:** 2026-11-09
+**Last updated:** 2026-11-28
 
 ---
 
@@ -128,14 +128,58 @@ example composition**, not a platform contract; an entirely different set of
 roles and group mappings is equally supported. They are also what the E2E
 harness renders (`test/infrastructure`, `UT-INFRA-RBAC-002`).
 
-| Example role | ClusterRole | Tool Count |
-|---------|-------------|-----------|
-| `sre` | `kubernaut-tool-sre` | 19 |
-| `ai-orchestrator` | `kubernaut-tool-ai-orchestrator` | 15 |
-| `observability` | `kubernaut-tool-observability` | 8 |
-| `l3-audit` | `kubernaut-tool-l3-audit` | 6 |
-| `cicd` | `kubernaut-tool-cicd` | 3 |
-| `remediation-approver` | `kubernaut-tool-remediation-approver` | 4 |
+### Operation → capability grant catalog
+
+Every AF operation is one tool name. To let a user perform an operation, grant
+`use` on `kubernaut.ai` `tools` with resourceName = the tool name (bound to one
+of the user's OIDC groups via a ClusterRoleBinding). "Example bundles" lists
+which of the six demo example compositions include the grant — pure
+information; compose your own.
+
+This table is drift-pinned against the registered tool set by
+`UT-DOC-2716-001` (`test/infrastructure/tool_catalog_doc_test.go`).
+
+<!-- tool-catalog:start -->
+| Operation | Grant (resourceName) | Example bundles | Notes |
+|---|---|---|---|
+| List remediations | `kubernaut_list_remediations` | all six | |
+| Get a remediation | `kubernaut_get_remediation` | all six | |
+| Cancel a remediation | `kubernaut_cancel_remediation` | sre | |
+| Watch remediation state | `kubernaut_watch` | all six | |
+| Wait for KA session readiness | `kubernaut_await_session` | all six | |
+| Initiate investigation (resource) | `kubernaut_investigate` | sre, ai-orchestrator | A2A + MCP bridge |
+| Initiate investigation (alert) | `kubernaut_investigate_alert` | sre, ai-orchestrator | |
+| Initiate remediation | `kubernaut_remediate` | sre, ai-orchestrator | |
+| Check existing remediation | `kubernaut_check_existing_remediation` | sre, ai-orchestrator | |
+| Approve / decline a RAR | `kubernaut_approve` | sre, remediation-approver | MCP/Console only — structurally removed from the A2A LLM toolset (DD-AF-006 consent guard) |
+| List approval requests | `kubernaut_list_approval_requests` | sre, ai-orchestrator, remediation-approver | |
+| Get an approval request | `kubernaut_get_approval_request` | sre, ai-orchestrator, remediation-approver | |
+| List workflows | `kubernaut_list_workflows` | sre, observability, l3-audit | |
+| Discover workflows (schemas) | `kubernaut_discover_workflows` | sre, ai-orchestrator | |
+| Select a workflow | `kubernaut_select_workflow` | sre, ai-orchestrator | |
+| Present a decision point | `kubernaut_present_decision` | sre, ai-orchestrator | MCP bridge name (canonical since #2713) |
+| Complete investigation | `kubernaut_complete` | sre, ai-orchestrator | |
+| Complete with no action | `kubernaut_complete_no_action` | sre | MCP/Console only (DD-AF-007) |
+| Cancel investigation session | `kubernaut_cancel` | sre, ai-orchestrator | |
+| Investigation session status | `kubernaut_status` | sre, ai-orchestrator | |
+| Message an investigation | `kubernaut_message` | sre, ai-orchestrator | |
+| Reconnect to a session | `kubernaut_reconnect` | sre, ai-orchestrator | |
+| List firing alerts | `kubernaut_list_alerts` | sre, ai-orchestrator | A2A + MCP bridge (single canonical name since #2713) |
+| Get alert details | `kubernaut_get_alert_details` | sre, ai-orchestrator | Chat/A2A only — not registered on the raw MCP bridge |
+| Remediation history | `kubernaut_get_remediation_history` | sre, l3-audit | |
+| Effectiveness metrics | `kubernaut_get_effectiveness` | sre, observability, l3-audit | |
+| Audit trail | `kubernaut_get_audit_trail` | sre, l3-audit | |
+| Read K8s objects | `kubectl_get` | sre, ai-orchestrator | |
+| List K8s objects | `kubectl_list` | sre, ai-orchestrator | |
+| List K8s events | `kubectl_list_events` | sre, ai-orchestrator | |
+| List fleet clusters | `list_clusters` | sre, ai-orchestrator | |
+<!-- tool-catalog:end -->
+
+Console read capabilities (`kubernaut_read_policy_scope`,
+`kubernaut_list_managed_resources`, `kubernaut_get_managed_resource`) are NOT
+part of this per-tool contract: they are granted by the operator-rendered
+`<ns>-console-reader` ClusterRole (see the
+[interactive-mode setup guide](../../../../operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md)).
 
 ### Enforcement Code Paths
 
