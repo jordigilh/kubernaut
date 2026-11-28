@@ -207,6 +207,11 @@ The operator renders exactly three unbound ClusterRoles, prefixed with the
 Kubernaut CR's namespace. Everything else is operator-composed capability
 roles (#2716).
 
+> **Resolving `<ns>`:** the placeholder is the namespace of your Kubernaut
+> custom resource — `kubernaut-system` on a default install. Find yours with:
+> `kubectl get kubernaut -A -o custom-columns=NS:.metadata.namespace`. The
+> demo fixtures assume `kubernaut-system`.
+
 | ClusterRole | Rule | What it allows |
 |---|---|---|
 | `<ns>-console-access` | `kubernaut.ai` `console`, verb `use` | Passing the console login gate (checked only when `consoleAccessAuthorizationCheckEnabled=true`; default is auth-only) |
@@ -216,6 +221,79 @@ roles (#2716).
 Bind them to your IdP groups via ClusterRoleBindings (see
 [`test/fixtures/demo/rbac/console-bindings.yaml`](../../../../test/fixtures/demo/rbac/console-bindings.yaml)
 for a worked example). All checks are deny-by-default.
+
+### Composing your own roles (quickstart)
+
+The platform ships no user-classification model. To give a group of users a
+set of capabilities, you write **one ClusterRole + one ClusterRoleBinding** —
+nothing else. Copy this, replace the three `EDIT` markers, apply with
+`kubectl apply -f`:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: my-oncall-role                       # EDIT: any name you want
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    verbs: ["use"]
+    resourceNames:
+      # EDIT: pick grants from the operation → capability grant catalog above
+      - "kubernaut_investigate"              # initiate investigations
+      - "kubernaut_list_alerts"              # see firing alerts
+      - "kubernaut_list_workflows"           # browse the workflow catalog
+      - "kubernaut_get_audit_trail"          # forensic reads
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: my-oncall-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: my-oncall-role                       # must match the role above
+subjects:
+  - kind: Group
+    name: platform-oncall                    # EDIT: your IdP group (JWT groups claim)
+    apiGroup: rbac.authorization.k8s.io
+```
+
+To also let those users into the Console, bind the rendered roles (these are
+`ClusterRoleBinding`s only — the roles already exist):
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: my-oncall-console-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-system-console-reader      # <ns>-console-reader
+subjects:
+  - kind: Group
+    name: platform-oncall
+    apiGroup: rbac.authorization.k8s.io
+```
+
+Verify what a user ends up with:
+
+```bash
+kubectl auth can-i use tools.kubernaut.ai/kubernaut_investigate \
+  --as=alice@example.com --as-group=platform-oncall
+```
+
+Design notes:
+- **One role can serve many groups** (add more `subjects`) and **one group can
+  hold many roles** (add more bindings) — combine freely.
+- The `resourceNames` list is the entire authorization surface: a user can do
+  exactly what the roles bound to their groups enumerate, nothing more
+  (deny-by-default, AC-6).
+- Users need **both** a tool-granting role (this recipe) *and* console-role
+  bindings if they use the Console UI; the two sets are independent.
+- For a complete worked composition (six example roles bound to demo IdP
+  groups), see [`test/fixtures/demo/rbac/example-tool-roles.yaml`](../../../../test/fixtures/demo/rbac/example-tool-roles.yaml).
 
 ### Enforcement Code Paths
 

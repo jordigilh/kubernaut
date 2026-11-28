@@ -144,7 +144,9 @@ It renders no user-facing tool roles and no user-facing ClusterRoleBindings,
 and the CR carries no user-access policy. The per-tool capability role is the
 primitive: compose your own roles and bind them to your IdP groups
 (`kubectl apply`, GitOps, OpenShift RBAC) after the CR is reconciled — any
-group-to-role mapping is equally supported. Ready-made example bundles — six
+group-to-role mapping is equally supported. The
+[composing your own roles quickstart](../../../services/apifrontend/security/AUTHENTICATION_AND_RBAC.md#composing-your-own-roles-quickstart)
+has a copy-paste role + binding template. Ready-made example bundles — six
 demo capability-role compositions plus bindings for the three console roles —
 live in
 [`test/fixtures/demo/rbac/`](../../../test/fixtures/demo/rbac/).

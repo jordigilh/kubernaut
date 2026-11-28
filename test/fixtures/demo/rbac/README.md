@@ -70,4 +70,6 @@ should compose.
 For the full per-operation grant catalog (what to grant for "list workflows",
 "approve a RAR", "initiate investigation", …), see the
 [operation → capability grant catalog](../../../../docs/services/apifrontend/security/AUTHENTICATION_AND_RBAC.md#operation--capability-grant-catalog)
-in the AF security model.
+in the AF security model, and the
+[composing your own roles quickstart](../../../../docs/services/apifrontend/security/AUTHENTICATION_AND_RBAC.md#composing-your-own-roles-quickstart)
+for a copy-paste role + binding template.
