@@ -108,6 +108,18 @@ denials result in tool rejection and an audit event.
    ClusterRoleBindings.
 4. Results are cached for `sarCacheTTL` (default 30s) to reduce API server load.
 
+**Why these grants look unusual (and why that's fine).** Tool authorization is
+not a Kubernetes object operation, so the rule reuses RBAC as a policy engine
+over a **virtual resource**: `kubernaut.ai` / `tools` is never a real CRD or
+APIService — RBAC matching is pure string comparison against request
+attributes, so no registration is needed. The verb `use` follows the
+Kubernetes convention for capability-style grants (PodSecurityPolicy used
+`verbs: ["use"]` the same way), and `resourceNames` — normally an object name —
+discriminates the capability being granted. The check is a genuine
+SubjectAccessReview issued as the logged-in user, so it works with
+`kubectl auth can-i`, standard GitOps/IAM tooling, and K8s RBAC auditing, with
+no bespoke policy engine (rationale: [ADR-021](../adr/ADR-021-sar-based-tool-authorization.md)).
+
 ### `tools/list` Is Unfiltered
 
 Per [ADR-020](../adr/ADR-020-mcp-bridge-rbac-runtime.md), `tools/list` always
