@@ -17,7 +17,8 @@
 # on both surfaces.
 #
 # The automated demo harness applies the equivalent of these manifests after
-# operator reconciliation (infrastructure.BindAFPersonaRBAC); this file is the
+# operator reconciliation (infrastructure.BindAFPersonaRBAC, the harness role
+# binder); this file is the
 # human SOP artifact and is parity-tested against the harness fixture
 # contract (test/infrastructure/demo_console_rbac_test.go, UT-INFRA-2703-004)
 # so the manual and automated demo paths do not drift.

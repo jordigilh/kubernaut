@@ -9,7 +9,7 @@ reconciled.
 roles and capabilities; it carries no opinion about which user gets which
 functionality. Any group-to-role mapping an operator composes — including ones
 that share none of the names below — is fully supported first-class behavior,
-not a deviation. The six demo bundles in `persona-tool-roles.yaml` are **one
+not a deviation. The six demo bundles in `example-tool-roles.yaml` are **one
 worked example composition** (they happen to be one role per demo IdP group);
 treat them as a starting point, not a contract.
 
@@ -17,7 +17,7 @@ treat them as a starting point, not a contract.
 
 | File | Contents |
 |---|---|
-| `persona-tool-roles.yaml` | Six **example** capability-role bundles (`demo-tool-<name>`) + ClusterRoleBindings to the demo IdP's groups |
+| `example-tool-roles.yaml` | Six **example** capability-role bundles (`demo-tool-<name>`) + ClusterRoleBindings to the demo IdP's groups |
 | `console-bindings.yaml` | ClusterRoleBindings for the operator-rendered console roles |
 
 ## Authorization model
@@ -56,7 +56,7 @@ reconciliation (`infrastructure.BindAFPersonaRBAC` +
 for a fleet-core cluster. Manually:
 
 ```bash
-kubectl apply -f test/fixtures/demo/rbac/persona-tool-roles.yaml
+kubectl apply -f test/fixtures/demo/rbac/example-tool-roles.yaml
 kubectl apply -f test/fixtures/demo/rbac/console-bindings.yaml
 ```
 

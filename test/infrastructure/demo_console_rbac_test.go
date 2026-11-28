@@ -139,22 +139,22 @@ var _ = Describe("Fleet CR fixture roles-only compatibility (UT-INFRA-2703-003)"
 	})
 })
 
-// UT-INFRA-2703-004 [AC-6]: the demo-owned persona tool-role manifest (the
+// UT-INFRA-2703-004 [AC-6]: the demo-owned example tool-role manifest (the
 // human SOP artifact) and the automated harness path must grant the same
-// tool set: the manifest is parity-tested against the shared persona RBAC
+// tool set: the manifest is parity-tested against the shared fixture role
 // contract (LoadPersonaTools, which the harness applies via
 // PersonaToolClusterRolesYAML/BindAFPersonaRBAC) AND against the rendered
 // harness output itself, so automated/manual drift fails CI. Since #2713
-// unified the alert tool name, alert-capable personas hold the single
+// unified the alert tool name, alert-capable example roles hold the single
 // canonical names (kubernaut_list_alerts/kubernaut_get_alert_details):
 // one grant authorizes the capability on both the A2A and raw MCP
 // surfaces.
-var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", func() {
-	const manifestPath = "test/fixtures/demo/rbac/persona-tool-roles.yaml"
+var _ = Describe("Demo example tool role manifest parity (UT-INFRA-2703-004)", func() {
+	const manifestPath = "test/fixtures/demo/rbac/example-tool-roles.yaml"
 
-	alertCapablePersonas := map[string]bool{"sre": true, "ai-orchestrator": true}
+	alertCapableRoles := map[string]bool{"sre": true, "ai-orchestrator": true}
 
-	It("covers every persona with a ClusterRole and an external group binding", func() {
+	It("covers every example role with a ClusterRole and an external group binding", func() {
 		data, err := os.ReadFile(filepath.Join(getProjectRoot(), manifestPath)) //nolint:gosec // G304: known project path
 		Expect(err).NotTo(HaveOccurred())
 
@@ -192,7 +192,7 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 			rolesByPersona[persona] = true
 			expected, ok := personaTools[persona]
 			Expect(ok).To(BeTrue(), "demo manifest bundle %q must exist in the shared fixture role contract", persona)
-			if alertCapablePersonas[persona] {
+			if alertCapableRoles[persona] {
 				Expect(cr.Rules[0].ResourceNames).To(ContainElement("kubernaut_list_alerts"),
 					"demo-tool-%s must carry the canonical alert tool name (single-name contract since #2713)", persona)
 				Expect(cr.Rules[0].ResourceNames).To(ContainElement("kubernaut_get_alert_details"),
@@ -252,7 +252,7 @@ var _ = Describe("Demo persona tool role manifest parity (UT-INFRA-2703-004)", f
 		for _, g := range realm.Groups {
 			realmGroups[g.Name] = true
 		}
-		for persona := range alertCapablePersonas {
+		for persona := range alertCapableRoles {
 			Expect(realmGroups).To(HaveKey(persona))
 		}
 		for _, persona := range []string{"cicd", "observability", "l3-audit", "remediation-approver"} {

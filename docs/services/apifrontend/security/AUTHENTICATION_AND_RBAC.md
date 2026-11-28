@@ -119,9 +119,9 @@ enforced only at `tools/call` execution time to eliminate TOCTOU races.
 The per-tool capability role is the product primitive: a ClusterRole
 enumerating tool names under `kubernaut.ai/tools` (verb `use`,
 resourceName = tool name), bound to OIDC groups via ClusterRoleBindings. The
-operator renders only unbound generic console roles (kubernaut-operator#682)
-and carries no persona model — which roles exist and which groups they bind to
-is the deployer's composition decision.
+operator renders only unbound generic console roles (kubernaut-operator#682);
+which roles exist and which groups they bind to is the deployer's composition
+decision (#2716: only roles and grants — no user classification).
 
 The six demo bundles below (one role per demo IdP group) are a **worked
 example composition**, not a platform contract; an entirely different set of
@@ -180,6 +180,22 @@ Console read capabilities (`kubernaut_read_policy_scope`,
 part of this per-tool contract: they are granted by the operator-rendered
 `<ns>-console-reader` ClusterRole (see the
 [interactive-mode setup guide](../../../../operations/deployment/INTERACTIVE_MODE_SETUP_GUIDE.md)).
+
+### Roles the platform renders (and what they allow)
+
+The operator renders exactly three unbound ClusterRoles, prefixed with the
+Kubernaut CR's namespace. Everything else is operator-composed capability
+roles (#2716).
+
+| ClusterRole | Rule | What it allows |
+|---|---|---|
+| `<ns>-console-access` | `kubernaut.ai` `console`, verb `use` | Passing the console login gate (checked only when `consoleAccessAuthorizationCheckEnabled=true`; default is auth-only) |
+| `<ns>-console-reader` | `kubernaut.ai` `tools`, verb `use`, resourceNames: `kubernaut_read_policy_scope`, `kubernaut_list_managed_resources`, `kubernaut_get_managed_resource` | The Console UI's read capabilities (policy scope, managed-resource projections) |
+| `<ns>-console-inventory-reader` | core API-group `get`/`list` on local-target resources | The Console's inventory projection reads |
+
+Bind them to your IdP groups via ClusterRoleBindings (see
+[`test/fixtures/demo/rbac/console-bindings.yaml`](../../../../../test/fixtures/demo/rbac/console-bindings.yaml)
+for a worked example). All checks are deny-by-default.
 
 ### Enforcement Code Paths
 
